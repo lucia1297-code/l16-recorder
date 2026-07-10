@@ -2,53 +2,70 @@ import { useEffect, useMemo, useState } from "react";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
+import { validateLoginInput } from "../../core/authLogic";
 import { useStorage } from "../../lib/useStorage";
-
-// 데모용 간단 로그인 (실서비스는 Supabase Auth 로 교체)
-const ADMIN_PASSWORD = "asx2026";
+import { createAuth } from "../../lib/authFactory";
 
 export default function AdminPanel() {
-  const [authed, setAuthed] = useState(
-    () => sessionStorage.getItem("asx.admin") === "1",
-  );
-  if (!authed) return <Login onOk={() => setAuthed(true)} />;
-  return <AdminHome />;
+  const auth = useMemo(() => createAuth(), []);
+  const [authed, setAuthed] = useState(() => auth.isLoggedIn());
+  if (!authed) return <Login auth={auth} onOk={() => setAuthed(true)} />;
+  return <AdminHome onLogout={() => { auth.logout(); setAuthed(false); }} />;
 }
 
-function Login({ onOk }: { onOk: () => void }) {
+function Login({ auth, onOk }: { auth: ReturnType<typeof createAuth>; onOk: () => void }) {
+  const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [err, setErr] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    const errs = validateLoginInput({ email, password: pw }, auth.requiresEmail);
+    if (errs.length) return setErrors(errs);
+    setLoading(true);
+    const result = await auth.login(email, pw);
+    setLoading(false);
+    if (result.ok) onOk();
+    else setErrors([result.error ?? "로그인에 실패했습니다."]);
+  }
+
   return (
     <div className="card">
       <h2>관리자 로그인</h2>
-      <p className="sub">비밀번호를 입력하세요.</p>
-      <input
-        type="password"
-        value={pw}
-        onChange={(e) => setPw(e.target.value)}
-        placeholder="비밀번호"
-      />
-      {err && <p style={{ color: "var(--red)" }}>비밀번호가 틀립니다.</p>}
-      <div style={{ height: 12 }} />
-      <button
-        className="btn"
-        onClick={() => {
-          if (pw === ADMIN_PASSWORD) {
-            sessionStorage.setItem("asx.admin", "1");
-            onOk();
-          } else setErr(true);
-        }}
-      >
-        로그인
-      </button>
-      <p className="muted center" style={{ marginTop: 10, fontSize: 13 }}>
-        (데모 비밀번호: asx2026 — 실서비스에서 교체)
+      <p className="sub">
+        {auth.requiresEmail ? "이메일과 비밀번호를 입력하세요." : "비밀번호를 입력하세요."}
       </p>
+      {errors.length > 0 && (
+        <div className="errors">
+          <ul>
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {auth.requiresEmail && (
+        <>
+          <label>이메일</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" />
+        </>
+      )}
+      <label>비밀번호</label>
+      <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호" />
+      <div style={{ height: 12 }} />
+      <button className="btn" onClick={submit} disabled={loading}>
+        {loading ? "확인 중…" : "로그인"}
+      </button>
+      {!auth.requiresEmail && (
+        <p className="muted center" style={{ marginTop: 10, fontSize: 13 }}>
+          (.env 의 VITE_ADMIN_PASSWORD로 설정 — 미설정 시 개발용 기본값 사용)
+        </p>
+      )}
     </div>
   );
 }
 
-function AdminHome() {
+function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<"list" | "dash">("list");
@@ -68,6 +85,9 @@ function AdminHome() {
         </button>
       </div>
       {tab === "list" ? <ResultList rows={rows} /> : <DashboardView rows={rows} />}
+      <button className="btn ghost" style={{ marginTop: 8 }} onClick={onLogout}>
+        로그아웃
+      </button>
     </>
   );
 }

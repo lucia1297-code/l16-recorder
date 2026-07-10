@@ -1,21 +1,22 @@
 import type { Storage } from "./storage";
 import type { ExamResult, DraftResult } from "../core/types";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Supabase 구현체.
  * 사용법:
- *   1) npm install @supabase/supabase-js
- *   2) .env 에 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY 설정
- *   3) src/lib/storageFactory.ts 에서 이 클래스를 반환하도록 한 줄 변경
- *   4) supabase/schema.sql 을 Supabase SQL 에디터에서 실행
+ *   1) .env 에 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY 설정
+ *   2) supabase/schema.sql 을 Supabase SQL 에디터에서 실행
+ *   3) storageFactory.ts 가 두 값이 설정된 것을 감지하면 자동으로 이 클래스를 사용
  *
- * драфт(작성중)는 개별 학생 브라우저에 두는 게 자연스러워서 여기서도 localStorage 사용.
+ * 초안(작성중)은 개별 학생 브라우저에 두는 게 자연스러워서 여기서도 localStorage 사용.
  * 최종 제출(results)만 Supabase 로 저장한다.
  */
 const DRAFT_KEY = "asx.draft";
+let cachedClient: SupabaseClient | null = null;
 
-// 지연 로딩: 패키지가 없어도 빌드가 깨지지 않도록 동적 import.
-async function getClient() {
+function getClient(): SupabaseClient {
+  if (cachedClient) return cachedClient;
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
   if (!url || !key) {
@@ -23,9 +24,8 @@ async function getClient() {
       "Supabase 환경변수(VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)가 없습니다.",
     );
   }
-  // @ts-ignore — 패키지는 Supabase 사용 시에만 설치 (npm i @supabase/supabase-js)
-  const { createClient } = await import("@supabase/supabase-js");
-  return createClient(url, key);
+  cachedClient = createClient(url, key);
+  return cachedClient;
 }
 
 export class SupabaseStorage implements Storage {

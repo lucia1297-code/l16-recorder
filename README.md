@@ -31,7 +31,7 @@ manifest + service worker, 모바일 홈화면 설치 가능, 오프라인 작�
 ## 테스트 (TDD)
 
 ```bash
-npm test          # 14개 테스트 (통계/CSV/검증/스토리지)
+npm test          # 19개 테스트 (통계/CSV/검증/스토리지/인증)
 ```
 
 ## 빌드
@@ -41,20 +41,34 @@ npm run build     # dist/ 생성
 npm run preview   # 빌드 결과 로컬 미리보기
 ```
 
+## 관리자 인증
+
+두 가지 모드가 자동으로 전환됩니다 (`.env` 에 Supabase 키가 있는지로 판단):
+
+**Simple 모드 (기본, 설정 불필요)**
+- `.env` 의 `VITE_ADMIN_PASSWORD` 로 로그인 (미설정 시 개발용 기본값 `asx2026` 사용 + 콘솔 경고)
+- 이메일 불필요, 비밀번호만 입력
+
+**Supabase 모드 (Supabase 키를 `.env`에 넣으면 자동 전환)**
+- Supabase Auth 이메일/비밀번호 로그인으로 자동 전환
+- Supabase 대시보드 > Authentication > Users 에서 관리자 계정을 미리 만들어두세요
+- 세션은 Supabase가 관리 (로그아웃 버튼 제공)
+
 ## Supabase 로 전환 (선택)
 
-1. `npm install @supabase/supabase-js`
-2. Supabase 프로젝트 생성 후 `supabase/schema.sql` 을 SQL Editor 에서 실행
+1. Supabase 프로젝트 생성 후 `supabase/schema.sql` 을 SQL Editor 에서 실행
+   - RLS 정책: 학생 제출(insert)은 익명 허용, 조회(select)는 로그인한 관리자만 허용
+2. Authentication > Users 에서 관리자 계정(이메일/비밀번호) 생성
 3. `.env` 파일 생성 (`.env.example` 참고):
    ```
    VITE_SUPABASE_URL=...
    VITE_SUPABASE_ANON_KEY=...
    ```
-4. `src/lib/storageFactory.ts` 에서 한 줄만 교체:
-   ```ts
-   // return new LocalStorage();
-   return new SupabaseStorage();
-   ```
+4. 끝 — `npm run dev` 재시작하면 자동으로 Supabase 저장 + Supabase 로그인으로 전환됩니다.
+   (코드 수정 불필요: `storageFactory.ts`/`authFactory.ts` 가 환경변수를 감지해서 자동 전환)
+
+> 참고: `@supabase/supabase-js` 는 이미 `package.json` 에 포함되어 `npm install` 시 함께 설치됩니다.
+> 이 환경에서는 Supabase API에 직접 접속해 실제 연동 테스트를 하지 못했습니다 — 선생님 PC에서 위 절차대로 `.env`를 채우고 `npm run dev` 후 직접 확인해 주세요.
 
 ## Netlify 배포
 
@@ -71,6 +85,10 @@ npx netlify-cli deploy --prod --dir=dist
 ```
 
 `netlify.toml` 이 포함되어 있어 빌드 설정은 자동 적용됩니다.
+
+## 알려진 이슈
+
+- `npm audit` 에 esbuild/vite 관련 개발 서버 취약점 경고가 있습니다 (dev server 전용, 프로덕션 빌드에는 영향 없음). 필요시 `npm audit fix --force` 로 vite 6→8 업그레이드 가능하나 breaking change 포함.
 
 ## 폴더 구조
 
