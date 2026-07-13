@@ -16,10 +16,13 @@ import {
 } from "../../core/logic";
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
 import type { RosterEntry } from "../../core/roster";
+import { validatePendingRegistration } from "../../core/pendingRegistration";
+import type { PendingStore } from "../../lib/pendingStore";
 import { useStorage } from "../../lib/useStorage";
 import { OtpService } from "../../lib/otpService";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
+import { createPendingStore } from "../../lib/pendingStoreFactory";
 
 const EMPTY_DRAFT: DraftResult = {
   student: {},
@@ -37,6 +40,7 @@ export default function StudentFlow() {
   const storage = useStorage();
   const otp = useMemo(() => new OtpService(createSmsProvider()), []);
   const rosterStore = useMemo(() => createRosterStore(), []);
+  const pendingStore = useMemo(() => createPendingStore(), []);
   const [draft, setDraft] = useState<DraftResult>(EMPTY_DRAFT);
   const [loaded, setLoaded] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -44,9 +48,18 @@ export default function StudentFlow() {
   const [phone, setPhone] = useState("");
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [matched, setMatched] = useState(false);
+
+  function refreshRoster() {
+    return rosterStore.listRoster().then((r) => {
+      setRoster(r);
+      return r;
+    });
+  }
 
   useEffect(() => {
-    rosterStore.listRoster().then(setRoster);
+    refreshRoster();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rosterStore]);
 
   // 최초 로드: 저장된 draft 복구
@@ -65,11 +78,38 @@ export default function StudentFlow() {
     if (loaded) storage.saveDraft(draft);
   }, [draft, loaded, storage]);
 
+  function canProceedStep0(): boolean {
+    if (!phoneVerified) return false;
+    if (roster.length === 0) return true; // 명부 미등록 상태 = 자유 진행 허용
+    return matched;
+  }
+
   useEffect(() => {
     if (phone) setPhoneVerified(otp.isVerified(phone));
     if (loaded && phone !== draft.phone) set({ phone });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phone, otp, loaded]);
+
+  // 새로고침 또는 관리자 승인 이후 명부를 다시 불러왔을 때 자동으로 매칭 상태 갱신
+  useEffect(() => {
+    if (!phoneVerified || !phone || roster.length === 0) return;
+    const digits = normalizePhoneNumber(phone);
+    const match = roster.find((r) => r.phone === digits);
+    if (match) {
+      setMatched(true);
+      setDraft((d) => ({
+        ...d,
+        student: {
+          studentCode: match.studentCode,
+          name: match.name,
+          school: match.school,
+          grade: match.grade,
+        },
+        teacher: match.teacher || d.teacher,
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phoneVerified, phone, roster]);
 
   const step = draft.step;
   const set = (patch: Partial<DraftResult>) =>
@@ -77,8 +117,8 @@ export default function StudentFlow() {
 
   function next() {
     if (step === 0) {
-      if (!phoneVerified) {
-        setErrors(["전화번호 인증을 완료하세요."]);
+      if (!canProceedStep0()) {
+        setErrors(["전화번호 인증(및 승인)을 완료하세요."]);
         return;
       }
     } else {
@@ -120,6 +160,7 @@ export default function StudentFlow() {
     setDone(false);
     setPhone("");
     setPhoneVerified(false);
+    setMatched(false);
   }
 
   if (!loaded) return <div className="card">불러오는 중…</div>;
@@ -161,13 +202,16 @@ export default function StudentFlow() {
       {step === 0 && (
         <StepPhoneVerify
           otp={otp}
+          pendingStore={pendingStore}
           phone={phone}
           setPhone={setPhone}
           verified={phoneVerified}
           setVerified={setPhoneVerified}
           setErrors={setErrors}
           roster={roster}
-          onMatched={(entry) =>
+          matched={matched}
+          onMatched={(entry) => {
+            setMatched(true);
             set({
               student: {
                 studentCode: entry.studentCode,
@@ -176,8 +220,9 @@ export default function StudentFlow() {
                 grade: entry.grade,
               },
               teacher: entry.teacher || draft.teacher,
-            })
-          }
+            });
+          }}
+          onCheckApproval={refreshRoster}
         />
       )}
       {step === 1 && <StepStudent draft={draft} set={set} />}
@@ -196,7 +241,7 @@ export default function StudentFlow() {
           </button>
         )}
         {step < STEPS.length - 1 ? (
-          <button className="btn" onClick={next} disabled={step === 0 && !phoneVerified}>
+          <button className="btn" onClick={next} disabled={step === 0 && !canProceedStep0()}>
             다음
           </button>
         ) : (
@@ -243,31 +288,43 @@ type StepProps = { draft: DraftResult; set: (p: Partial<DraftResult>) => void };
 
 function StepPhoneVerify({
   otp,
+  pendingStore,
   phone,
   setPhone,
   verified,
   setVerified,
   setErrors,
   roster,
+  matched,
   onMatched,
+  onCheckApproval,
 }: {
   otp: OtpService;
+  pendingStore: PendingStore;
   phone: string;
   setPhone: (v: string) => void;
   verified: boolean;
   setVerified: (v: boolean) => void;
   setErrors: (e: string[]) => void;
   roster: RosterEntry[];
+  matched: boolean;
   onMatched: (entry: RosterEntry) => void;
+  onCheckApproval: () => Promise<RosterEntry[]>;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [notice, setNotice] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const [checkingPending, setCheckingPending] = useState(false);
+  const [regName, setRegName] = useState("");
+  const [regSchool, setRegSchool] = useState("");
+  const [regGrade, setRegGrade] = useState("");
+  const [submittingReg, setSubmittingReg] = useState(false);
 
   function findRosterMatch(p: string): RosterEntry | null {
-    if (roster.length === 0) return null; // 명부 미등록 상태 = 자유 입력 허용(하위 호환)
+    if (roster.length === 0) return null;
     const digits = normalizePhoneNumber(p);
     return roster.find((r) => r.phone === digits) ?? null;
   }
@@ -275,12 +332,6 @@ function StepPhoneVerify({
   async function requestCode() {
     const errs = validatePhoneNumber(phone);
     if (errs.length) return setErrors(errs);
-
-    if (roster.length > 0 && !findRosterMatch(phone)) {
-      setErrors(["등록되지 않은 번호입니다. 선생님(관리자)에게 문의하세요."]);
-      return;
-    }
-
     setSending(true);
     setErrors([]);
     const r = await otp.requestOtp(phone);
@@ -298,17 +349,58 @@ function StepPhoneVerify({
     setErrors([]);
     const r = await otp.verifyOtp(phone, code);
     setVerifying(false);
-    if (r.ok) {
-      setVerified(true);
-      setNotice("전화번호 인증이 완료되었습니다.");
-      const match = findRosterMatch(phone);
-      if (match) onMatched(match);
-    } else {
+    if (!r.ok) {
       setErrors([r.error ?? "인증에 실패했습니다."]);
+      return;
+    }
+    setVerified(true);
+    setNotice("전화번호 인증이 완료되었습니다.");
+    const match = findRosterMatch(phone);
+    if (match) {
+      onMatched(match);
+      return;
+    }
+    if (roster.length > 0) {
+      const p = await pendingStore.findByPhone(normalizePhoneNumber(phone));
+      setIsPending(Boolean(p));
     }
   }
 
-  if (verified) {
+  async function submitRegistration() {
+    const errs = validatePendingRegistration({
+      name: regName,
+      school: regSchool,
+      grade: regGrade,
+      phone,
+    });
+    if (errs.length) return setErrors(errs);
+    setSubmittingReg(true);
+    setErrors([]);
+    await pendingStore.submit({
+      phone: normalizePhoneNumber(phone),
+      name: regName,
+      school: regSchool,
+      grade: regGrade,
+      requestedAt: new Date().toISOString(),
+    });
+    setSubmittingReg(false);
+    setIsPending(true);
+  }
+
+  async function checkApproval() {
+    setCheckingPending(true);
+    const updatedRoster = await onCheckApproval();
+    setCheckingPending(false);
+    const digits = normalizePhoneNumber(phone);
+    const match = updatedRoster.find((r) => r.phone === digits);
+    if (match) {
+      onMatched(match);
+    } else {
+      setNotice("아직 승인 대기 중입니다. 잠시 후 다시 확인해 주세요.");
+    }
+  }
+
+  if (verified && matched) {
     return (
       <div>
         <p className="muted">
@@ -317,6 +409,62 @@ function StepPhoneVerify({
         <p className="muted" style={{ fontSize: 13 }}>
           다음 단계로 진행하세요.
         </p>
+      </div>
+    );
+  }
+
+  // 인증은 됐지만 명부에 없는 번호 → 등록 신청 또는 승인 대기
+  if (verified && roster.length > 0 && !matched) {
+    if (isPending) {
+      return (
+        <div>
+          <p className="muted">
+            ⏳ <b>{phone}</b> 등록 신청이 접수되었습니다.
+          </p>
+          <p className="muted" style={{ fontSize: 13 }}>
+            선생님(관리자)의 승인 후 다음 단계로 진행할 수 있습니다. 시간이 걸릴 수 있으니
+            잠시 후 아래 버튼으로 다시 확인해 주세요.
+          </p>
+          <div style={{ height: 10 }} />
+          <button className="btn secondary" onClick={checkApproval} disabled={checkingPending}>
+            {checkingPending ? "확인 중…" : "승인 확인하기"}
+          </button>
+          {notice && (
+            <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>
+              {notice}
+            </p>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div>
+        <p className="muted">
+          ✅ <b>{phone}</b> 전화번호 인증 완료 — 아직 등록된 학생이 아닙니다.
+        </p>
+        <p className="muted" style={{ fontSize: 13 }}>
+          아래 정보를 입력해 등록을 신청하면 선생님(관리자) 승인 후 이용할 수 있습니다.
+        </p>
+        <label>이름</label>
+        <input value={regName} onChange={(e) => setRegName(e.target.value)} placeholder="이름" />
+        <label>학교</label>
+        <input
+          value={regSchool}
+          onChange={(e) => setRegSchool(e.target.value)}
+          placeholder="예: 창동고"
+        />
+        <label>학년</label>
+        <select value={regGrade} onChange={(e) => setRegGrade(e.target.value)}>
+          <option value="">선택</option>
+          <option value="1">1학년</option>
+          <option value="2">2학년</option>
+          <option value="3">3학년</option>
+          <option value="N">N수</option>
+        </select>
+        <div style={{ height: 12 }} />
+        <button className="btn" onClick={submitRegistration} disabled={submittingReg}>
+          {submittingReg ? "신청 중…" : "등록 신청하기"}
+        </button>
       </div>
     );
   }

@@ -5,11 +5,14 @@ import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 import { validateLoginInput } from "../../core/authLogic";
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
 import { parseRosterRows, type RosterEntry } from "../../core/roster";
+import { generateStudentCode } from "../../core/studentCode";
+import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
 import { createAuth } from "../../lib/authFactory";
 import { OtpService } from "../../lib/otpService";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
+import { createPendingStore } from "../../lib/pendingStoreFactory";
 
 const ADMIN_2FA_SESSION_KEY = "asx.admin.2fa";
 
@@ -185,11 +188,17 @@ function maskPhone(phone: string): string {
 function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
-  const [tab, setTab] = useState<"list" | "dash" | "roster">("list");
+  const [tab, setTab] = useState<"list" | "dash" | "roster" | "pending">("list");
+  const [pendingCount, setPendingCount] = useState(0);
+  const pendingStore = useMemo(() => createPendingStore(), []);
 
   useEffect(() => {
     storage.listResults().then(setRows);
   }, [storage]);
+
+  useEffect(() => {
+    pendingStore.listPending().then((p) => setPendingCount(p.length));
+  }, [pendingStore, tab]);
 
   return (
     <>
@@ -203,10 +212,14 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
           명부 관리
         </button>
+        <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
+          등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
+        </button>
       </div>
       {tab === "list" && <ResultList rows={rows} />}
       {tab === "dash" && <DashboardView rows={rows} />}
       {tab === "roster" && <RosterManager />}
+      {tab === "pending" && <PendingManager />}
       <button className="btn ghost" style={{ marginTop: 8 }} onClick={onLogout}>
         로그아웃
       </button>
@@ -631,6 +644,121 @@ function RosterManager() {
             명부 전체 삭제
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+function PendingManager() {
+  const pendingStore = useMemo(() => createPendingStore(), []);
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const [pending, setPending] = useState<PendingRegistration[]>([]);
+  const [notice, setNotice] = useState("");
+  const [busyPhone, setBusyPhone] = useState<string | null>(null);
+
+  async function refresh() {
+    setPending(await pendingStore.listPending());
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingStore]);
+
+  async function approve(p: PendingRegistration) {
+    setBusyPhone(p.phone);
+    setNotice("");
+    try {
+      const existing = await rosterStore.listRoster();
+      const code = generateStudentCode(existing.map((e) => e.studentCode));
+      const entry = await pendingStore.approve(p.phone, code);
+      if (entry) {
+        await rosterStore.saveRoster([entry]);
+        // 승인 즉시 학생코드를 문자로 안내 (실패해도 승인 자체는 유지)
+        try {
+          const provider = createSmsProvider();
+          await provider.send(
+            entry.phone,
+            `[ASX] 등록이 승인되었습니다. 학생코드는 ${entry.studentCode} 입니다.`,
+          );
+          setNotice(`${p.name} 승인 완료 (코드: ${code}) — 문자로 안내했습니다.`);
+        } catch {
+          setNotice(`${p.name} 승인 완료 (코드: ${code}) — 문자 발송은 실패했습니다.`);
+        }
+      }
+    } finally {
+      setBusyPhone(null);
+      refresh();
+    }
+  }
+
+  async function reject(p: PendingRegistration) {
+    if (!confirm(`${p.name} (${p.phone}) 신청을 거부할까요?`)) return;
+    setBusyPhone(p.phone);
+    await pendingStore.reject(p.phone);
+    setBusyPhone(null);
+    setNotice(`${p.name} 신청을 거부했습니다.`);
+    refresh();
+  }
+
+  return (
+    <div className="card">
+      <h2>등록 신청</h2>
+      <p className="sub">
+        명부에 없는 번호로 학생이 직접 등록을 신청하면 여기에 표시됩니다. 승인하면 학생코드가
+        자동 생성되어 명부에 등록되고, 문자로 코드가 안내됩니다.
+      </p>
+      {notice && <p className="muted">{notice}</p>}
+      {pending.length === 0 ? (
+        <p className="muted">대기 중인 신청이 없습니다.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>학교</th>
+                <th>학년</th>
+                <th>전화번호</th>
+                <th>신청시각</th>
+                <th>처리</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map((p) => (
+                <tr key={p.phone}>
+                  <td>{p.name}</td>
+                  <td>{p.school}</td>
+                  <td>{p.grade}</td>
+                  <td>{p.phone}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {new Date(p.requestedAt).toLocaleString("ko-KR")}
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        className="btn ghost"
+                        style={{ padding: "4px 8px", fontSize: 12 }}
+                        onClick={() => approve(p)}
+                        disabled={busyPhone === p.phone}
+                      >
+                        승인
+                      </button>
+                      <button
+                        className="btn ghost"
+                        style={{ padding: "4px 8px", fontSize: 12 }}
+                        onClick={() => reject(p)}
+                        disabled={busyPhone === p.phone}
+                      >
+                        거부
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

@@ -44,6 +44,22 @@ create policy "authenticated upsert students" on students for insert to authenti
 create policy "authenticated update students" on students for update to authenticated using (true);
 create policy "authenticated delete students" on students for delete to authenticated using (true);
 
+-- ── 학생 자가등록 신청 (승인 대기) ──────────────────────
+create table if not exists pending_registrations (
+  phone text primary key,
+  name text not null,
+  school text not null,
+  grade text not null,
+  requested_at timestamptz not null default now()
+);
+alter table pending_registrations enable row level security;
+-- 제출(insert/upsert)은 학생 본인이 로그인 없이 하므로 익명 허용.
+-- 조회/승인(삭제)은 로그인한 관리자만.
+create policy "anon submit pending" on pending_registrations for insert to anon with check (true);
+create policy "anon upsert pending" on pending_registrations for update to anon using (true);
+create policy "authenticated select pending" on pending_registrations for select to authenticated using (true);
+create policy "authenticated delete pending" on pending_registrations for delete to authenticated using (true);
+
 -- ── OTP 세션 (Edge Function 사용 시에만 필요, supabase/functions 참고) ──
 create table if not exists otp_sessions (
   phone text primary key,
