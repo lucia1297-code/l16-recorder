@@ -54,6 +54,22 @@ describe("parseRosterRows", () => {
     expect(valid[0].studentCode).toBe("CUSTOM01");
   });
 
+  it("parses an optional parent phone number (8th column)", () => {
+    const rows = [
+      HEADER,
+      ["S1023", "홍길동", "창동고", "3", "010-1234-5678", "", "", "010-9999-8888"],
+    ];
+    const { valid, errors } = parseRosterRows(rows);
+    expect(errors.length).toBe(0);
+    expect(valid[0].parentPhone).toBe("01099998888");
+  });
+
+  it("leaves parentPhone undefined when the column is blank", () => {
+    const rows = [HEADER, ["S1023", "홍길동", "창동고", "3", "010-1234-5678", "", ""]];
+    const { valid } = parseRosterRows(rows);
+    expect(valid[0].parentPhone).toBeUndefined();
+  });
+
   it("skips the example/instruction row commonly left in by users", () => {
     const rows = [
       HEADER,

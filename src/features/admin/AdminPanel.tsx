@@ -13,6 +13,15 @@ import { OtpService } from "../../lib/otpService";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
+import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
+import {
+  MAX_ASSIGNMENT_TYPES,
+  computeAssignmentStatus,
+  countSubmissionsForType,
+  validateAssignmentTypeInput,
+  ASSIGNMENT_STATUS_LABELS,
+  type AssignmentType,
+} from "../../core/assignment";
 
 const ADMIN_2FA_SESSION_KEY = "asx.admin.2fa";
 
@@ -188,7 +197,7 @@ function maskPhone(phone: string): string {
 function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
-  const [tab, setTab] = useState<"list" | "dash" | "roster" | "pending">("list");
+  const [tab, setTab] = useState<"list" | "dash" | "roster" | "pending" | "assignment">("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
 
@@ -212,6 +221,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
           명부 관리
         </button>
+        <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
+          과제 관리
+        </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
@@ -223,6 +235,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "list" && <ResultList rows={rows} />}
         {tab === "dash" && <DashboardView rows={rows} />}
         {tab === "roster" && <RosterManager />}
+        {tab === "assignment" && <AssignmentManager />}
         {tab === "pending" && <PendingManager />}
       </div>
     </div>
@@ -850,6 +863,244 @@ function PendingManager() {
                       </button>
                     </div>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignmentManager() {
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const [types, setTypes] = useState<AssignmentType[]>([]);
+  const [submissions, setSubmissions] = useState<
+    Awaited<ReturnType<typeof assignmentStore.listSubmissions>>
+  >([]);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [notice, setNotice] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const [newName, setNewName] = useState("");
+  const [newTarget, setNewTarget] = useState("5");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTarget, setEditTarget] = useState("");
+
+  async function refresh() {
+    const [t, s, r] = await Promise.all([
+      assignmentStore.listTypes(),
+      assignmentStore.listSubmissions(),
+      rosterStore.listRoster(),
+    ]);
+    setTypes(t);
+    setSubmissions(s);
+    setRoster(r);
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentStore, rosterStore]);
+
+  async function addType() {
+    const errs = validateAssignmentTypeInput(
+      { name: newName, targetCount: Number(newTarget) || 0 },
+      types,
+    );
+    if (errs.length) return setErrors(errs);
+    setErrors([]);
+    await assignmentStore.saveType({
+      id: crypto.randomUUID(),
+      name: newName.trim(),
+      targetCount: Number(newTarget),
+    });
+    setNewName("");
+    setNewTarget("5");
+    refresh();
+  }
+
+  function startEdit(t: AssignmentType) {
+    setEditingId(t.id);
+    setEditName(t.name);
+    setEditTarget(String(t.targetCount));
+  }
+
+  async function saveEdit(t: AssignmentType) {
+    const errs = validateAssignmentTypeInput(
+      { name: editName, targetCount: Number(editTarget) || 0 },
+      types,
+      t.id,
+    );
+    if (errs.length) return setErrors(errs);
+    setErrors([]);
+    await assignmentStore.saveType({ ...t, name: editName.trim(), targetCount: Number(editTarget) });
+    setEditingId(null);
+    refresh();
+  }
+
+  async function removeType(id: string) {
+    if (!confirm("이 과제 유형을 삭제할까요? 기존 제출 기록은 남아있지만 유형 이름은 사라집니다.")) return;
+    await assignmentStore.deleteType(id);
+    refresh();
+  }
+
+  return (
+    <div className="card">
+      <h2>과제 관리</h2>
+      <p className="sub">
+        과제 유형은 최대 {MAX_ASSIGNMENT_TYPES}개까지 만들 수 있습니다 ({types.length}/
+        {MAX_ASSIGNMENT_TYPES}).
+      </p>
+      {notice && <p className="muted">{notice}</p>}
+      {errors.length > 0 && (
+        <div className="errors">
+          <ul>
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <h3>과제 유형</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>과제 이름</th>
+              <th>지정 개수</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {types.map((t) => (
+              <tr key={t.id}>
+                <td>
+                  {editingId === t.id ? (
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      style={{ padding: 6, fontSize: 13, width: 140 }}
+                    />
+                  ) : (
+                    t.name
+                  )}
+                </td>
+                <td>
+                  {editingId === t.id ? (
+                    <input
+                      type="number"
+                      value={editTarget}
+                      onChange={(e) => setEditTarget(e.target.value)}
+                      style={{ padding: 6, fontSize: 13, width: 60 }}
+                    />
+                  ) : (
+                    `${t.targetCount}회`
+                  )}
+                </td>
+                <td>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {editingId === t.id ? (
+                      <>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => saveEdit(t)}
+                        >
+                          저장
+                        </button>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => setEditingId(null)}
+                        >
+                          취소
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => startEdit(t)}
+                        >
+                          수정
+                        </button>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => removeType(t.id)}
+                        >
+                          삭제
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {types.length < MAX_ASSIGNMENT_TYPES && (
+        <div style={{ marginTop: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+          <label>새 과제 이름</label>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: 모의고사 풀이" />
+          <label>지정 개수 (예: 3회)</label>
+          <input
+            type="number"
+            value={newTarget}
+            onChange={(e) => setNewTarget(e.target.value)}
+          />
+          <div style={{ height: 10 }} />
+          <button className="btn" onClick={addType}>
+            과제 유형 추가
+          </button>
+        </div>
+      )}
+
+      <h3>학생별 과제 현황</h3>
+      {roster.length === 0 ? (
+        <p className="muted">등록된 학생이 없습니다.</p>
+      ) : types.length === 0 ? (
+        <p className="muted">과제 유형을 먼저 추가하세요.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>학생</th>
+                {types.map((t) => (
+                  <th key={t.id}>{t.name}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((student) => (
+                <tr key={student.studentCode}>
+                  <td>{student.name}</td>
+                  {types.map((t) => {
+                    const count = countSubmissionsForType(submissions, student.studentCode, t.id);
+                    const status = computeAssignmentStatus(count, t.targetCount);
+                    const color =
+                      status === "good"
+                        ? "var(--correct)"
+                        : status === "not_bad"
+                          ? "var(--amber)"
+                          : status === "warning"
+                            ? "var(--incorrect)"
+                            : "var(--ink-faint)";
+                    return (
+                      <td key={t.id} style={{ color, fontWeight: 700 }}>
+                        {ASSIGNMENT_STATUS_LABELS[status]} ({count}/{t.targetCount})
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

@@ -7,6 +7,7 @@ export interface RosterEntry {
   school: string;
   grade: string;
   phone: string; // normalized digits only
+  parentPhone?: string; // 학부모 전화번호 (선택, 과제제출 알림 발송용)
   teacher: string;
   note: string;
 }
@@ -42,7 +43,7 @@ export function parseRosterRows(
   dataRows.forEach((row, idx) => {
     const rowNum = idx + 2; // 실제 엑셀 행 번호 (1행=헤더)
     const cells = (row ?? []).map((c) => String(c ?? "").trim());
-    const [studentCodeRaw, name, school, grade, phoneRaw, teacher, note] = [
+    const [studentCodeRaw, name, school, grade, phoneRaw, teacher, note, parentPhoneRaw] = [
       cells[0] ?? "",
       cells[1] ?? "",
       cells[2] ?? "",
@@ -50,6 +51,7 @@ export function parseRosterRows(
       cells[4] ?? "",
       cells[5] ?? "",
       cells[6] ?? "",
+      cells[7] ?? "",
     ];
 
     // 완전히 빈 행은 조용히 무시 (학생코드는 자동생성 대상이라 존재 여부 판단에서 제외)
@@ -72,6 +74,11 @@ export function parseRosterRows(
       errors.push(`${rowNum}행: ${phoneErrs[0]}`);
       return;
     }
+    // 학부모 전화번호는 선택 — 입력된 경우에만 형식 검증
+    if (parentPhoneRaw && validatePhoneNumber(parentPhoneRaw).length > 0) {
+      errors.push(`${rowNum}행: 학부모 ${validatePhoneNumber(parentPhoneRaw)[0]}`);
+      return;
+    }
 
     let studentCode = studentCodeRaw;
     if (!studentCode) {
@@ -89,6 +96,7 @@ export function parseRosterRows(
       school,
       grade,
       phone: normalizePhoneNumber(phoneRaw),
+      parentPhone: parentPhoneRaw ? normalizePhoneNumber(parentPhoneRaw) : undefined,
       teacher,
       note,
     });
@@ -103,6 +111,7 @@ export interface ManualEntryInput {
   school: string;
   grade: string;
   phone: string;
+  parentPhone?: string;
   teacher?: string;
 }
 
@@ -125,6 +134,7 @@ export function buildManualEntry(
   const grade = input.grade.trim();
   const teacher = (input.teacher ?? "").trim();
   const studentCodeRaw = (input.studentCode ?? "").trim();
+  const parentPhoneRaw = (input.parentPhone ?? "").trim();
 
   const missing: string[] = [];
   if (!name) missing.push("이름");
@@ -138,6 +148,10 @@ export function buildManualEntry(
   const phoneErrs = validatePhoneNumber(input.phone);
   if (phoneErrs.length > 0) {
     errors.push(phoneErrs[0]);
+    return { errors };
+  }
+  if (parentPhoneRaw && validatePhoneNumber(parentPhoneRaw).length > 0) {
+    errors.push(`학부모 ${validatePhoneNumber(parentPhoneRaw)[0]}`);
     return { errors };
   }
 
@@ -157,6 +171,7 @@ export function buildManualEntry(
       school,
       grade,
       phone: normalizePhoneNumber(input.phone),
+      parentPhone: parentPhoneRaw ? normalizePhoneNumber(parentPhoneRaw) : undefined,
       teacher,
       note: "관리자 직접 등록",
     },

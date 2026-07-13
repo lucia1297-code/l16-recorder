@@ -23,6 +23,11 @@ import { OtpService } from "../../lib/otpService";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
+import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
+import {
+  validateSubmissionInput,
+  type AssignmentType,
+} from "../../core/assignment";
 
 const EMPTY_DRAFT: DraftResult = {
   student: {},
@@ -49,6 +54,7 @@ export default function StudentFlow() {
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [matched, setMatched] = useState(false);
+  const [mode, setMode] = useState<"select" | "exam" | "assignment">("select");
 
   function refreshRoster() {
     return rosterStore.listRoster().then((r) => {
@@ -184,6 +190,18 @@ export default function StudentFlow() {
     );
   }
 
+  if (mode === "assignment") {
+    const rosterEntry = roster.find((r) => r.studentCode === draft.student.studentCode);
+    return (
+      <AssignmentSubmitForm
+        studentCode={draft.student.studentCode ?? ""}
+        studentName={draft.student.name ?? ""}
+        parentPhone={rosterEntry?.parentPhone}
+        onBack={() => setMode("select")}
+      />
+    );
+  }
+
   return (
     <div className="card">
       <div className="progress">
@@ -230,6 +248,11 @@ export default function StudentFlow() {
               });
             }}
             onCheckApproval={refreshRoster}
+            onChooseExam={() => {
+              setMode("exam");
+              next();
+            }}
+            onChooseAssignment={() => setMode("assignment")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
@@ -242,22 +265,22 @@ export default function StudentFlow() {
         {step === 8 && <StepReview draft={draft} />}
       </div>
 
-      <div className="nav-buttons">
-        {step > 0 && (
+      {step > 0 && (
+        <div className="nav-buttons">
           <button className="btn secondary" onClick={back}>
             이전
           </button>
-        )}
-        {step < STEPS.length - 1 ? (
-          <button className="btn" onClick={next} disabled={step === 0 && !canProceedStep0()}>
-            다음
-          </button>
-        ) : (
-          <button className="btn" onClick={submit}>
-            제출하기
-          </button>
-        )}
-      </div>
+          {step < STEPS.length - 1 ? (
+            <button className="btn" onClick={next}>
+              다음
+            </button>
+          ) : (
+            <button className="btn" onClick={submit}>
+              제출하기
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -306,6 +329,8 @@ function StepPhoneVerify({
   matched,
   onMatched,
   onCheckApproval,
+  onChooseExam,
+  onChooseAssignment,
 }: {
   otp: OtpService;
   pendingStore: PendingStore;
@@ -318,6 +343,8 @@ function StepPhoneVerify({
   matched: boolean;
   onMatched: (entry: RosterEntry) => void;
   onCheckApproval: () => Promise<RosterEntry[]>;
+  onChooseExam: () => void;
+  onChooseAssignment: () => void;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -414,9 +441,32 @@ function StepPhoneVerify({
         <p className="muted">
           ✅ <b>{phone}</b> 인증 완료
         </p>
-        <p className="muted" style={{ fontSize: 13 }}>
-          다음 단계로 진행하세요.
+        <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+          무엇을 하시겠어요?
         </p>
+        <button className="btn" onClick={onChooseExam} style={{ marginBottom: 10 }}>
+          시험 결과 제출하기
+        </button>
+        <button className="btn secondary" onClick={onChooseAssignment}>
+          과제 제출하기
+        </button>
+      </div>
+    );
+  }
+
+  // 자유 입력 모드(명부 미등록) — 과제 제출은 학생코드 확인이 안 되므로 시험 결과만 진행
+  if (verified && roster.length === 0) {
+    return (
+      <div>
+        <p className="muted">
+          ✅ <b>{phone}</b> 인증 완료
+        </p>
+        <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+          시험 결과 제출을 진행하세요. (과제 제출은 명부 등록 후 이용 가능합니다.)
+        </p>
+        <button className="btn" onClick={onChooseExam}>
+          시험 결과 제출하기
+        </button>
       </div>
     );
   }
@@ -781,6 +831,165 @@ function StepReview({ draft }: { draft: DraftResult }) {
       <p>틀린 번호: {wrongNums}</p>
       <p>만족도: {"★".repeat(draft.reflection.satisfaction ?? 0)}</p>
       <p className="muted">아래 버튼을 눌러 제출하세요.</p>
+    </div>
+  );
+}
+
+function AssignmentSubmitForm({
+  studentCode,
+  studentName,
+  parentPhone,
+  onBack,
+}: {
+  studentCode: string;
+  studentName: string;
+  parentPhone?: string;
+  onBack: () => void;
+}) {
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
+  const [types, setTypes] = useState<AssignmentType[]>([]);
+  const [typeId, setTypeId] = useState("");
+  const [round, setRound] = useState("");
+  const [score, setScore] = useState("");
+  const [wrongNumbersText, setWrongNumbersText] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    assignmentStore.listTypes().then((t) => {
+      setTypes(t);
+      if (t.length > 0) setTypeId(t[0].id);
+    });
+  }, [assignmentStore]);
+
+  function parseWrongNumbers(text: string): number[] {
+    return text
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => Number(s))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  async function submit() {
+    const input = {
+      round: Number(round) || 0,
+      score: score.trim() === "" ? null : Number(score),
+      wrongNumbers: parseWrongNumbers(wrongNumbersText),
+    };
+    const errs = validateSubmissionInput(input);
+    if (!typeId) errs.push("과제 유형을 선택하세요.");
+    if (errs.length) return setErrors(errs);
+
+    setSubmitting(true);
+    setErrors([]);
+    await assignmentStore.submit({
+      id: crypto.randomUUID(),
+      studentCode,
+      typeId,
+      round: input.round,
+      score: input.score,
+      wrongNumbers: input.wrongNumbers,
+      submittedAt: new Date().toISOString(),
+    });
+
+    // 관리자 + 학부모에게 문자 알림 (실패해도 제출 자체는 유지)
+    const typeName = types.find((t) => t.id === typeId)?.name ?? "과제";
+    const message = `[ASX] ${studentName} 학생이 "${typeName}" ${input.round}회차 과제를 제출했습니다.`;
+    const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
+    const provider = createSmsProvider();
+    try {
+      if (adminPhone) await provider.send(adminPhone, message);
+      if (parentPhone) await provider.send(parentPhone, message);
+    } catch {
+      // 알림 발송 실패는 조용히 무시 — 제출 자체는 이미 저장됨
+    }
+
+    setSubmitting(false);
+    setDone(true);
+  }
+
+  if (done) {
+    return (
+      <div className="card done">
+        <div className="stamp-wrap">
+          <div className="stamp-ring" />
+          <div className="stamp">
+            <span className="stamp-text">제출완료</span>
+            <span className="stamp-sub">ASX RECORDER</span>
+          </div>
+        </div>
+        <h2>과제가 제출됐습니다</h2>
+        <p className="muted">관리자와 학부모님께 알림이 발송되었습니다.</p>
+        <button className="btn" onClick={onBack}>
+          처음으로
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2>과제 제출</h2>
+      <p className="sub">{studentName} 학생</p>
+
+      {errors.length > 0 && (
+        <div className="errors">
+          <ul>
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {types.length === 0 ? (
+        <p className="muted">등록된 과제 유형이 없습니다. 선생님께 문의하세요.</p>
+      ) : (
+        <>
+          <label>과제 유형</label>
+          <select value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} (지정 {t.targetCount}회)
+              </option>
+            ))}
+          </select>
+
+          <label>회차</label>
+          <input
+            type="number"
+            value={round}
+            onChange={(e) => setRound(e.target.value)}
+            placeholder="예: 1"
+          />
+
+          <label>점수 (선택)</label>
+          <input
+            type="number"
+            value={score}
+            onChange={(e) => setScore(e.target.value)}
+            placeholder="예: 88"
+          />
+
+          <label>틀린 문항 번호 (선택, 쉼표로 구분)</label>
+          <input
+            value={wrongNumbersText}
+            onChange={(e) => setWrongNumbersText(e.target.value)}
+            placeholder="예: 3, 17, 40"
+          />
+
+          <div style={{ height: 14 }} />
+          <button className="btn" onClick={submit} disabled={submitting}>
+            {submitting ? "제출 중…" : "제출하기"}
+          </button>
+        </>
+      )}
+      <div style={{ height: 8 }} />
+      <button className="btn ghost" onClick={onBack}>
+        ← 처음으로
+      </button>
     </div>
   );
 }

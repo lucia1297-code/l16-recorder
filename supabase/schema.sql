@@ -32,6 +32,7 @@ create table if not exists students (
   school text not null,
   grade text not null,
   phone text not null,
+  parent_phone text,
   teacher text,
   note text
 );
@@ -59,6 +60,33 @@ create policy "anon submit pending" on pending_registrations for insert to anon 
 create policy "anon upsert pending" on pending_registrations for update to anon using (true);
 create policy "authenticated select pending" on pending_registrations for select to authenticated using (true);
 create policy "authenticated delete pending" on pending_registrations for delete to authenticated using (true);
+
+-- ── 과제 관리 (관리자가 유형/지정개수 관리, 학생이 제출) ────────
+create table if not exists assignment_types (
+  id uuid primary key,
+  name text not null,
+  target_count int not null
+);
+
+create table if not exists assignment_submissions (
+  id uuid primary key,
+  student_code text not null references students(student_code) on delete cascade,
+  type_id uuid not null references assignment_types(id) on delete cascade,
+  round int not null,
+  score int,
+  wrong_numbers jsonb not null default '[]',
+  submitted_at timestamptz not null default now()
+);
+create index if not exists idx_assignment_sub_student on assignment_submissions (student_code);
+create index if not exists idx_assignment_sub_type on assignment_submissions (type_id);
+
+alter table assignment_types enable row level security;
+alter table assignment_submissions enable row level security;
+-- 유형 관리는 관리자만. 제출은 학생이 로그인 없이 하므로 익명 허용.
+create policy "authenticated manage types" on assignment_types for all to authenticated using (true) with check (true);
+create policy "anon insert submissions" on assignment_submissions for insert to anon with check (true);
+create policy "authenticated select submissions" on assignment_submissions for select to authenticated using (true);
+create policy "anon select types" on assignment_types for select to anon using (true);
 
 -- ── OTP 세션 (Edge Function 사용 시에만 필요, supabase/functions 참고) ──
 create table if not exists otp_sessions (
