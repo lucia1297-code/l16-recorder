@@ -15,9 +15,11 @@ import {
   percentScore,
 } from "../../core/logic";
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
+import type { RosterEntry } from "../../core/roster";
 import { useStorage } from "../../lib/useStorage";
 import { OtpService } from "../../lib/otpService";
 import { createSmsProvider } from "../../lib/smsFactory";
+import { createRosterStore } from "../../lib/rosterStoreFactory";
 
 const EMPTY_DRAFT: DraftResult = {
   student: {},
@@ -34,12 +36,18 @@ const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "
 export default function StudentFlow() {
   const storage = useStorage();
   const otp = useMemo(() => new OtpService(createSmsProvider()), []);
+  const rosterStore = useMemo(() => createRosterStore(), []);
   const [draft, setDraft] = useState<DraftResult>(EMPTY_DRAFT);
   const [loaded, setLoaded] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [done, setDone] = useState(false);
   const [phone, setPhone] = useState("");
   const [phoneVerified, setPhoneVerified] = useState(false);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+
+  useEffect(() => {
+    rosterStore.listRoster().then(setRoster);
+  }, [rosterStore]);
 
   // 최초 로드: 저장된 draft 복구
   useEffect(() => {
@@ -158,6 +166,18 @@ export default function StudentFlow() {
           verified={phoneVerified}
           setVerified={setPhoneVerified}
           setErrors={setErrors}
+          roster={roster}
+          onMatched={(entry) =>
+            set({
+              student: {
+                studentCode: entry.studentCode,
+                name: entry.name,
+                school: entry.school,
+                grade: entry.grade,
+              },
+              teacher: entry.teacher || draft.teacher,
+            })
+          }
         />
       )}
       {step === 1 && <StepStudent draft={draft} set={set} />}
@@ -228,6 +248,8 @@ function StepPhoneVerify({
   verified,
   setVerified,
   setErrors,
+  roster,
+  onMatched,
 }: {
   otp: OtpService;
   phone: string;
@@ -235,6 +257,8 @@ function StepPhoneVerify({
   verified: boolean;
   setVerified: (v: boolean) => void;
   setErrors: (e: string[]) => void;
+  roster: RosterEntry[];
+  onMatched: (entry: RosterEntry) => void;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -242,9 +266,21 @@ function StepPhoneVerify({
   const [verifying, setVerifying] = useState(false);
   const [notice, setNotice] = useState("");
 
+  function findRosterMatch(p: string): RosterEntry | null {
+    if (roster.length === 0) return null; // 명부 미등록 상태 = 자유 입력 허용(하위 호환)
+    const digits = normalizePhoneNumber(p);
+    return roster.find((r) => r.phone === digits) ?? null;
+  }
+
   async function requestCode() {
     const errs = validatePhoneNumber(phone);
     if (errs.length) return setErrors(errs);
+
+    if (roster.length > 0 && !findRosterMatch(phone)) {
+      setErrors(["등록되지 않은 번호입니다. 선생님(관리자)에게 문의하세요."]);
+      return;
+    }
+
     setSending(true);
     setErrors([]);
     const r = await otp.requestOtp(phone);
@@ -265,6 +301,8 @@ function StepPhoneVerify({
     if (r.ok) {
       setVerified(true);
       setNotice("전화번호 인증이 완료되었습니다.");
+      const match = findRosterMatch(phone);
+      if (match) onMatched(match);
     } else {
       setErrors([r.error ?? "인증에 실패했습니다."]);
     }

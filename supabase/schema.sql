@@ -25,7 +25,37 @@ create index if not exists idx_results_school on results (school);
 create index if not exists idx_results_exam on results (exam_name);
 create index if not exists idx_results_student on results (student_code);
 
--- 데모/MVP 기준 정책:
+-- ── 학생 명부 (관리자가 엑셀로 업로드) ──────────────────────
+create table if not exists students (
+  student_code text primary key,
+  name text not null,
+  school text not null,
+  grade text not null,
+  phone text not null,
+  teacher text,
+  note text
+);
+create index if not exists idx_students_phone on students (phone);
+
+alter table students enable row level security;
+-- 조회/등록/수정 모두 로그인한 관리자만 가능 (학생은 앱을 통해 간접적으로만 조회됨)
+create policy "authenticated select students" on students for select to authenticated using (true);
+create policy "authenticated upsert students" on students for insert to authenticated with check (true);
+create policy "authenticated update students" on students for update to authenticated using (true);
+create policy "authenticated delete students" on students for delete to authenticated using (true);
+
+-- ── OTP 세션 (Edge Function 사용 시에만 필요, supabase/functions 참고) ──
+create table if not exists otp_sessions (
+  phone text primary key,
+  code text not null,
+  expires_at timestamptz not null,
+  attempts int not null default 0
+);
+alter table otp_sessions enable row level security;
+-- 정책을 추가하지 않음 = anon/authenticated 모두 기본 차단.
+-- Edge Function 은 Service Role 키로 실행되어 RLS 를 우회하므로 정상 동작한다.
+
+-- ── results 테이블 RLS 정책 ──────────────────────
 --  - 학생 제출(insert)은 익명(anon) 허용 — 로그인 없이 폰으로 제출해야 하므로.
 --  - 조회(select)는 인증된 사용자(관리자)만 허용 — Supabase Auth 로그인 필요.
 -- 운영 전 반드시 검토하세요 (예: 학교/강사별 행 단위 제한 추가).

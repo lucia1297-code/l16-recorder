@@ -3,10 +3,12 @@ import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 import { validateLoginInput } from "../../core/authLogic";
+import { parseRosterRows, type RosterEntry } from "../../core/roster";
 import { useStorage } from "../../lib/useStorage";
 import { createAuth } from "../../lib/authFactory";
 import { OtpService } from "../../lib/otpService";
 import { createSmsProvider } from "../../lib/smsFactory";
+import { createRosterStore } from "../../lib/rosterStoreFactory";
 
 const ADMIN_2FA_SESSION_KEY = "asx.admin.2fa";
 
@@ -182,7 +184,7 @@ function maskPhone(phone: string): string {
 function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
-  const [tab, setTab] = useState<"list" | "dash">("list");
+  const [tab, setTab] = useState<"list" | "dash" | "roster">("list");
 
   useEffect(() => {
     storage.listResults().then(setRows);
@@ -197,8 +199,13 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "dash" ? "on" : ""} onClick={() => setTab("dash")}>
           대시보드
         </button>
+        <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
+          명부 관리
+        </button>
       </div>
-      {tab === "list" ? <ResultList rows={rows} /> : <DashboardView rows={rows} />}
+      {tab === "list" && <ResultList rows={rows} />}
+      {tab === "dash" && <DashboardView rows={rows} />}
+      {tab === "roster" && <RosterManager />}
       <button className="btn ghost" style={{ marginTop: 8 }} onClick={onLogout}>
         로그아웃
       </button>
@@ -371,6 +378,183 @@ function DashboardView({ rows }: { rows: ExamResult[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function RosterManager() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [preview, setPreview] = useState<RosterEntry[]>([]);
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    rosterStore.listRoster().then(setRoster);
+  }, [rosterStore]);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setNotice("");
+    const XLSX = await import("xlsx");
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const firstSheet = wb.Sheets[wb.SheetNames[0]];
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
+    const { valid, errors } = parseRosterRows(rows);
+    setPreview(valid);
+    setParseErrors(errors);
+  }
+
+  async function confirmImport() {
+    if (preview.length === 0) return;
+    setSaving(true);
+    await rosterStore.saveRoster(preview);
+    const all = await rosterStore.listRoster();
+    setRoster(all);
+    setSaving(false);
+    setNotice(`${preview.length}명 등록 완료.`);
+    setPreview([]);
+    setParseErrors([]);
+    setFileName("");
+  }
+
+  async function clearAll() {
+    if (!confirm("전체 명부를 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
+    await rosterStore.clearRoster();
+    setRoster([]);
+    setNotice("명부를 초기화했습니다.");
+  }
+
+  async function sendCode(entry: RosterEntry) {
+    setNotice("");
+    // 실제 발송: OtpService 가 감싸는 SmsProvider 를 직접 재사용
+    const provider = createSmsProvider();
+    try {
+      await provider.send(
+        entry.phone,
+        `[ASX] ${entry.name} 학생의 학생코드는 ${entry.studentCode} 입니다.`,
+      );
+      setNotice(`${entry.name} 학생에게 코드를 전송했습니다.`);
+    } catch (e) {
+      setNotice(`전송 실패: ${(e as Error).message}`);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>명부 관리</h2>
+      <p className="sub">
+        엑셀 명부를 업로드하면 학생코드·전화번호가 등록되어, 학생 전화인증 시 등록된 번호만
+        허용됩니다.
+      </p>
+
+      {notice && <p className="muted">{notice}</p>}
+
+      <label>엑셀 파일 선택 (.xlsx)</label>
+      <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} />
+      {fileName && <p className="muted" style={{ fontSize: 13 }}>{fileName}</p>}
+
+      {parseErrors.length > 0 && (
+        <div className="errors">
+          다음 행에 문제가 있어 제외되었습니다:
+          <ul>
+            {parseErrors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {preview.length > 0 && (
+        <>
+          <h3>미리보기 ({preview.length}명)</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>코드</th>
+                  <th>이름</th>
+                  <th>학교</th>
+                  <th>학년</th>
+                  <th>전화번호</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.slice(0, 10).map((e) => (
+                  <tr key={e.studentCode}>
+                    <td>{e.studentCode}</td>
+                    <td>{e.name}</td>
+                    <td>{e.school}</td>
+                    <td>{e.grade}</td>
+                    <td>{e.phone}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {preview.length > 10 && (
+            <p className="muted" style={{ fontSize: 13 }}>
+              외 {preview.length - 10}명…
+            </p>
+          )}
+          <div style={{ height: 10 }} />
+          <button className="btn" onClick={confirmImport} disabled={saving}>
+            {saving ? "등록 중…" : `${preview.length}명 등록하기`}
+          </button>
+        </>
+      )}
+
+      <div style={{ height: 20 }} />
+      <h3>등록된 명부 ({roster.length}명)</h3>
+      {roster.length === 0 ? (
+        <p className="muted">아직 등록된 학생이 없습니다.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>코드</th>
+                <th>이름</th>
+                <th>학교</th>
+                <th>전화번호</th>
+                <th>문자발송</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((e) => (
+                <tr key={e.studentCode}>
+                  <td>{e.studentCode}</td>
+                  <td>{e.name}</td>
+                  <td>{e.school}</td>
+                  <td>{e.phone}</td>
+                  <td>
+                    <button
+                      className="btn ghost"
+                      style={{ padding: "4px 8px", fontSize: 12 }}
+                      onClick={() => sendCode(e)}
+                    >
+                      전송
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {roster.length > 0 && (
+        <>
+          <div style={{ height: 10 }} />
+          <button className="btn secondary" onClick={clearAll}>
+            명부 전체 삭제
+          </button>
+        </>
+      )}
     </div>
   );
 }
