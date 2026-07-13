@@ -405,7 +405,8 @@ function RosterManager() {
     const wb = XLSX.read(buf, { type: "array" });
     const firstSheet = wb.Sheets[wb.SheetNames[0]];
     const rows: unknown[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
-    const { valid, errors } = parseRosterRows(rows);
+    const existingCodes = roster.map((r) => r.studentCode);
+    const { valid, errors } = parseRosterRows(rows, existingCodes);
     setPreview(valid);
     setParseErrors(errors);
   }
@@ -473,6 +474,9 @@ function RosterManager() {
       {preview.length > 0 && (
         <>
           <h3>미리보기 ({preview.length}명)</h3>
+          <p className="muted" style={{ fontSize: 13 }}>
+            학생코드를 비워둔 행은 자동으로 코드가 생성되었습니다.
+          </p>
           <div className="table-wrap">
             <table>
               <thead>
