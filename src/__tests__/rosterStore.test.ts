@@ -47,6 +47,16 @@ describe("LocalRosterStore", () => {
     expect(all[0].name).toBe("new name");
   });
 
+  it("when a student's phone number changes, the old number stops matching and the new one works immediately", async () => {
+    const store = new LocalRosterStore();
+    await store.saveRoster([entry({ phone: "01011112222" })]);
+    expect((await store.findByPhone("01011112222"))?.studentCode).toBe("S1023");
+
+    await store.saveRoster([entry({ phone: "01099998888" })]);
+    expect(await store.findByPhone("01011112222")).toBeNull();
+    expect((await store.findByPhone("01099998888"))?.studentCode).toBe("S1023");
+  });
+
   it("clears the roster", async () => {
     const store = new LocalRosterStore();
     await store.saveRoster([entry()]);

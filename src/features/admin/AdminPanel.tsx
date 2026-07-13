@@ -3,6 +3,7 @@ import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 import { validateLoginInput } from "../../core/authLogic";
+import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
 import { parseRosterRows, type RosterEntry } from "../../core/roster";
 import { useStorage } from "../../lib/useStorage";
 import { createAuth } from "../../lib/authFactory";
@@ -390,6 +391,9 @@ function RosterManager() {
   const [fileName, setFileName] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [editPhone, setEditPhone] = useState("");
+  const [editError, setEditError] = useState("");
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
@@ -444,6 +448,31 @@ function RosterManager() {
     } catch (e) {
       setNotice(`전송 실패: ${(e as Error).message}`);
     }
+  }
+
+  function startEdit(entry: RosterEntry) {
+    setEditingCode(entry.studentCode);
+    setEditPhone(entry.phone);
+    setEditError("");
+  }
+
+  function cancelEdit() {
+    setEditingCode(null);
+    setEditPhone("");
+    setEditError("");
+  }
+
+  async function savePhone(entry: RosterEntry) {
+    const errs = validatePhoneNumber(editPhone);
+    if (errs.length) return setEditError(errs[0]);
+    const newPhone = normalizePhoneNumber(editPhone);
+    await rosterStore.saveRoster([{ ...entry, phone: newPhone }]);
+    const all = await rosterStore.listRoster();
+    setRoster(all);
+    setNotice(
+      `${entry.name} 학생 번호를 변경했습니다. 기존 번호는 더 이상 사용할 수 없고, 새 번호로 바로 인증할 수 있습니다.`,
+    );
+    cancelEdit();
   }
 
   return (
@@ -526,7 +555,7 @@ function RosterManager() {
                 <th>이름</th>
                 <th>학교</th>
                 <th>전화번호</th>
-                <th>문자발송</th>
+                <th>관리</th>
               </tr>
             </thead>
             <tbody>
@@ -535,15 +564,59 @@ function RosterManager() {
                   <td>{e.studentCode}</td>
                   <td>{e.name}</td>
                   <td>{e.school}</td>
-                  <td>{e.phone}</td>
                   <td>
-                    <button
-                      className="btn ghost"
-                      style={{ padding: "4px 8px", fontSize: 12 }}
-                      onClick={() => sendCode(e)}
-                    >
-                      전송
-                    </button>
+                    {editingCode === e.studentCode ? (
+                      <div>
+                        <input
+                          value={editPhone}
+                          onChange={(ev) => setEditPhone(ev.target.value)}
+                          placeholder="010-1234-5678"
+                          style={{ padding: 6, fontSize: 13, width: 130 }}
+                        />
+                        {editError && (
+                          <div style={{ color: "var(--red)", fontSize: 11 }}>{editError}</div>
+                        )}
+                      </div>
+                    ) : (
+                      e.phone
+                    )}
+                  </td>
+                  <td>
+                    {editingCode === e.studentCode ? (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => savePhone(e)}
+                        >
+                          저장
+                        </button>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={cancelEdit}
+                        >
+                          취소
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => startEdit(e)}
+                        >
+                          번호수정
+                        </button>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => sendCode(e)}
+                        >
+                          전송
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
