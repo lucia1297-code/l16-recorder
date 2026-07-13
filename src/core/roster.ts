@@ -96,3 +96,70 @@ export function parseRosterRows(
 
   return { valid, errors };
 }
+
+export interface ManualEntryInput {
+  studentCode?: string;
+  name: string;
+  school: string;
+  grade: string;
+  phone: string;
+  teacher?: string;
+}
+
+export interface BuildManualEntryResult {
+  entry?: RosterEntry;
+  errors: string[];
+}
+
+/**
+ * 관리자가 명부 관리 화면에서 학생 한 명을 즉시 수동 등록할 때 사용.
+ * parseRosterRows 와 동일한 검증/코드생성 규칙을 한 건짜리 입력에 적용한다.
+ */
+export function buildManualEntry(
+  input: ManualEntryInput,
+  existingCodes: string[],
+): BuildManualEntryResult {
+  const errors: string[] = [];
+  const name = input.name.trim();
+  const school = input.school.trim();
+  const grade = input.grade.trim();
+  const teacher = (input.teacher ?? "").trim();
+  const studentCodeRaw = (input.studentCode ?? "").trim();
+
+  const missing: string[] = [];
+  if (!name) missing.push("이름");
+  if (!school) missing.push("학교");
+  if (!grade) missing.push("학년");
+  if (missing.length > 0) {
+    errors.push(`${missing.join(", ")} 값이 비어 있습니다.`);
+    return { errors };
+  }
+
+  const phoneErrs = validatePhoneNumber(input.phone);
+  if (phoneErrs.length > 0) {
+    errors.push(phoneErrs[0]);
+    return { errors };
+  }
+
+  const codePool = new Set(existingCodes.map((c) => c.trim()));
+  let studentCode = studentCodeRaw;
+  if (!studentCode) {
+    studentCode = generateStudentCode(codePool);
+  } else if (codePool.has(studentCode)) {
+    errors.push(`학생코드 "${studentCode}" 가 이미 등록된 코드와 중복됩니다.`);
+    return { errors };
+  }
+
+  return {
+    entry: {
+      studentCode,
+      name,
+      school,
+      grade,
+      phone: normalizePhoneNumber(input.phone),
+      teacher,
+      note: "관리자 직접 등록",
+    },
+    errors: [],
+  };
+}

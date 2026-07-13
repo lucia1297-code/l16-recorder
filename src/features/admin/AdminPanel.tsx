@@ -4,7 +4,7 @@ import { WRONG_REASON_LABELS } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 import { validateLoginInput } from "../../core/authLogic";
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, type RosterEntry } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
@@ -408,6 +408,16 @@ function RosterManager() {
   const [editPhone, setEditPhone] = useState("");
   const [editError, setEditError] = useState("");
 
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addCode, setAddCode] = useState("");
+  const [addName, setAddName] = useState("");
+  const [addSchool, setAddSchool] = useState("");
+  const [addGrade, setAddGrade] = useState("");
+  const [addPhone, setAddPhone] = useState("");
+  const [addTeacher, setAddTeacher] = useState("");
+  const [addErrors, setAddErrors] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
+
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
   }, [rosterStore]);
@@ -488,6 +498,37 @@ function RosterManager() {
     cancelEdit();
   }
 
+  async function addStudent() {
+    const { entry, errors } = buildManualEntry(
+      {
+        studentCode: addCode,
+        name: addName,
+        school: addSchool,
+        grade: addGrade,
+        phone: addPhone,
+        teacher: addTeacher,
+      },
+      roster.map((r) => r.studentCode),
+    );
+    if (!entry) {
+      setAddErrors(errors);
+      return;
+    }
+    setAdding(true);
+    setAddErrors([]);
+    await rosterStore.saveRoster([entry]);
+    const all = await rosterStore.listRoster();
+    setRoster(all);
+    setAdding(false);
+    setNotice(`${entry.name} 학생을 등록했습니다. (코드: ${entry.studentCode})`);
+    setAddCode("");
+    setAddName("");
+    setAddSchool("");
+    setAddGrade("");
+    setAddPhone("");
+    setAddTeacher("");
+  }
+
   return (
     <div className="card">
       <h2>명부 관리</h2>
@@ -498,6 +539,59 @@ function RosterManager() {
 
       {notice && <p className="muted">{notice}</p>}
 
+      <div style={{ display: "flex", gap: 10 }}>
+        <button className="btn secondary" onClick={() => setShowAddForm((v) => !v)}>
+          {showAddForm ? "학생 직접 추가 닫기" : "+ 학생 직접 추가"}
+        </button>
+      </div>
+
+      {showAddForm && (
+        <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginTop: 12 }}>
+          <h3 style={{ marginTop: 0 }}>학생 직접 추가</h3>
+          <p className="muted" style={{ fontSize: 13 }}>
+            엑셀 없이 학생 한 명을 바로 등록합니다. 학생코드는 비워두면 자동 생성됩니다.
+          </p>
+          {addErrors.length > 0 && (
+            <div className="errors">
+              <ul>
+                {addErrors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <label>학생코드 (선택)</label>
+          <input value={addCode} onChange={(e) => setAddCode(e.target.value)} placeholder="비워두면 자동 생성" />
+          <label>이름</label>
+          <input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="이름" />
+          <div className="row">
+            <div>
+              <label>학교</label>
+              <input value={addSchool} onChange={(e) => setAddSchool(e.target.value)} placeholder="예: 창동고" />
+            </div>
+            <div>
+              <label>학년</label>
+              <select value={addGrade} onChange={(e) => setAddGrade(e.target.value)}>
+                <option value="">선택</option>
+                <option value="1">1학년</option>
+                <option value="2">2학년</option>
+                <option value="3">3학년</option>
+                <option value="N">N수</option>
+              </select>
+            </div>
+          </div>
+          <label>휴대폰번호</label>
+          <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="010-1234-5678" />
+          <label>담당교사 (선택)</label>
+          <input value={addTeacher} onChange={(e) => setAddTeacher(e.target.value)} placeholder="예: 김민수" />
+          <div style={{ height: 12 }} />
+          <button className="btn" onClick={addStudent} disabled={adding}>
+            {adding ? "등록 중…" : "등록하기"}
+          </button>
+        </div>
+      )}
+
+      <div style={{ height: 20 }} />
       <label>엑셀 파일 선택 (.xlsx)</label>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} />
       {fileName && <p className="muted" style={{ fontSize: 13 }}>{fileName}</p>}
