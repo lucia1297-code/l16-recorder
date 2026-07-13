@@ -24,7 +24,7 @@ describe("buildManualEntry", () => {
       ["S1005"],
     );
     expect(errors.length).toBe(0);
-    expect(entry?.studentCode).toBe("S1006");
+    expect(entry?.studentCode).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
   });
 
   it("rejects when required fields are missing", () => {

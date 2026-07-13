@@ -1,21 +1,33 @@
-const CODE_RE = /^S(\d+)$/i;
-const START = 1001;
+// 0, 1, I, O, L 제외 — 학생이 문자로 받아 직접 타이핑할 때 헷갈리기 쉬운 문자를 뺐다.
+export const CODE_CHARSET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+export const CODE_LENGTH = 8;
 
 /**
- * 기존 학생코드 목록을 보고 다음 코드를 "S1001" 형식으로 생성한다.
- * S로 시작하고 숫자로 끝나는 코드만 인식하며, 그중 최댓값+1을 사용한다.
- * 기존 코드가 하나도 없으면 S1001 부터 시작한다.
+ * 무작위 8자리 영숫자 코드를 생성한다 (암호처럼 보이는, 순번이 아닌 코드).
  */
-export function generateStudentCode(existingCodes: Iterable<string>): string {
-  let max = START - 1;
-  for (const code of existingCodes) {
-    const m = CODE_RE.exec(code.trim());
-    if (m) {
-      const n = parseInt(m[1], 10);
-      if (n > max) max = n;
-    }
+export function generateRandomCode(): string {
+  let code = "";
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    const idx = Math.floor(Math.random() * CODE_CHARSET.length);
+    code += CODE_CHARSET[idx];
   }
-  const next = max + 1;
-  const digits = Math.max(4, String(next).length);
-  return "S" + String(next).padStart(digits, "0");
+  return code;
+}
+
+/**
+ * 기존 학생코드 목록과 겹치지 않는 무작위 8자리 코드를 생성한다.
+ * codeGenerator 를 주입하면 테스트에서 결정적으로 검증할 수 있다.
+ */
+export function generateStudentCode(
+  existingCodes: Iterable<string>,
+  codeGenerator: () => string = generateRandomCode,
+): string {
+  const existing = new Set(Array.from(existingCodes, (c) => c.trim().toUpperCase()));
+  let code = codeGenerator();
+  let attempts = 0;
+  while (existing.has(code.toUpperCase()) && attempts < 1000) {
+    code = codeGenerator();
+    attempts++;
+  }
+  return code;
 }

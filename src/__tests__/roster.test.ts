@@ -28,10 +28,10 @@ describe("parseRosterRows", () => {
     const { valid, errors } = parseRosterRows(rows);
     expect(errors.length).toBe(0);
     expect(valid.length).toBe(1);
-    expect(valid[0].studentCode).toMatch(/^S\d{4,}$/);
+    expect(valid[0].studentCode).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
   });
 
-  it("auto-generated codes continue from existing codes and never collide within the file", () => {
+  it("auto-generated codes never collide with existing or each other within the file", () => {
     const rows = [
       HEADER,
       ["S1005", "기존학생", "창동고", "3", "010-0000-0001", "", ""],
@@ -43,9 +43,9 @@ describe("parseRosterRows", () => {
     expect(valid.length).toBe(3);
     const codes = valid.map((v) => v.studentCode);
     expect(new Set(codes).size).toBe(3); // 전부 고유
-    expect(codes).toContain("S1005");
-    expect(codes).toContain("S1006");
-    expect(codes).toContain("S1007");
+    expect(codes).toContain("S1005"); // 명시적으로 지정한 코드는 그대로 유지
+    expect(codes[1]).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
+    expect(codes[2]).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
   });
 
   it("does not overwrite an explicitly given student code", () => {
