@@ -168,8 +168,14 @@ export default function StudentFlow() {
   if (done) {
     return (
       <div className="card done">
-        <div className="check">✅</div>
-        <h2>제출 완료!</h2>
+        <div className="stamp-wrap">
+          <div className="stamp-ring" />
+          <div className="stamp">
+            <span className="stamp-text">제출완료</span>
+            <span className="stamp-sub">ASX RECORDER</span>
+          </div>
+        </div>
+        <h2>제출이 완료됐습니다</h2>
         <p className="muted">시험 결과가 저장되었습니다.</p>
         <button className="btn" onClick={restart}>
           새로 입력하기

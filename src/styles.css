@@ -21,6 +21,8 @@
   --line: #e4ded2;
   --line-strong: #cfc6b4;
   --highlight: #f4ecd8;
+  --stamp: #a8422f;      /* 전통 인주(관인) 색 — 완료 도장 전용, 오답 빨강과 구분 */
+  --stamp-deep: #7d2f21;
 
   /* Type */
   --font-display: "Noto Serif KR", "Georgia", serif;
@@ -211,8 +213,55 @@ textarea { min-height: 92px; resize: vertical; }
 .star:hover { transform: scale(1.08); }
 .star.on { color: var(--amber); }
 
-.done { text-align: center; padding: 28px 0; }
-.done .check { font-size: 52px; margin-bottom: 4px; }
+.done { text-align: center; padding: 36px 0 12px; }
+
+/* ── 제출완료: 답안지 채점 도장 연출 ──────────────────────── */
+.stamp-wrap { position: relative; display: flex; justify-content: center; margin-bottom: 8px; }
+
+.stamp-ring {
+  position: absolute; width: 132px; height: 132px; border-radius: 50%;
+  border: 2px solid var(--stamp); opacity: 0;
+  animation: inkRing 0.9s var(--ease) 0.15s both;
+}
+
+.stamp {
+  position: relative; width: 132px; height: 132px; border-radius: 50%;
+  border: 3px solid var(--stamp); color: var(--stamp);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  transform: rotate(-6deg);
+  animation: stampIn 0.5s cubic-bezier(0.3, 1.6, 0.4, 1) both;
+}
+.stamp::before {
+  content: ""; position: absolute; inset: 8px; border-radius: 50%;
+  border: 1px solid var(--stamp); opacity: 0.55;
+}
+.stamp .stamp-text {
+  font-size: 19px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.3;
+}
+.stamp .stamp-sub {
+  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; opacity: 0.7;
+}
+
+@keyframes stampIn {
+  0%   { opacity: 0; transform: scale(2.2) rotate(-18deg); }
+  55%  { opacity: 1; transform: scale(0.9) rotate(-4deg); }
+  75%  { transform: scale(1.06) rotate(-7deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+@keyframes inkRing {
+  0%   { opacity: 0.5; transform: scale(0.6); }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+
+.done h2 { animation: staggerIn 0.4s var(--ease) 0.35s both; }
+.done .muted { animation: staggerIn 0.4s var(--ease) 0.45s both; }
+.done .btn { animation: staggerIn 0.4s var(--ease) 0.55s both; }
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 /* ── Admin shell : 모바일 탭 → PC 좌측 레일 ──────────────────── */
 .admin-shell { display: block; }
