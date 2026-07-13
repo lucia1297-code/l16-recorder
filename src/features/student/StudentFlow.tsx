@@ -199,40 +199,42 @@ export default function StudentFlow() {
         </div>
       )}
 
-      {step === 0 && (
-        <StepPhoneVerify
-          otp={otp}
-          pendingStore={pendingStore}
-          phone={phone}
-          setPhone={setPhone}
-          verified={phoneVerified}
-          setVerified={setPhoneVerified}
-          setErrors={setErrors}
-          roster={roster}
-          matched={matched}
-          onMatched={(entry) => {
-            setMatched(true);
-            set({
-              student: {
-                studentCode: entry.studentCode,
-                name: entry.name,
-                school: entry.school,
-                grade: entry.grade,
-              },
-              teacher: entry.teacher || draft.teacher,
-            });
-          }}
-          onCheckApproval={refreshRoster}
-        />
-      )}
-      {step === 1 && <StepStudent draft={draft} set={set} />}
-      {step === 2 && <StepSchool draft={draft} set={set} />}
-      {step === 3 && <StepExam draft={draft} set={set} />}
-      {step === 4 && <StepScore draft={draft} set={set} />}
-      {step === 5 && <StepWrongNumbers draft={draft} set={set} />}
-      {step === 6 && <StepWrongReasons draft={draft} set={set} />}
-      {step === 7 && <StepReflection draft={draft} set={set} />}
-      {step === 8 && <StepReview draft={draft} />}
+      <div key={step} className="step-fade">
+        {step === 0 && (
+          <StepPhoneVerify
+            otp={otp}
+            pendingStore={pendingStore}
+            phone={phone}
+            setPhone={setPhone}
+            verified={phoneVerified}
+            setVerified={setPhoneVerified}
+            setErrors={setErrors}
+            roster={roster}
+            matched={matched}
+            onMatched={(entry) => {
+              setMatched(true);
+              set({
+                student: {
+                  studentCode: entry.studentCode,
+                  name: entry.name,
+                  school: entry.school,
+                  grade: entry.grade,
+                },
+                teacher: entry.teacher || draft.teacher,
+              });
+            }}
+            onCheckApproval={refreshRoster}
+          />
+        )}
+        {step === 1 && <StepStudent draft={draft} set={set} />}
+        {step === 2 && <StepSchool draft={draft} set={set} />}
+        {step === 3 && <StepExam draft={draft} set={set} />}
+        {step === 4 && <StepScore draft={draft} set={set} />}
+        {step === 5 && <StepWrongNumbers draft={draft} set={set} />}
+        {step === 6 && <StepWrongReasons draft={draft} set={set} />}
+        {step === 7 && <StepReflection draft={draft} set={set} />}
+        {step === 8 && <StepReview draft={draft} />}
+      </div>
 
       <div className="nav-buttons">
         {step > 0 && (

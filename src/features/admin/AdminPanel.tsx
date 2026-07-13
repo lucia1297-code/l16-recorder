@@ -201,8 +201,8 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   }, [pendingStore, tab]);
 
   return (
-    <>
-      <div className="tabs">
+    <div className="admin-shell">
+      <div className="tabs admin-rail">
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
           학생 목록
         </button>
@@ -215,15 +215,17 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
+        <button className="btn ghost" onClick={onLogout}>
+          로그아웃
+        </button>
       </div>
-      {tab === "list" && <ResultList rows={rows} />}
-      {tab === "dash" && <DashboardView rows={rows} />}
-      {tab === "roster" && <RosterManager />}
-      {tab === "pending" && <PendingManager />}
-      <button className="btn ghost" style={{ marginTop: 8 }} onClick={onLogout}>
-        로그아웃
-      </button>
-    </>
+      <div className="admin-content" key={tab}>
+        {tab === "list" && <ResultList rows={rows} />}
+        {tab === "dash" && <DashboardView rows={rows} />}
+        {tab === "roster" && <RosterManager />}
+        {tab === "pending" && <PendingManager />}
+      </div>
+    </div>
   );
 }
 

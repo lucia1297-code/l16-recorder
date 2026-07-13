@@ -13,8 +13,8 @@ export default defineConfig({
         name: "ASX Student Recorder Lite",
         short_name: "ASX Recorder",
         description: "학생 시험 결과 및 오답 기록 앱",
-        theme_color: "#2563eb",
-        background_color: "#ffffff",
+        theme_color: "#2B4C7E",
+        background_color: "#FAF9F6",
         display: "standalone",
         start_url: "/",
         icons: [
