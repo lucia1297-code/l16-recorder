@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   DraftResult,
   ExamResult,
@@ -14,7 +14,10 @@ import {
   validateReflection,
   percentScore,
 } from "../../core/logic";
+import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
 import { useStorage } from "../../lib/useStorage";
+import { OtpService } from "../../lib/otpService";
+import { createSmsProvider } from "../../lib/smsFactory";
 
 const EMPTY_DRAFT: DraftResult = {
   student: {},
@@ -26,19 +29,25 @@ const EMPTY_DRAFT: DraftResult = {
   step: 0,
 };
 
-const STEPS = ["학생", "학교·학년", "시험", "총점", "오답번호", "오답원인", "회고", "제출"];
+const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "오답번호", "오답원인", "회고", "제출"];
 
 export default function StudentFlow() {
   const storage = useStorage();
+  const otp = useMemo(() => new OtpService(createSmsProvider()), []);
   const [draft, setDraft] = useState<DraftResult>(EMPTY_DRAFT);
   const [loaded, setLoaded] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [done, setDone] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [phoneVerified, setPhoneVerified] = useState(false);
 
   // 최초 로드: 저장된 draft 복구
   useEffect(() => {
     storage.loadDraft().then((d) => {
-      if (d) setDraft(d);
+      if (d) {
+        setDraft(d);
+        if (d.phone) setPhone(d.phone);
+      }
       setLoaded(true);
     });
   }, [storage]);
@@ -48,15 +57,28 @@ export default function StudentFlow() {
     if (loaded) storage.saveDraft(draft);
   }, [draft, loaded, storage]);
 
+  useEffect(() => {
+    if (phone) setPhoneVerified(otp.isVerified(phone));
+    if (loaded && phone !== draft.phone) set({ phone });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, otp, loaded]);
+
   const step = draft.step;
   const set = (patch: Partial<DraftResult>) =>
     setDraft((d) => ({ ...d, ...patch }));
 
   function next() {
-    const errs = validateStep(step, draft);
-    if (errs.length) {
-      setErrors(errs);
-      return;
+    if (step === 0) {
+      if (!phoneVerified) {
+        setErrors(["전화번호 인증을 완료하세요."]);
+        return;
+      }
+    } else {
+      const errs = validateStep(step, draft);
+      if (errs.length) {
+        setErrors(errs);
+        return;
+      }
     }
     setErrors([]);
     set({ step: Math.min(step + 1, STEPS.length - 1) });
@@ -67,7 +89,7 @@ export default function StudentFlow() {
   }
 
   async function submit() {
-    const errs = validateStep(6, draft);
+    const errs = validateStep(7, draft);
     if (errs.length) return setErrors(errs);
     const result: ExamResult = {
       id: crypto.randomUUID(),
@@ -88,6 +110,8 @@ export default function StudentFlow() {
   function restart() {
     setDraft(EMPTY_DRAFT);
     setDone(false);
+    setPhone("");
+    setPhoneVerified(false);
   }
 
   if (!loaded) return <div className="card">불러오는 중…</div>;
@@ -126,14 +150,24 @@ export default function StudentFlow() {
         </div>
       )}
 
-      {step === 0 && <StepStudent draft={draft} set={set} />}
-      {step === 1 && <StepSchool draft={draft} set={set} />}
-      {step === 2 && <StepExam draft={draft} set={set} />}
-      {step === 3 && <StepScore draft={draft} set={set} />}
-      {step === 4 && <StepWrongNumbers draft={draft} set={set} />}
-      {step === 5 && <StepWrongReasons draft={draft} set={set} />}
-      {step === 6 && <StepReflection draft={draft} set={set} />}
-      {step === 7 && <StepReview draft={draft} />}
+      {step === 0 && (
+        <StepPhoneVerify
+          otp={otp}
+          phone={phone}
+          setPhone={setPhone}
+          verified={phoneVerified}
+          setVerified={setPhoneVerified}
+          setErrors={setErrors}
+        />
+      )}
+      {step === 1 && <StepStudent draft={draft} set={set} />}
+      {step === 2 && <StepSchool draft={draft} set={set} />}
+      {step === 3 && <StepExam draft={draft} set={set} />}
+      {step === 4 && <StepScore draft={draft} set={set} />}
+      {step === 5 && <StepWrongNumbers draft={draft} set={set} />}
+      {step === 6 && <StepWrongReasons draft={draft} set={set} />}
+      {step === 7 && <StepReflection draft={draft} set={set} />}
+      {step === 8 && <StepReview draft={draft} />}
 
       <div className="nav-buttons">
         {step > 0 && (
@@ -142,7 +176,7 @@ export default function StudentFlow() {
           </button>
         )}
         {step < STEPS.length - 1 ? (
-          <button className="btn" onClick={next}>
+          <button className="btn" onClick={next} disabled={step === 0 && !phoneVerified}>
             다음
           </button>
         ) : (
@@ -157,27 +191,27 @@ export default function StudentFlow() {
 
 function validateStep(step: number, d: DraftResult): string[] {
   switch (step) {
-    case 0:
+    case 1:
       return validateStudentInfo({
         ...d.student,
         school: d.student.school ?? "placeholder",
         grade: d.student.grade ?? "placeholder",
       }).filter((e) => e.includes("학생코드") || e.includes("이름"));
-    case 1:
+    case 2:
       return validateStudentInfo({
         ...d.student,
         studentCode: d.student.studentCode ?? "x",
         name: d.student.name ?? "x",
       }).filter((e) => e.includes("학교") || e.includes("학년"));
-    case 2:
-      return validateExamInfo(d.exam);
     case 3:
-      return d.score == null || d.score < 0 ? ["총점을 입력하세요."] : [];
+      return validateExamInfo(d.exam);
     case 4:
-      return []; // 오답 0개 허용 (만점)
+      return d.score == null || d.score < 0 ? ["총점을 입력하세요."] : [];
     case 5:
-      return [];
+      return []; // 오답 0개 허용 (만점)
     case 6:
+      return [];
+    case 7:
       return validateReflection(d.reflection);
     default:
       return [];
@@ -186,6 +220,110 @@ function validateStep(step: number, d: DraftResult): string[] {
 
 // ---------- Step components ----------
 type StepProps = { draft: DraftResult; set: (p: Partial<DraftResult>) => void };
+
+function StepPhoneVerify({
+  otp,
+  phone,
+  setPhone,
+  verified,
+  setVerified,
+  setErrors,
+}: {
+  otp: OtpService;
+  phone: string;
+  setPhone: (v: string) => void;
+  verified: boolean;
+  setVerified: (v: boolean) => void;
+  setErrors: (e: string[]) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  async function requestCode() {
+    const errs = validatePhoneNumber(phone);
+    if (errs.length) return setErrors(errs);
+    setSending(true);
+    setErrors([]);
+    const r = await otp.requestOtp(phone);
+    setSending(false);
+    if (r.ok) {
+      setSent(true);
+      setNotice("인증번호를 전송했습니다. 5분 이내에 입력하세요.");
+    } else {
+      setErrors([r.error ?? "인증번호 전송에 실패했습니다."]);
+    }
+  }
+
+  async function verifyCode() {
+    setVerifying(true);
+    setErrors([]);
+    const r = await otp.verifyOtp(phone, code);
+    setVerifying(false);
+    if (r.ok) {
+      setVerified(true);
+      setNotice("전화번호 인증이 완료되었습니다.");
+    } else {
+      setErrors([r.error ?? "인증에 실패했습니다."]);
+    }
+  }
+
+  if (verified) {
+    return (
+      <div>
+        <p className="muted">
+          ✅ <b>{phone}</b> 인증 완료
+        </p>
+        <p className="muted" style={{ fontSize: 13 }}>
+          다음 단계로 진행하세요.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <p className="muted">본인 확인을 위해 휴대폰 번호 인증이 필요합니다.</p>
+      <label>휴대폰 번호</label>
+      <input
+        value={phone}
+        placeholder="010-1234-5678"
+        onChange={(e) => {
+          setPhone(e.target.value);
+          setSent(false);
+        }}
+      />
+      <div style={{ height: 10 }} />
+      <button className="btn secondary" onClick={requestCode} disabled={sending || !phone}>
+        {sending ? "전송 중…" : sent ? "인증번호 재전송" : "인증번호 받기"}
+      </button>
+
+      {sent && (
+        <>
+          <label>인증번호 (6자리)</label>
+          <input
+            value={code}
+            placeholder="123456"
+            inputMode="numeric"
+            maxLength={6}
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <div style={{ height: 10 }} />
+          <button className="btn" onClick={verifyCode} disabled={verifying || code.length !== 6}>
+            {verifying ? "확인 중…" : "인증 확인"}
+          </button>
+        </>
+      )}
+      {notice && (
+        <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>
+          {notice}
+        </p>
+      )}
+    </>
+  );
+}
 
 function StepStudent({ draft, set }: StepProps) {
   const s = draft.student;

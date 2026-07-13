@@ -31,7 +31,7 @@ manifest + service worker, 모바일 홈화면 설치 가능, 오프라인 작�
 ## 테스트 (TDD)
 
 ```bash
-npm test          # 19개 테스트 (통계/CSV/검증/스토리지/인증)
+npm test          # 34개 테스트 (통계/CSV/검증/스토리지/인증/OTP)
 ```
 
 ## 빌드
@@ -54,7 +54,24 @@ npm run preview   # 빌드 결과 로컬 미리보기
 - Supabase 대시보드 > Authentication > Users 에서 관리자 계정을 미리 만들어두세요
 - 세션은 Supabase가 관리 (로그아웃 버튼 제공)
 
-## Supabase 로 전환 (선택)
+## 전화번호 인증 (OTP)
+
+**학생**: 8단계 플로우 맨 앞에 "전화인증" 단계가 추가되었습니다. 휴대폰 번호 입력 → 인증번호 받기 → 6자리 입력 → 인증 완료 후에만 다음 단계로 진행합니다.
+
+**관리자**: 로그인(비밀번호 또는 Supabase Auth) 성공 후, `.env`에 `VITE_ADMIN_PHONE`이 설정돼 있으면 2단계 인증(OTP)이 자동으로 요구됩니다. 미설정 시 2단계 인증은 건너뜁니다.
+
+**SMS 발송 — 알리고(Aligo)**
+- `.env`에 `VITE_ALIGO_API_KEY`, `VITE_ALIGO_USER_ID`, `VITE_ALIGO_SENDER`를 모두 채우면 실제 문자가 발송됩니다.
+- 하나라도 비어있으면 실제 발송 대신 **브라우저 콘솔에 인증번호가 출력**됩니다 (데모/오늘 바로 테스트 가능).
+- 발급: https://smartsms.aligo.in (일반 학원에서 널리 쓰는 국내 SMS API)
+
+**⚠️ 보안 주의사항 (지금 구현의 한계, 정직하게 안내)**
+- 현재 구현은 **클라이언트(브라우저)에서 직접** Aligo API를 호출합니다. 즉 `.env`에 넣은 API 키가 브라우저 네트워크 요청에 노출됩니다. 빠른 테스트/데모에는 문제없지만, **실제 학생들에게 배포하기 전에는 반드시 서버 뒤로 옮기세요.**
+- 인증번호 세션도 현재는 **localStorage**에 저장됩니다 (개발자도구로 열람 가능). 운영 수준 보안이 아닙니다.
+- 운영 전환용 템플릿을 `supabase/functions/send-otp/index.ts`, `supabase/functions/verify-otp/index.ts`에 제공했습니다. 이 두 Edge Function을 배포하면 API 키와 인증번호가 서버에만 존재하게 됩니다. (배포: `supabase functions deploy send-otp` 등 — 이 환경에서는 Supabase CLI/API에 접속할 수 없어 제가 직접 배포·테스트하지 못했습니다.)
+- 이 환경(제가 코드를 작성하는 샌드박스)은 Aligo·Supabase API 서버에 네트워크 접근이 차단되어 있어, **실제 문자 발송이 되는지는 제가 직접 확인하지 못했습니다.** 선생님 PC에서 `.env`를 채우고 `npm run dev`로 직접 테스트해 주세요.
+
+
 
 1. Supabase 프로젝트 생성 후 `supabase/schema.sql` 을 SQL Editor 에서 실행
    - RLS 정책: 학생 제출(insert)은 익명 허용, 조회(select)는 로그인한 관리자만 허용

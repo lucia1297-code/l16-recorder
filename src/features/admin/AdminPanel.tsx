@@ -5,12 +5,42 @@ import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 import { validateLoginInput } from "../../core/authLogic";
 import { useStorage } from "../../lib/useStorage";
 import { createAuth } from "../../lib/authFactory";
+import { OtpService } from "../../lib/otpService";
+import { createSmsProvider } from "../../lib/smsFactory";
+
+const ADMIN_2FA_SESSION_KEY = "asx.admin.2fa";
 
 export default function AdminPanel() {
   const auth = useMemo(() => createAuth(), []);
+  const otp = useMemo(() => new OtpService(createSmsProvider()), []);
+  const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
+
   const [authed, setAuthed] = useState(() => auth.isLoggedIn());
+  const [twoFactorOk, setTwoFactorOk] = useState(
+    () => !adminPhone || sessionStorage.getItem(ADMIN_2FA_SESSION_KEY) === "1",
+  );
+
+  function handleLogout() {
+    auth.logout();
+    sessionStorage.removeItem(ADMIN_2FA_SESSION_KEY);
+    setAuthed(false);
+    setTwoFactorOk(!adminPhone);
+  }
+
   if (!authed) return <Login auth={auth} onOk={() => setAuthed(true)} />;
-  return <AdminHome onLogout={() => { auth.logout(); setAuthed(false); }} />;
+  if (!twoFactorOk && adminPhone)
+    return (
+      <TwoFactorStep
+        otp={otp}
+        phone={adminPhone}
+        onOk={() => {
+          sessionStorage.setItem(ADMIN_2FA_SESSION_KEY, "1");
+          setTwoFactorOk(true);
+        }}
+        onCancel={handleLogout}
+      />
+    );
+  return <AdminHome onLogout={handleLogout} />;
 }
 
 function Login({ auth, onOk }: { auth: ReturnType<typeof createAuth>; onOk: () => void }) {
@@ -63,6 +93,90 @@ function Login({ auth, onOk }: { auth: ReturnType<typeof createAuth>; onOk: () =
       )}
     </div>
   );
+}
+
+function TwoFactorStep({
+  otp,
+  phone,
+  onOk,
+  onCancel,
+}: {
+  otp: OtpService;
+  phone: string;
+  onOk: () => void;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    // 로그인 성공 직후 자동으로 1회 발송
+    requestCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function requestCode() {
+    setSending(true);
+    setErrors([]);
+    const r = await otp.requestOtp(phone);
+    setSending(false);
+    if (r.ok) setSent(true);
+    else setErrors([r.error ?? "인증번호 전송에 실패했습니다."]);
+  }
+
+  async function verify() {
+    setVerifying(true);
+    setErrors([]);
+    const r = await otp.verifyOtp(phone, code);
+    setVerifying(false);
+    if (r.ok) onOk();
+    else setErrors([r.error ?? "인증에 실패했습니다."]);
+  }
+
+  return (
+    <div className="card">
+      <h2>2단계 인증</h2>
+      <p className="sub">관리자 등록 번호({maskPhone(phone)})로 전송된 인증번호를 입력하세요.</p>
+      {errors.length > 0 && (
+        <div className="errors">
+          <ul>
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <label>인증번호 (6자리)</label>
+      <input
+        value={code}
+        placeholder="123456"
+        inputMode="numeric"
+        maxLength={6}
+        onChange={(e) => setCode(e.target.value)}
+      />
+      <div style={{ height: 12 }} />
+      <button className="btn" onClick={verify} disabled={verifying || code.length !== 6}>
+        {verifying ? "확인 중…" : "인증 확인"}
+      </button>
+      <div style={{ height: 8 }} />
+      <button className="btn secondary" onClick={requestCode} disabled={sending}>
+        {sending ? "전송 중…" : sent ? "재전송" : "인증번호 받기"}
+      </button>
+      <div style={{ height: 8 }} />
+      <button className="btn ghost" onClick={onCancel}>
+        취소하고 로그아웃
+      </button>
+    </div>
+  );
+}
+
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/[^0-9]/g, "");
+  if (digits.length < 7) return phone;
+  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
 
 function AdminHome({ onLogout }: { onLogout: () => void }) {

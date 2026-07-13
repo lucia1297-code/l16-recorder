@@ -72,6 +72,7 @@ export interface ExamResult {
 
 // 제출 전 작성 중 상태 (자동 저장 대상)
 export interface DraftResult {
+  phone?: string;
   student: Partial<StudentInfo>;
   exam: Partial<ExamInfo>;
   teacher: string;
