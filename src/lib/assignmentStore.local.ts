@@ -34,6 +34,14 @@ export class LocalAssignmentStore implements AssignmentStore {
     localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(all));
   }
 
+  async updateSubmission(id: string, patch: Partial<AssignmentSubmission>): Promise<void> {
+    const all = await this.listSubmissions();
+    const idx = all.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    all[idx] = { ...all[idx], ...patch };
+    localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(all));
+  }
+
   async listSubmissions(): Promise<AssignmentSubmission[]> {
     const raw = localStorage.getItem(SUBMISSIONS_KEY);
     if (!raw) return [];

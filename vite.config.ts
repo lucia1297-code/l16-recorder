@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "ASX Student Recorder Lite",
-        short_name: "ASX Recorder",
+        name: "L16 Student Recorder Lite",
+        short_name: "L16 Recorder",
         description: "학생 시험 결과 및 오답 기록 앱",
         theme_color: "#2B4C7E",
         background_color: "#FAF9F6",

@@ -25,8 +25,10 @@ export class SupabaseRosterStore implements RosterStore {
       school: e.school,
       grade: e.grade,
       phone: e.phone,
+      parent_phone: e.parentPhone,
       teacher: e.teacher,
       note: e.note,
+      registered_at: e.registeredAt,
     }));
     const { error } = await sb.from("students").upsert(rows, { onConflict: "student_code" });
     if (error) throw error;
@@ -42,8 +44,10 @@ export class SupabaseRosterStore implements RosterStore {
       school: r.school,
       grade: r.grade,
       phone: r.phone,
+      parentPhone: r.parent_phone ?? undefined,
       teacher: r.teacher ?? "",
       note: r.note ?? "",
+      registeredAt: r.registered_at ?? undefined,
     }));
   }
 
@@ -61,8 +65,10 @@ export class SupabaseRosterStore implements RosterStore {
       school: data.school,
       grade: data.grade,
       phone: data.phone,
+      parentPhone: data.parent_phone ?? undefined,
       teacher: data.teacher ?? "",
       note: data.note ?? "",
+      registeredAt: data.registered_at ?? undefined,
     };
   }
 

@@ -8,6 +8,7 @@ export interface AssignmentStore {
 
   // 과제 제출 (학생)
   submit(entry: AssignmentSubmission): Promise<void>;
+  updateSubmission(id: string, patch: Partial<AssignmentSubmission>): Promise<void>;
   listSubmissions(): Promise<AssignmentSubmission[]>;
   listSubmissionsForStudent(studentCode: string): Promise<AssignmentSubmission[]>;
 }

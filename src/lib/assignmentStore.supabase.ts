@@ -24,14 +24,27 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       id: r.id,
       name: r.name,
       targetCount: r.target_count,
+      kind: r.kind ?? undefined,
+      itemLabel: r.item_label ?? undefined,
+      scopeLabel: r.scope_label ?? undefined,
+      completedLabel: r.completed_label ?? undefined,
     }));
   }
 
   async saveType(type: AssignmentType): Promise<void> {
     const sb = getClient();
-    const { error } = await sb
-      .from("assignment_types")
-      .upsert({ id: type.id, name: type.name, target_count: type.targetCount }, { onConflict: "id" });
+    const { error } = await sb.from("assignment_types").upsert(
+      {
+        id: type.id,
+        name: type.name,
+        target_count: type.targetCount,
+        kind: type.kind ?? null,
+        item_label: type.itemLabel ?? null,
+        scope_label: type.scopeLabel ?? null,
+        completed_label: type.completedLabel ?? null,
+      },
+      { onConflict: "id" },
+    );
     if (error) throw error;
   }
 
@@ -51,7 +64,35 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       score: entry.score,
       wrong_numbers: entry.wrongNumbers,
       submitted_at: entry.submittedAt,
+      total_minutes: entry.totalMinutes,
+      step1_minutes: entry.step1Minutes,
+      step2_minutes: entry.step2Minutes,
+      step3_minutes: entry.step3Minutes,
+      item: entry.item,
+      scope: entry.scope,
+      completed: entry.completed,
+      review_status: entry.reviewStatus ?? "pending",
     });
+    if (error) throw error;
+  }
+
+  async updateSubmission(id: string, patch: Partial<AssignmentSubmission>): Promise<void> {
+    const sb = getClient();
+    const row: Record<string, unknown> = {};
+    if (patch.score !== undefined) row.score = patch.score;
+    if (patch.wrongNumbers !== undefined) row.wrong_numbers = patch.wrongNumbers;
+    if (patch.round !== undefined) row.round = patch.round;
+    if (patch.totalMinutes !== undefined) row.total_minutes = patch.totalMinutes;
+    if (patch.step1Minutes !== undefined) row.step1_minutes = patch.step1Minutes;
+    if (patch.step2Minutes !== undefined) row.step2_minutes = patch.step2Minutes;
+    if (patch.step3Minutes !== undefined) row.step3_minutes = patch.step3Minutes;
+    if (patch.item !== undefined) row.item = patch.item;
+    if (patch.scope !== undefined) row.scope = patch.scope;
+    if (patch.completed !== undefined) row.completed = patch.completed;
+    if (patch.reviewStatus !== undefined) row.review_status = patch.reviewStatus;
+    if (patch.reviewedAt !== undefined) row.reviewed_at = patch.reviewedAt;
+    if (patch.reviewNote !== undefined) row.review_note = patch.reviewNote;
+    const { error } = await sb.from("assignment_submissions").update(row).eq("id", id);
     if (error) throw error;
   }
 
@@ -86,5 +127,15 @@ function mapRow(r: any): AssignmentSubmission {
     score: r.score,
     wrongNumbers: r.wrong_numbers ?? [],
     submittedAt: r.submitted_at,
+    totalMinutes: r.total_minutes ?? undefined,
+    step1Minutes: r.step1_minutes ?? undefined,
+    step2Minutes: r.step2_minutes ?? undefined,
+    step3Minutes: r.step3_minutes ?? undefined,
+    item: r.item ?? undefined,
+    scope: r.scope ?? undefined,
+    completed: r.completed ?? undefined,
+    reviewStatus: r.review_status ?? undefined,
+    reviewedAt: r.reviewed_at ?? undefined,
+    reviewNote: r.review_note ?? undefined,
   };
 }

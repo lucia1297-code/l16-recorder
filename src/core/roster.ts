@@ -10,6 +10,7 @@ export interface RosterEntry {
   parentPhone?: string; // 학부모 전화번호 (선택, 과제제출 알림 발송용)
   teacher: string;
   note: string;
+  registeredAt?: string; // ISO — 계도기간(신규등록 후 2주) 계산용
 }
 
 export interface ParseRosterResult {

@@ -64,4 +64,22 @@ describe("LocalAssignmentStore — submissions", () => {
     expect(forS1001.length).toBe(1);
     expect(forS1001[0].id).toBe("a");
   });
+
+  it("updates an existing submission by id, keeping other fields", async () => {
+    const store = new LocalAssignmentStore();
+    await store.submit(submission({ id: "a", score: 80 }));
+    await store.updateSubmission("a", { score: 95, item: "수정됨" });
+    const all = await store.listSubmissions();
+    expect(all[0].score).toBe(95);
+    expect(all[0].item).toBe("수정됨");
+    expect(all[0].studentCode).toBe("S1001"); // 원래 값 유지
+  });
+
+  it("does nothing when updating an id that doesn't exist", async () => {
+    const store = new LocalAssignmentStore();
+    await store.submit(submission({ id: "a" }));
+    await store.updateSubmission("nonexistent", { score: 100 });
+    const all = await store.listSubmissions();
+    expect(all[0].score).not.toBe(100);
+  });
 });

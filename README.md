@@ -1,4 +1,4 @@
-# ASX Student Recorder Lite (MVP)
+# L16 Student Recorder Lite (MVP)
 
 학생들이 휴대폰에서 시험 결과와 오답 데이터를 입력·저장하는 모바일 우선 PWA.
 React + TypeScript + Vite + vite-plugin-pwa.
@@ -74,7 +74,7 @@ manifest + service worker, 모바일 홈화면 설치 가능, 오프라인 작�
 ## 테스트 (TDD)
 
 ```bash
-npm test          # 95개 테스트 (통계/CSV/검증/스토리지/인증/OTP/명부/학생코드생성/자가등록/직접추가/관리자접속코드/과제관리)
+npm test          # 163개 테스트 (통계/CSV/검증/스토리지/인증/OTP/명부/학생코드생성/자가등록/직접추가/관리자접속코드/과제관리/솔라피서명/회차자동계산/모의고사세부풀이시간/경고관리/모의고사접수확인/계도기간/과제형식토글/제출수정/필드라벨/2차점검/학생별과제입력)
 ```
 
 ## 빌드

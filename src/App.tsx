@@ -52,7 +52,7 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <h1 onClick={handleTitleTap} style={{ cursor: "default", userSelect: "none" }}>
-          ASX Student Recorder Lite
+          L16 Student Recorder Lite
         </h1>
         {role === "admin" && (
           <button className="role-switch" onClick={() => setRole("student")}>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
@@ -14,14 +14,34 @@ import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
+import { createMockExamTimingStore } from "../../lib/mockExamTimingStoreFactory";
+import { createWarningStore } from "../../lib/warningStoreFactory";
+import { createExamCheckStore } from "../../lib/examCheckStoreFactory";
+import { createTeacherLogStore } from "../../lib/teacherLogStoreFactory";
 import {
   MAX_ASSIGNMENT_TYPES,
   computeAssignmentStatus,
   countSubmissionsForType,
   validateAssignmentTypeInput,
+  isMockExamKind,
+  getGeneralFieldLabels,
+  isPendingReview,
+  REVIEW_STATUS_LABELS,
   ASSIGNMENT_STATUS_LABELS,
   type AssignmentType,
+  type AssignmentSubmission,
 } from "../../core/assignment";
+import { DEFAULT_MOCK_EXAM_TIMING_CONFIG, type MockExamTimingConfig } from "../../core/mockExamTiming";
+import { bumpWarningOnCarryOver, resetWarningCount, isRecentWarning, type WarningRecord } from "../../core/warning";
+import { EXAM_CHECK_ANSWER_LABELS, type ExamCheckRecord } from "../../core/examCheck";
+import { isInGracePeriod, gracePeriodDaysRemaining } from "../../core/gracePeriod";
+import {
+  createEmptyRows,
+  getDayOfWeek,
+  makeLogId,
+  type TeacherLogRow,
+  type ExamScoreRecord,
+} from "../../core/teacherLog";
 
 const ADMIN_2FA_SESSION_KEY = "asx.admin.2fa";
 
@@ -197,7 +217,9 @@ function maskPhone(phone: string): string {
 function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
-  const [tab, setTab] = useState<"list" | "dash" | "roster" | "pending" | "assignment">("list");
+  const [tab, setTab] = useState<
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog"
+  >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
 
@@ -224,6 +246,12 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
           과제 관리
         </button>
+        <button className={tab === "review" ? "on" : ""} onClick={() => setTab("review")}>
+          과제 점검
+        </button>
+        <button className={tab === "teacherlog" ? "on" : ""} onClick={() => setTab("teacherlog")}>
+          학생별 과제입력
+        </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
@@ -236,6 +264,8 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "dash" && <DashboardView rows={rows} />}
         {tab === "roster" && <RosterManager />}
         {tab === "assignment" && <AssignmentManager />}
+        {tab === "review" && <AssignmentReviewManager />}
+        {tab === "teacherlog" && <TeacherLogManager />}
         {tab === "pending" && <PendingManager />}
       </div>
     </div>
@@ -456,7 +486,9 @@ function RosterManager() {
   async function confirmImport() {
     if (preview.length === 0) return;
     setSaving(true);
-    await rosterStore.saveRoster(preview);
+    const now = new Date().toISOString();
+    const stamped = preview.map((e) => ({ ...e, registeredAt: e.registeredAt ?? now }));
+    await rosterStore.saveRoster(stamped);
     const all = await rosterStore.listRoster();
     setRoster(all);
     setSaving(false);
@@ -480,7 +512,7 @@ function RosterManager() {
     try {
       await provider.send(
         entry.phone,
-        `[ASX] ${entry.name} 학생의 학생코드는 ${entry.studentCode} 입니다.`,
+        `[L16] ${entry.name} 학생의 학생코드는 ${entry.studentCode} 입니다.`,
       );
       setNotice(`${entry.name} 학생에게 코드를 전송했습니다.`);
     } catch (e) {
@@ -531,7 +563,7 @@ function RosterManager() {
     }
     setAdding(true);
     setAddErrors([]);
-    await rosterStore.saveRoster([entry]);
+    await rosterStore.saveRoster([{ ...entry, registeredAt: new Date().toISOString() }]);
     const all = await rosterStore.listRoster();
     setRoster(all);
     setAdding(false);
@@ -665,6 +697,9 @@ function RosterManager() {
       )}
 
       <div style={{ height: 20 }} />
+      <GracePeriodNotifier roster={roster} />
+
+      <div style={{ height: 20 }} />
       <h3>등록된 명부 ({roster.length}명)</h3>
       {roster.length === 0 ? (
         <p className="muted">아직 등록된 학생이 없습니다.</p>
@@ -782,13 +817,13 @@ function PendingManager() {
       const code = generateStudentCode(existing.map((e) => e.studentCode));
       const entry = await pendingStore.approve(p.phone, code);
       if (entry) {
-        await rosterStore.saveRoster([entry]);
+        await rosterStore.saveRoster([{ ...entry, registeredAt: new Date().toISOString() }]);
         // 승인 즉시 학생코드를 문자로 안내 (실패해도 승인 자체는 유지)
         try {
           const provider = createSmsProvider();
           await provider.send(
             entry.phone,
-            `[ASX] 등록이 승인되었습니다. 학생코드는 ${entry.studentCode} 입니다.`,
+            `[L16] 등록이 승인되었습니다. 학생코드는 ${entry.studentCode} 입니다.`,
           );
           setNotice(`${p.name} 승인 완료 (코드: ${code}) — 문자로 안내했습니다.`);
         } catch {
@@ -876,35 +911,51 @@ function PendingManager() {
 function AssignmentManager() {
   const assignmentStore = useMemo(() => createAssignmentStore(), []);
   const rosterStore = useMemo(() => createRosterStore(), []);
+  const warningStore = useMemo(() => createWarningStore(), []);
+  const examCheckStore = useMemo(() => createExamCheckStore(), []);
   const [types, setTypes] = useState<AssignmentType[]>([]);
   const [submissions, setSubmissions] = useState<
     Awaited<ReturnType<typeof assignmentStore.listSubmissions>>
   >([]);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [warnings, setWarnings] = useState<WarningRecord[]>([]);
+  const [examChecks, setExamChecks] = useState<ExamCheckRecord[]>([]);
   const [notice, setNotice] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
 
   const [newName, setNewName] = useState("");
   const [newTarget, setNewTarget] = useState("5");
+  const [newKind, setNewKind] = useState<"mock_exam" | "general">("general");
+  const [newItemLabel, setNewItemLabel] = useState("");
+  const [newScopeLabel, setNewScopeLabel] = useState("");
+  const [newCompletedLabel, setNewCompletedLabel] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editTarget, setEditTarget] = useState("");
+  const [editKind, setEditKind] = useState<"mock_exam" | "general">("general");
+  const [editItemLabel, setEditItemLabel] = useState("");
+  const [editScopeLabel, setEditScopeLabel] = useState("");
+  const [editCompletedLabel, setEditCompletedLabel] = useState("");
 
   async function refresh() {
-    const [t, s, r] = await Promise.all([
+    const [t, s, r, w, e] = await Promise.all([
       assignmentStore.listTypes(),
       assignmentStore.listSubmissions(),
       rosterStore.listRoster(),
+      warningStore.listAll(),
+      examCheckStore.listAll(),
     ]);
     setTypes(t);
     setSubmissions(s);
     setRoster(r);
+    setWarnings(w);
+    setExamChecks(e);
   }
 
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignmentStore, rosterStore]);
+  }, [assignmentStore, rosterStore, warningStore, examCheckStore]);
 
   async function addType() {
     const errs = validateAssignmentTypeInput(
@@ -917,9 +968,17 @@ function AssignmentManager() {
       id: crypto.randomUUID(),
       name: newName.trim(),
       targetCount: Number(newTarget),
+      kind: newKind,
+      itemLabel: newKind === "general" ? newItemLabel : undefined,
+      scopeLabel: newKind === "general" ? newScopeLabel : undefined,
+      completedLabel: newKind === "general" ? newCompletedLabel : undefined,
     });
     setNewName("");
     setNewTarget("5");
+    setNewKind("general");
+    setNewItemLabel("");
+    setNewScopeLabel("");
+    setNewCompletedLabel("");
     refresh();
   }
 
@@ -927,6 +986,10 @@ function AssignmentManager() {
     setEditingId(t.id);
     setEditName(t.name);
     setEditTarget(String(t.targetCount));
+    setEditKind(isMockExamKind(t) ? "mock_exam" : "general");
+    setEditItemLabel(t.itemLabel ?? "");
+    setEditScopeLabel(t.scopeLabel ?? "");
+    setEditCompletedLabel(t.completedLabel ?? "");
   }
 
   async function saveEdit(t: AssignmentType) {
@@ -937,9 +1000,39 @@ function AssignmentManager() {
     );
     if (errs.length) return setErrors(errs);
     setErrors([]);
-    await assignmentStore.saveType({ ...t, name: editName.trim(), targetCount: Number(editTarget) });
+    const newTargetCount = Number(editTarget);
+
+    // 지정 개수를 늘리는 경우("이월") — 계도기간이 아니면서 여전히 경고 상태인 학생의 누적 횟수를 갱신
+    if (newTargetCount > t.targetCount) {
+      const now = new Date();
+      let updatedWarnings = warnings;
+      for (const student of roster) {
+        if (isInGracePeriod(student.registeredAt, now)) continue; // 계도기간 학생은 경고 대상 제외
+        const count = countSubmissionsForType(submissions, student.studentCode, t.id);
+        const status = computeAssignmentStatus(count, t.targetCount); // 변경 전 지정개수 기준으로 판단
+        updatedWarnings = bumpWarningOnCarryOver(updatedWarnings, student.studentCode, t.id, status, now);
+      }
+      await warningStore.saveAll(updatedWarnings);
+      setWarnings(updatedWarnings);
+    }
+
+    await assignmentStore.saveType({
+      ...t,
+      name: editName.trim(),
+      targetCount: newTargetCount,
+      kind: editKind,
+      itemLabel: editKind === "general" ? editItemLabel : undefined,
+      scopeLabel: editKind === "general" ? editScopeLabel : undefined,
+      completedLabel: editKind === "general" ? editCompletedLabel : undefined,
+    });
     setEditingId(null);
     refresh();
+  }
+
+  async function resetWarning(studentCode: string, typeId: string) {
+    const updated = resetWarningCount(warnings, studentCode, typeId);
+    await warningStore.saveAll(updated);
+    setWarnings(updated);
   }
 
   async function removeType(id: string) {
@@ -973,12 +1066,14 @@ function AssignmentManager() {
             <tr>
               <th>과제 이름</th>
               <th>지정 개수</th>
+              <th>형식</th>
               <th>관리</th>
             </tr>
           </thead>
           <tbody>
             {types.map((t) => (
-              <tr key={t.id}>
+              <Fragment key={t.id}>
+              <tr>
                 <td>
                   {editingId === t.id ? (
                     <input
@@ -1000,6 +1095,30 @@ function AssignmentManager() {
                     />
                   ) : (
                     `${t.targetCount}회`
+                  )}
+                </td>
+                <td>
+                  {editingId === t.id ? (
+                    <div className="chips">
+                      <div
+                        className={"chip" + (editKind === "mock_exam" ? " on" : "")}
+                        onClick={() => setEditKind("mock_exam")}
+                        style={{ padding: "4px 10px", fontSize: 11 }}
+                      >
+                        모의고사형
+                      </div>
+                      <div
+                        className={"chip" + (editKind === "general" ? " on" : "")}
+                        onClick={() => setEditKind("general")}
+                        style={{ padding: "4px 10px", fontSize: 11 }}
+                      >
+                        일반과제
+                      </div>
+                    </div>
+                  ) : isMockExamKind(t) ? (
+                    "모의고사형"
+                  ) : (
+                    "일반과제"
                   )}
                 </td>
                 <td>
@@ -1042,6 +1161,47 @@ function AssignmentManager() {
                   </div>
                 </td>
               </tr>
+              {editingId === t.id && editKind === "general" && (
+                <tr>
+                  <td colSpan={4} style={{ background: "var(--paper)" }}>
+                    <div style={{ padding: "8px 0" }}>
+                      <p className="muted" style={{ fontSize: 12, margin: "0 0 8px" }}>
+                        학생 화면에 보일 필드 이름 (비워두면 기본값 사용)
+                      </p>
+                      <div className="row">
+                        <div>
+                          <label style={{ fontSize: 12 }}>필드1 (기본: 분야명)</label>
+                          <input
+                            value={editItemLabel}
+                            onChange={(e) => setEditItemLabel(e.target.value)}
+                            style={{ padding: 6, fontSize: 13 }}
+                            placeholder="분야명"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 12 }}>필드2 (기본: 학습내용)</label>
+                          <input
+                            value={editScopeLabel}
+                            onChange={(e) => setEditScopeLabel(e.target.value)}
+                            style={{ padding: 6, fontSize: 13 }}
+                            placeholder="학습내용"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 12 }}>필드3 (기본: 완수여부)</label>
+                          <input
+                            value={editCompletedLabel}
+                            onChange={(e) => setEditCompletedLabel(e.target.value)}
+                            style={{ padding: 6, fontSize: 13 }}
+                            placeholder="완수여부"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -1057,12 +1217,60 @@ function AssignmentManager() {
             value={newTarget}
             onChange={(e) => setNewTarget(e.target.value)}
           />
+          <label>형식</label>
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            모의고사형: 학생이 회차·점수·틀린문항을 직접 입력하고, 관리자가 켜두면 세부풀이시간도
+            입력. 일반과제: 회차 자동 계산 + 관리자가 정한 필드 3개.
+          </p>
+          <div className="chips">
+            <div
+              className={"chip" + (newKind === "mock_exam" ? " on" : "")}
+              onClick={() => setNewKind("mock_exam")}
+            >
+              모의고사형
+            </div>
+            <div
+              className={"chip" + (newKind === "general" ? " on" : "")}
+              onClick={() => setNewKind("general")}
+            >
+              일반과제
+            </div>
+          </div>
+
+          {newKind === "general" && (
+            <div style={{ marginTop: 10 }}>
+              <p className="muted" style={{ fontSize: 12 }}>
+                학생 화면에 보일 필드 이름을 정하세요 (비워두면 기본값 사용).
+              </p>
+              <label>필드1 이름 (기본: 분야명)</label>
+              <input
+                value={newItemLabel}
+                onChange={(e) => setNewItemLabel(e.target.value)}
+                placeholder="분야명"
+              />
+              <label>필드2 이름 (기본: 학습내용)</label>
+              <input
+                value={newScopeLabel}
+                onChange={(e) => setNewScopeLabel(e.target.value)}
+                placeholder="학습내용"
+              />
+              <label>필드3 이름 (기본: 완수여부)</label>
+              <input
+                value={newCompletedLabel}
+                onChange={(e) => setNewCompletedLabel(e.target.value)}
+                placeholder="완수여부"
+              />
+            </div>
+          )}
+
           <div style={{ height: 10 }} />
           <button className="btn" onClick={addType}>
             과제 유형 추가
           </button>
         </div>
       )}
+
+      <MockExamTimingSettings />
 
       <h3>학생별 과제 현황</h3>
       {roster.length === 0 ? (
@@ -1087,17 +1295,42 @@ function AssignmentManager() {
                   {types.map((t) => {
                     const count = countSubmissionsForType(submissions, student.studentCode, t.id);
                     const status = computeAssignmentStatus(count, t.targetCount);
+                    const inGrace = isInGracePeriod(student.registeredAt, new Date());
                     const color =
-                      status === "good"
-                        ? "var(--correct)"
-                        : status === "not_bad"
-                          ? "var(--amber)"
-                          : status === "warning"
-                            ? "var(--incorrect)"
-                            : "var(--ink-faint)";
+                      inGrace
+                        ? "var(--mark)"
+                        : status === "good"
+                          ? "var(--correct)"
+                          : status === "not_bad"
+                            ? "var(--amber)"
+                            : status === "warning"
+                              ? "var(--incorrect)"
+                              : "var(--ink-faint)";
+                    const warningRec = warnings.find(
+                      (w) => w.studentCode === student.studentCode && w.typeId === t.id,
+                    );
+                    const isNew = warningRec && isRecentWarning(warningRec.lastWarnedAt, new Date());
                     return (
-                      <td key={t.id} style={{ color, fontWeight: 700 }}>
-                        {ASSIGNMENT_STATUS_LABELS[status]} ({count}/{t.targetCount})
+                      <td key={t.id}>
+                        <div style={{ color, fontWeight: 700 }}>
+                          {inGrace
+                            ? `계도기간 D-${gracePeriodDaysRemaining(student.registeredAt, new Date())} (${count}/${t.targetCount})`
+                            : `${ASSIGNMENT_STATUS_LABELS[status]} (${count}/${t.targetCount})`}
+                        </div>
+                        {warningRec && warningRec.count > 0 && (
+                          <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 11, color: "var(--incorrect)" }}>
+                              누적경고 {warningRec.count}회{isNew ? " 🆕" : ""}
+                            </span>
+                            <button
+                              className="btn ghost"
+                              style={{ padding: "2px 6px", fontSize: 10 }}
+                              onClick={() => resetWarning(student.studentCode, t.id)}
+                            >
+                              초기화
+                            </button>
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -1106,6 +1339,748 @@ function AssignmentManager() {
             </tbody>
           </table>
         </div>
+      )}
+
+      <h3>모의고사 성적 접수 확인 이력</h3>
+      {examChecks.length === 0 ? (
+        <p className="muted">아직 확인된 응답이 없습니다.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>학생</th>
+                <th>응답</th>
+                <th>응답시각</th>
+              </tr>
+            </thead>
+            <tbody>
+              {examChecks.slice(0, 50).map((c) => (
+                <tr key={c.id}>
+                  <td>{c.studentName}</td>
+                  <td>{EXAM_CHECK_ANSWER_LABELS[c.answer]}</td>
+                  <td style={{ fontSize: 12 }}>{new Date(c.answeredAt).toLocaleString("ko-KR")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MockExamTimingSettings() {
+  const store = useMemo(() => createMockExamTimingStore(), []);
+  const [config, setConfig] = useState<MockExamTimingConfig>(DEFAULT_MOCK_EXAM_TIMING_CONFIG);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    store
+      .getConfig()
+      .then(setConfig)
+      .catch((e) =>
+        setNotice(`설정 불러오기 실패: ${(e as Error).message} — Supabase에 mock_exam_timing_config 테이블이 있는지 확인하세요.`),
+      );
+  }, [store]);
+
+  async function save() {
+    setSaving(true);
+    setNotice("");
+    try {
+      await store.saveConfig(config);
+      setNotice("저장되었습니다.");
+    } catch (e) {
+      setNotice(`저장 실패: ${(e as Error).message} — Supabase에 mock_exam_timing_config 테이블이 있는지 확인하세요.`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateStep(step: "step1" | "step2" | "step3", field: "label" | "range" | "targetMinutes", value: string) {
+    setConfig((c) => ({
+      ...c,
+      [step]: {
+        ...c[step],
+        [field]: field === "targetMinutes" ? Number(value) || 0 : value,
+      },
+    }));
+  }
+
+  return (
+    <div style={{ marginTop: 20, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+      <h3 style={{ marginTop: 0 }}>모의고사 세부풀이시간</h3>
+      <p className="muted" style={{ fontSize: 13 }}>
+        켜두면 "모의고사형"으로 지정된 과제 제출 시, 학생이 전체·단계별 소요시간을 입력할 수
+        있고 목표시간과 비교한 결과를 바로 보여줍니다.
+      </p>
+      {notice && <p className="muted">{notice}</p>}
+
+      <label>세부내용 첨부</label>
+      <div className="chips">
+        <div
+          className={"chip" + (config.enabled ? " on" : "")}
+          onClick={() => setConfig((c) => ({ ...c, enabled: true }))}
+        >
+          Yes
+        </div>
+        <div
+          className={"chip" + (!config.enabled ? " on" : "")}
+          onClick={() => setConfig((c) => ({ ...c, enabled: false }))}
+        >
+          No
+        </div>
+      </div>
+
+      {(["step1", "step2", "step3"] as const).map((step) => (
+        <div key={step} style={{ marginTop: 14 }}>
+          <label>{step.toUpperCase()} 이름</label>
+          <input
+            value={config[step].label}
+            onChange={(e) => updateStep(step, "label", e.target.value)}
+          />
+          <div className="row">
+            <div>
+              <label>문항 범위</label>
+              <input
+                value={config[step].range}
+                onChange={(e) => updateStep(step, "range", e.target.value)}
+                placeholder="예: 18~28번"
+              />
+            </div>
+            <div>
+              <label>목표 시간(분)</label>
+              <input
+                type="number"
+                value={config[step].targetMinutes}
+                onChange={(e) => updateStep(step, "targetMinutes", e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div style={{ height: 12 }} />
+      <button className="btn" onClick={save} disabled={saving}>
+        {saving ? "저장 중…" : "저장"}
+      </button>
+    </div>
+  );
+}
+
+function AssignmentReviewManager() {
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const [submissions, setSubmissions] = useState<
+    Awaited<ReturnType<typeof assignmentStore.listSubmissions>>
+  >([]);
+  const [types, setTypes] = useState<AssignmentType[]>([]);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [showAll, setShowAll] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+
+  async function refresh() {
+    const [s, t, r] = await Promise.all([
+      assignmentStore.listSubmissions(),
+      assignmentStore.listTypes(),
+      rosterStore.listRoster(),
+    ]);
+    setSubmissions(s);
+    setTypes(t);
+    setRoster(r);
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentStore, rosterStore]);
+
+  const visible = showAll ? submissions : submissions.filter(isPendingReview);
+
+  async function judge(submissionId: string, status: "pass" | "fail") {
+    const sub = submissions.find((s) => s.id === submissionId);
+    if (!sub) return;
+    const student = roster.find((r) => r.studentCode === sub.studentCode);
+    const type = types.find((t) => t.id === sub.typeId);
+    setBusyId(submissionId);
+    setNotice("");
+
+    await assignmentStore.updateSubmission(submissionId, {
+      reviewStatus: status,
+      reviewedAt: new Date().toISOString(),
+      reviewNote: noteDrafts[submissionId] ?? "",
+    });
+
+    if (student) {
+      const verdict = REVIEW_STATUS_LABELS[status];
+      const note = noteDrafts[submissionId]?.trim();
+      const message =
+        `[L16] ${student.name} 학생, "${type?.name ?? "과제"}" ${sub.round}회차 점검 결과: ${verdict}` +
+        (note ? ` (${note})` : "");
+      try {
+        await createSmsProvider().send(student.phone, message);
+        setNotice(`${student.name} 학생에게 결과를 문자로 안내했습니다.`);
+      } catch (e) {
+        setNotice(`판정은 저장됐지만 문자 발송에 실패했습니다: ${(e as Error).message}`);
+      }
+    }
+
+    setBusyId(null);
+    refresh();
+  }
+
+  function renderContent(sub: AssignmentSubmission) {
+    const type = types.find((t) => t.id === sub.typeId);
+    if (!type) return "-";
+    if (isMockExamKind(type)) {
+      const parts = [`점수 ${sub.score ?? "-"}`];
+      if (sub.wrongNumbers?.length) parts.push(`틀림 ${sub.wrongNumbers.join(",")}`);
+      return parts.join(" · ");
+    }
+    const labels = getGeneralFieldLabels(type);
+    return `${labels.itemLabel}: ${sub.item ?? "-"} · ${labels.scopeLabel}: ${sub.scope ?? "-"} · ${labels.completedLabel}: ${sub.completed ? "완료" : "미완료"}`;
+  }
+
+  return (
+    <div className="card">
+      <h2>과제 점검</h2>
+      <p className="sub">
+        학생이 제출한 과제를 확인하고 승인/재제출 판정을 내리면, 그 결과가 학생에게 문자로
+        자동 발송됩니다.
+      </p>
+      {notice && <p className="muted">{notice}</p>}
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+        <button className={showAll ? "btn secondary" : "btn"} onClick={() => setShowAll(false)}>
+          점검 대기만 보기
+        </button>
+        <button className={showAll ? "btn" : "btn secondary"} onClick={() => setShowAll(true)}>
+          전체 보기
+        </button>
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="muted">
+          {showAll ? "제출된 과제가 없습니다." : "점검 대기 중인 과제가 없습니다."}
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>학생</th>
+                <th>과제</th>
+                <th>회차</th>
+                <th>내용</th>
+                <th>상태</th>
+                <th>메모</th>
+                <th>처리</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((sub) => {
+                const student = roster.find((r) => r.studentCode === sub.studentCode);
+                const type = types.find((t) => t.id === sub.typeId);
+                const status = sub.reviewStatus ?? "pending";
+                return (
+                  <tr key={sub.id}>
+                    <td>{student?.name ?? sub.studentCode}</td>
+                    <td>{type?.name ?? "-"}</td>
+                    <td>{sub.round}</td>
+                    <td style={{ fontSize: 12 }}>{renderContent(sub)}</td>
+                    <td
+                      style={{
+                        fontWeight: 700,
+                        color:
+                          status === "pass"
+                            ? "var(--correct)"
+                            : status === "fail"
+                              ? "var(--incorrect)"
+                              : "var(--ink-faint)",
+                      }}
+                    >
+                      {REVIEW_STATUS_LABELS[status]}
+                    </td>
+                    <td>
+                      <input
+                        value={noteDrafts[sub.id] ?? sub.reviewNote ?? ""}
+                        onChange={(e) =>
+                          setNoteDrafts((d) => ({ ...d, [sub.id]: e.target.value }))
+                        }
+                        placeholder="선택 메모"
+                        style={{ padding: 6, fontSize: 12, width: 120 }}
+                      />
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => judge(sub.id, "pass")}
+                          disabled={busyId === sub.id}
+                        >
+                          승인
+                        </button>
+                        <button
+                          className="btn ghost"
+                          style={{ padding: "4px 8px", fontSize: 12 }}
+                          onClick={() => judge(sub.id, "fail")}
+                          disabled={busyId === sub.id}
+                        >
+                          재제출요청
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
+  const now = useMemo(() => new Date(), []);
+  const inGrace = useMemo(
+    () => roster.filter((r) => isInGracePeriod(r.registeredAt, now)),
+    [roster, now],
+  );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [message, setMessage] = useState(
+    "[L16] 안내: 신규 등록 후 계도기간입니다. 과제를 완료해 주세요.",
+  );
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  function toggle(code: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
+  async function sendToSelected() {
+    if (selected.size === 0) return;
+    setSending(true);
+    setNotice("");
+    const provider = createSmsProvider();
+    let successCount = 0;
+    for (const code of selected) {
+      const student = roster.find((r) => r.studentCode === code);
+      if (!student) continue;
+      try {
+        await provider.send(student.phone, message.replace("{이름}", student.name));
+        successCount++;
+      } catch {
+        // 개별 발송 실패는 넘어가고 계속 진행
+      }
+    }
+    setSending(false);
+    setNotice(`${successCount}/${selected.size}명에게 문자를 발송했습니다.`);
+    setSelected(new Set());
+  }
+
+  if (inGrace.length === 0) {
+    return (
+      <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+        <h3 style={{ marginTop: 0 }}>계도기간 학생 안내문자</h3>
+        <p className="muted">현재 계도기간(신규등록 후 2주) 중인 학생이 없습니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+      <h3 style={{ marginTop: 0 }}>계도기간 학생 안내문자</h3>
+      <p className="muted" style={{ fontSize: 13 }}>
+        신규 등록 후 2주 이내인 학생 목록입니다. 안내가 필요한 학생만 선택해서 문자를 보낼 수
+        있습니다. 메시지의 "{"{이름}"}"은 학생 이름으로 자동 치환됩니다.
+      </p>
+      {notice && <p className="muted">{notice}</p>}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>이름</th>
+              <th>학교</th>
+              <th>남은 계도기간</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inGrace.map((s) => (
+              <tr key={s.studentCode}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(s.studentCode)}
+                    onChange={() => toggle(s.studentCode)}
+                  />
+                </td>
+                <td>{s.name}</td>
+                <td>{s.school}</td>
+                <td>D-{gracePeriodDaysRemaining(s.registeredAt, now)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ height: 10 }} />
+      <label>안내 메시지</label>
+      <textarea value={message} onChange={(e) => setMessage(e.target.value)} />
+      <div style={{ height: 10 }} />
+      <button className="btn" onClick={sendToSelected} disabled={sending || selected.size === 0}>
+        {sending ? "발송 중…" : `선택한 ${selected.size}명에게 문자 발송`}
+      </button>
+    </div>
+  );
+}
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function TeacherLogManager() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const logStore = useMemo(() => createTeacherLogStore(), []);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [studentCode, setStudentCode] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [rows, setRows] = useState<TeacherLogRow[]>(createEmptyRows());
+  const [examRecords, setExamRecords] = useState<ExamScoreRecord[]>([]);
+  const [notes, setNotes] = useState("");
+  const [nextPlan, setNextPlan] = useState("");
+  const [classContent, setClassContent] = useState("");
+  const [pastDates, setPastDates] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    rosterStore.listRoster().then(setRoster);
+  }, [rosterStore]);
+
+  async function loadForStudentAndDate(code: string, d: string) {
+    if (!code) return;
+    const existing = await logStore.getLog(code, d);
+    if (existing) {
+      setRows(existing.rows);
+      setExamRecords(existing.examRecords);
+      setNotes(existing.notes);
+      setNextPlan(existing.nextPlan);
+      setClassContent(existing.classContent);
+    } else {
+      setRows(createEmptyRows());
+      setExamRecords([]);
+      setNotes("");
+      setNextPlan("");
+      setClassContent("");
+    }
+    const logs = await logStore.listLogsForStudent(code);
+    setPastDates(logs.map((l) => l.date));
+  }
+
+  function selectStudent(code: string) {
+    setStudentCode(code);
+    loadForStudentAndDate(code, date);
+  }
+
+  function selectDate(d: string) {
+    setDate(d);
+    loadForStudentAndDate(studentCode, d);
+  }
+
+  function updateRow(no: number, field: keyof TeacherLogRow, value: string) {
+    setRows((prev) => prev.map((r) => (r.no === no ? { ...r, [field]: value } : r)));
+  }
+
+  function addExamRecord() {
+    setExamRecords((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        label: "",
+        mission: null,
+        myScore: null,
+        lc: null,
+        st1: null,
+        st2: null,
+        st3: null,
+        wrongNumbers: "",
+      },
+    ]);
+  }
+
+  function updateExamRecord(id: string, field: keyof ExamScoreRecord, value: string) {
+    setExamRecords((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              [field]: ["mission", "myScore", "lc", "st1", "st2", "st3"].includes(field)
+                ? value === ""
+                  ? null
+                  : Number(value)
+                : value,
+            }
+          : e,
+      ),
+    );
+  }
+
+  function removeExamRecord(id: string) {
+    setExamRecords((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  async function save() {
+    if (!studentCode) return setNotice("학생을 먼저 선택하세요.");
+    setSaving(true);
+    const log = {
+      id: makeLogId(studentCode, date),
+      studentCode,
+      date,
+      rows,
+      examRecords,
+      notes,
+      nextPlan,
+      classContent,
+    };
+    await logStore.saveLog(log);
+    setSaving(false);
+    setNotice("저장되었습니다.");
+    const logs = await logStore.listLogsForStudent(studentCode);
+    setPastDates(logs.map((l) => l.date));
+  }
+
+  const student = roster.find((r) => r.studentCode === studentCode);
+
+  return (
+    <div className="card">
+      <h2>학생별 과제입력</h2>
+      <p className="sub">
+        선생님만 보는 개인 관리용 표입니다 — 학생 화면과는 무관하고, 여기 입력한 내용은 학생에게
+        보이지 않습니다.
+      </p>
+      {notice && <p className="muted">{notice}</p>}
+
+      <div className="row">
+        <div>
+          <label>학생 선택</label>
+          <select value={studentCode} onChange={(e) => selectStudent(e.target.value)}>
+            <option value="">선택하세요</option>
+            {roster.map((r) => (
+              <option key={r.studentCode} value={r.studentCode}>
+                {r.name} ({r.school})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>날짜</label>
+          <input type="date" value={date} onChange={(e) => selectDate(e.target.value)} />
+        </div>
+      </div>
+
+      {studentCode && (
+        <>
+          <p className="muted" style={{ fontSize: 13 }}>
+            {student?.name} · {date} ({getDayOfWeek(date)})
+          </p>
+
+          {pastDates.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12 }}>지난 기록 바로가기</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {pastDates.map((d) => (
+                  <button
+                    key={d}
+                    className={d === date ? "btn ghost" : "btn secondary"}
+                    style={{ padding: "4px 8px", fontSize: 11 }}
+                    onClick={() => selectDate(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>번호</th>
+                  <th>교재</th>
+                  <th>교재 세부</th>
+                  <th>범위</th>
+                  <th>수행</th>
+                  <th>틀린문항</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.no}>
+                    <td>{row.no}</td>
+                    <td>
+                      <input
+                        value={row.material}
+                        onChange={(e) => updateRow(row.no, "material", e.target.value)}
+                        style={{ padding: 6, fontSize: 12, width: 90 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={row.materialDetail}
+                        onChange={(e) => updateRow(row.no, "materialDetail", e.target.value)}
+                        style={{ padding: 6, fontSize: 12, width: 130 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={row.scope}
+                        onChange={(e) => updateRow(row.no, "scope", e.target.value)}
+                        style={{ padding: 6, fontSize: 12, width: 90 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={row.completion}
+                        onChange={(e) => updateRow(row.no, "completion", e.target.value)}
+                        style={{ padding: 6, fontSize: 12, width: 80 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={row.wrongNumbers}
+                        onChange={(e) => updateRow(row.no, "wrongNumbers", e.target.value)}
+                        style={{ padding: 6, fontSize: 12, width: 130 }}
+                        placeholder="예: 24,30,32"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ height: 16 }} />
+          <h3>모의고사 성적 기록</h3>
+          {examRecords.map((ex) => (
+            <div
+              key={ex.id}
+              style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 10, marginBottom: 8 }}
+            >
+              <div className="row">
+                <div>
+                  <label style={{ fontSize: 12 }}>라벨 (예: 22년 7월)</label>
+                  <input
+                    value={ex.label}
+                    onChange={(e) => updateExamRecord(ex.id, "label", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12 }}>Mission</label>
+                  <input
+                    type="number"
+                    value={ex.mission ?? ""}
+                    onChange={(e) => updateExamRecord(ex.id, "mission", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12 }}>My Score</label>
+                  <input
+                    type="number"
+                    value={ex.myScore ?? ""}
+                    onChange={(e) => updateExamRecord(ex.id, "myScore", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12 }}>L/C</label>
+                  <input
+                    type="number"
+                    value={ex.lc ?? ""}
+                    onChange={(e) => updateExamRecord(ex.id, "lc", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <div>
+                  <label style={{ fontSize: 12 }}>st(1)</label>
+                  <input
+                    type="number"
+                    value={ex.st1 ?? ""}
+                    onChange={(e) => updateExamRecord(ex.id, "st1", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12 }}>st(2)</label>
+                  <input
+                    type="number"
+                    value={ex.st2 ?? ""}
+                    onChange={(e) => updateExamRecord(ex.id, "st2", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12 }}>st(3)</label>
+                  <input
+                    type="number"
+                    value={ex.st3 ?? ""}
+                    onChange={(e) => updateExamRecord(ex.id, "st3", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12 }}>틀린문항</label>
+                  <input
+                    value={ex.wrongNumbers}
+                    onChange={(e) => updateExamRecord(ex.id, "wrongNumbers", e.target.value)}
+                    style={{ padding: 6, fontSize: 12 }}
+                    placeholder="예: 29,30,31"
+                  />
+                </div>
+              </div>
+              <button
+                className="btn ghost"
+                style={{ padding: "4px 8px", fontSize: 11, marginTop: 6 }}
+                onClick={() => removeExamRecord(ex.id)}
+              >
+                이 기록 삭제
+              </button>
+            </div>
+          ))}
+          <button className="btn secondary" onClick={addExamRecord}>
+            + 모의고사 성적 기록 추가
+          </button>
+
+          <div style={{ height: 16 }} />
+          <label>처리 (비고)</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <label>다음계획</label>
+          <textarea value={nextPlan} onChange={(e) => setNextPlan(e.target.value)} />
+          <label>수업내용</label>
+          <textarea value={classContent} onChange={(e) => setClassContent(e.target.value)} />
+
+          <div style={{ height: 14 }} />
+          <button className="btn" onClick={save} disabled={saving}>
+            {saving ? "저장 중…" : "저장"}
+          </button>
+        </>
       )}
     </div>
   );

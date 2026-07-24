@@ -24,10 +24,26 @@ import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
+import { createMockExamTimingStore } from "../../lib/mockExamTimingStoreFactory";
+import { createExamCheckStore } from "../../lib/examCheckStoreFactory";
+import type { ExamCheckAnswer } from "../../core/examCheck";
+import { EXAM_CHECK_ANSWER_LABELS } from "../../core/examCheck";
 import {
   validateSubmissionInput,
+  validateGeneralSubmissionInput,
+  validateMockExamTimingInput,
+  computeNextRound,
+  isMockExamKind,
+  getGeneralFieldLabels,
   type AssignmentType,
+  type AssignmentSubmission,
 } from "../../core/assignment";
+import {
+  evaluateStepTiming,
+  TIMING_EVALUATION_LABELS,
+  type MockExamTimingConfig,
+  type TimingEvaluation,
+} from "../../core/mockExamTiming";
 
 const EMPTY_DRAFT: DraftResult = {
   student: {},
@@ -54,7 +70,7 @@ export default function StudentFlow() {
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [matched, setMatched] = useState(false);
-  const [mode, setMode] = useState<"select" | "exam" | "assignment">("select");
+  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment">("select");
 
   function refreshRoster() {
     return rosterStore.listRoster().then((r) => {
@@ -178,7 +194,7 @@ export default function StudentFlow() {
           <div className="stamp-ring" />
           <div className="stamp">
             <span className="stamp-text">제출완료</span>
-            <span className="stamp-sub">ASX RECORDER</span>
+            <span className="stamp-sub">L16 RECORDER</span>
           </div>
         </div>
         <h2>제출이 완료됐습니다</h2>
@@ -187,6 +203,16 @@ export default function StudentFlow() {
           새로 입력하기
         </button>
       </div>
+    );
+  }
+
+  if (mode === "examCheck") {
+    return (
+      <ExamCompletionCheckScreen
+        studentCode={draft.student.studentCode ?? ""}
+        studentName={draft.student.name ?? ""}
+        onDone={() => setMode("assignment")}
+      />
     );
   }
 
@@ -252,7 +278,7 @@ export default function StudentFlow() {
               setMode("exam");
               next();
             }}
-            onChooseAssignment={() => setMode("assignment")}
+            onChooseAssignment={() => setMode("examCheck")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
@@ -847,21 +873,44 @@ function AssignmentSubmitForm({
   onBack: () => void;
 }) {
   const assignmentStore = useMemo(() => createAssignmentStore(), []);
+  const timingStore = useMemo(() => createMockExamTimingStore(), []);
   const [types, setTypes] = useState<AssignmentType[]>([]);
+  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
+  const [timingConfig, setTimingConfig] = useState<MockExamTimingConfig | null>(null);
+  const [pickedType, setPickedType] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [round, setRound] = useState("");
   const [score, setScore] = useState("");
   const [wrongNumbersText, setWrongNumbersText] = useState("");
+  const [item, setItem] = useState("");
+  const [scope, setScope] = useState("");
+  const [completed, setCompleted] = useState(true);
+  const [totalMinutes, setTotalMinutes] = useState("");
+  const [step1Minutes, setStep1Minutes] = useState("");
+  const [step2Minutes, setStep2Minutes] = useState("");
+  const [step3Minutes, setStep3Minutes] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [timingResult, setTimingResult] = useState<
+    { label: string; minutes: number; evaluation: TimingEvaluation }[]
+  >([]);
 
   useEffect(() => {
-    assignmentStore.listTypes().then((t) => {
-      setTypes(t);
-      if (t.length > 0) setTypeId(t[0].id);
+    assignmentStore.listTypes().then(setTypes);
+    assignmentStore.listSubmissionsForStudent(studentCode).then(setSubmissions);
+    timingStore.getConfig().then(setTimingConfig).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn("[L16] 모의고사 세부풀이시간 설정을 불러오지 못했습니다:", e);
     });
-  }, [assignmentStore]);
+  }, [assignmentStore, timingStore, studentCode]);
+
+  const selectedType = types.find((t) => t.id === typeId);
+  const isMockExam = selectedType ? isMockExamKind(selectedType) : false;
+  const fieldLabels = selectedType ? getGeneralFieldLabels(selectedType) : null;
+  const nextRound = selectedType ? computeNextRound(submissions, studentCode, typeId) : 1;
+  const showTiming = isMockExam && timingConfig?.enabled;
 
   function parseWrongNumbers(text: string): number[] {
     return text
@@ -872,31 +921,101 @@ function AssignmentSubmitForm({
       .filter((n) => Number.isFinite(n) && n > 0);
   }
 
+  function parseMinutes(text: string): number | undefined {
+    if (text.trim() === "") return undefined;
+    const n = Number(text);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
   async function submit() {
-    const input = {
-      round: Number(round) || 0,
-      score: score.trim() === "" ? null : Number(score),
-      wrongNumbers: parseWrongNumbers(wrongNumbersText),
-    };
-    const errs = validateSubmissionInput(input);
-    if (!typeId) errs.push("과제 유형을 선택하세요.");
+    if (!typeId) return setErrors(["과제 유형을 선택하세요."]);
+
+    let submissionPatch: Partial<AssignmentSubmission> = {};
+    let effectiveRound: number;
+    const errs: string[] = [];
+
+    if (isMockExam) {
+      effectiveRound = Number(round) || 0;
+      const scoreVal = score.trim() === "" ? null : Number(score);
+      errs.push(...validateSubmissionInput({ round: effectiveRound, score: scoreVal, wrongNumbers: [] }));
+      submissionPatch = { score: scoreVal, wrongNumbers: parseWrongNumbers(wrongNumbersText) };
+
+      if (showTiming) {
+        const timingInput = {
+          totalMinutes: parseMinutes(totalMinutes),
+          step1Minutes: parseMinutes(step1Minutes),
+          step2Minutes: parseMinutes(step2Minutes),
+          step3Minutes: parseMinutes(step3Minutes),
+        };
+        errs.push(...validateMockExamTimingInput(timingInput));
+        submissionPatch = { ...submissionPatch, ...timingInput };
+      }
+    } else {
+      effectiveRound = nextRound;
+      errs.push(...validateGeneralSubmissionInput({ item, scope, completed }));
+      submissionPatch = { item, scope, completed, score: null, wrongNumbers: [] };
+    }
+
     if (errs.length) return setErrors(errs);
 
     setSubmitting(true);
     setErrors([]);
-    await assignmentStore.submit({
-      id: crypto.randomUUID(),
-      studentCode,
-      typeId,
-      round: input.round,
-      score: input.score,
-      wrongNumbers: input.wrongNumbers,
-      submittedAt: new Date().toISOString(),
-    });
+
+    const wasEditing = Boolean(editingId);
+    const submissionId = editingId ?? crypto.randomUUID();
+
+    const finalPatch: Partial<AssignmentSubmission> = {
+      round: effectiveRound,
+      score: submissionPatch.score ?? null,
+      wrongNumbers: submissionPatch.wrongNumbers ?? [],
+      ...(isMockExam
+        ? {
+            totalMinutes: submissionPatch.totalMinutes,
+            step1Minutes: submissionPatch.step1Minutes,
+            step2Minutes: submissionPatch.step2Minutes,
+            step3Minutes: submissionPatch.step3Minutes,
+          }
+        : { item: submissionPatch.item, scope: submissionPatch.scope, completed: submissionPatch.completed }),
+    };
+
+    if (wasEditing) {
+      await assignmentStore.updateSubmission(submissionId, finalPatch);
+    } else {
+      await assignmentStore.submit({
+        id: submissionId,
+        studentCode,
+        typeId,
+        submittedAt: new Date().toISOString(),
+        ...finalPatch,
+      } as AssignmentSubmission);
+    }
+    setEditingId(submissionId);
+    assignmentStore.listSubmissionsForStudent(studentCode).then(setSubmissions);
+
+    // 세부풀이시간을 입력했으면 목표시간과 비교해 결과 계산
+    if (isMockExam && showTiming && timingConfig) {
+      const results: { label: string; minutes: number; evaluation: TimingEvaluation }[] = [];
+      const stepDefs = [
+        { cfg: timingConfig.step1, val: submissionPatch.step1Minutes },
+        { cfg: timingConfig.step2, val: submissionPatch.step2Minutes },
+        { cfg: timingConfig.step3, val: submissionPatch.step3Minutes },
+      ];
+      for (const { cfg, val } of stepDefs) {
+        if (val != null) {
+          results.push({
+            label: `${cfg.label} (${cfg.range})`,
+            minutes: val,
+            evaluation: evaluateStepTiming(val, cfg.targetMinutes),
+          });
+        }
+      }
+      setTimingResult(results);
+    }
 
     // 관리자 + 학부모에게 문자 알림 (실패해도 제출 자체는 유지)
     const typeName = types.find((t) => t.id === typeId)?.name ?? "과제";
-    const message = `[ASX] ${studentName} 학생이 "${typeName}" ${input.round}회차 과제를 제출했습니다.`;
+    const actionWord = wasEditing ? "수정했습니다" : "제출했습니다";
+    const message = `[L16] ${studentName} 학생이 "${typeName}" ${effectiveRound}회차 과제를 ${actionWord}.`;
     const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
     const provider = createSmsProvider();
     try {
@@ -917,13 +1036,53 @@ function AssignmentSubmitForm({
           <div className="stamp-ring" />
           <div className="stamp">
             <span className="stamp-text">제출완료</span>
-            <span className="stamp-sub">ASX RECORDER</span>
+            <span className="stamp-sub">L16 RECORDER</span>
           </div>
         </div>
         <h2>과제가 제출됐습니다</h2>
         <p className="muted">관리자와 학부모님께 알림이 발송되었습니다.</p>
-        <button className="btn" onClick={onBack}>
+        <p className="muted" style={{ fontSize: 13 }}>
+          선생님이 확인 후 결과를 문자로 다시 안내해 드립니다.
+        </p>
+        {timingResult.length > 0 && (
+          <div style={{ textAlign: "left", marginTop: 16 }}>
+            <h3>세부풀이시간 결과</h3>
+            {timingResult.map((r) => (
+              <div className="bar-row" key={r.label}>
+                <div className="lab">{r.label}</div>
+                <div className="val" style={{ width: "auto", flex: 1, textAlign: "left" }}>
+                  {r.minutes}분 — {TIMING_EVALUATION_LABELS[r.evaluation]}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <button className="btn" onClick={onBack} style={{ marginTop: 16 }}>
           처음으로
+        </button>
+        <div style={{ height: 8 }} />
+        <button
+          className="btn secondary"
+          onClick={() => {
+            // 방금 제출/수정한 내용을 폼에 다시 채워서 수정 화면으로
+            const last = submissions.find((s) => s.id === editingId);
+            if (last) {
+              setRound(String(last.round ?? ""));
+              setScore(last.score != null ? String(last.score) : "");
+              setWrongNumbersText((last.wrongNumbers ?? []).join(", "));
+              setItem(last.item ?? "");
+              setScope(last.scope ?? "");
+              setCompleted(last.completed ?? true);
+              setTotalMinutes(last.totalMinutes != null ? String(last.totalMinutes) : "");
+              setStep1Minutes(last.step1Minutes != null ? String(last.step1Minutes) : "");
+              setStep2Minutes(last.step2Minutes != null ? String(last.step2Minutes) : "");
+              setStep3Minutes(last.step3Minutes != null ? String(last.step3Minutes) : "");
+            }
+            setPickedType(true);
+            setDone(false);
+          }}
+        >
+          방금 제출 수정하기
         </button>
       </div>
     );
@@ -946,39 +1105,169 @@ function AssignmentSubmitForm({
 
       {types.length === 0 ? (
         <p className="muted">등록된 과제 유형이 없습니다. 선생님께 문의하세요.</p>
+      ) : !pickedType ? (
+        <>
+          <p className="muted" style={{ marginTop: 0 }}>
+            제출할 과제를 선택하세요.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {types.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => {
+                  setTypeId(t.id);
+                  setPickedType(true);
+                  setEditingId(null);
+                  setRound("");
+                  setScore("");
+                  setWrongNumbersText("");
+                  setItem("");
+                  setScope("");
+                  setCompleted(true);
+                  setTotalMinutes("");
+                  setStep1Minutes("");
+                  setStep2Minutes("");
+                  setStep3Minutes("");
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "16px 18px",
+                  border: "2px solid var(--line-strong)",
+                  borderRadius: "var(--radius-md)",
+                  cursor: "pointer",
+                  background: "var(--paper-raised)",
+                }}
+              >
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    border: "2px solid var(--mark)",
+                    flexShrink: 0,
+                  }}
+                />
+                <div>
+                  <div style={{ fontWeight: 700 }}>{t.name}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    지정 {t.targetCount}회 · {isMockExamKind(t) ? "모의고사형" : "일반과제"}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <>
-          <label>과제 유형</label>
-          <select value={typeId} onChange={(e) => setTypeId(e.target.value)}>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} (지정 {t.targetCount}회)
-              </option>
-            ))}
-          </select>
+          <button
+            className="btn ghost"
+            style={{ marginBottom: 10, padding: "6px 10px" }}
+            onClick={() => setPickedType(false)}
+          >
+            ◀ 다른 과제 선택
+          </button>
+          <p style={{ fontWeight: 700, marginTop: 0 }}>{selectedType?.name}</p>
 
-          <label>회차</label>
-          <input
-            type="number"
-            value={round}
-            onChange={(e) => setRound(e.target.value)}
-            placeholder="예: 1"
-          />
+          {isMockExam ? (
+            <>
+              <label>회차</label>
+              <input
+                type="number"
+                value={round}
+                onChange={(e) => setRound(e.target.value)}
+                placeholder="예: 1"
+              />
 
-          <label>점수 (선택)</label>
-          <input
-            type="number"
-            value={score}
-            onChange={(e) => setScore(e.target.value)}
-            placeholder="예: 88"
-          />
+              <label>점수 (선택)</label>
+              <input
+                type="number"
+                value={score}
+                onChange={(e) => setScore(e.target.value)}
+                placeholder="예: 88"
+              />
 
-          <label>틀린 문항 번호 (선택, 쉼표로 구분)</label>
-          <input
-            value={wrongNumbersText}
-            onChange={(e) => setWrongNumbersText(e.target.value)}
-            placeholder="예: 3, 17, 40"
-          />
+              <label>틀린 문항 번호 (선택, 쉼표로 구분)</label>
+              <input
+                value={wrongNumbersText}
+                onChange={(e) => setWrongNumbersText(e.target.value)}
+                placeholder="예: 3, 17, 40"
+              />
+
+              {showTiming && timingConfig && (
+                <>
+                  <label>전체 소요시간 (분, 선택)</label>
+                  <input
+                    type="number"
+                    value={totalMinutes}
+                    onChange={(e) => setTotalMinutes(e.target.value)}
+                    placeholder="예: 44"
+                  />
+                  <label>
+                    {timingConfig.step1.label} ({timingConfig.step1.range}) 소요시간 (분, 선택)
+                  </label>
+                  <input
+                    type="number"
+                    value={step1Minutes}
+                    onChange={(e) => setStep1Minutes(e.target.value)}
+                    placeholder={`목표 ${timingConfig.step1.targetMinutes}분`}
+                  />
+                  <label>
+                    {timingConfig.step2.label} ({timingConfig.step2.range}) 소요시간 (분, 선택)
+                  </label>
+                  <input
+                    type="number"
+                    value={step2Minutes}
+                    onChange={(e) => setStep2Minutes(e.target.value)}
+                    placeholder={`목표 ${timingConfig.step2.targetMinutes}분`}
+                  />
+                  <label>
+                    {timingConfig.step3.label} ({timingConfig.step3.range}) 소요시간 (분, 선택)
+                  </label>
+                  <input
+                    type="number"
+                    value={step3Minutes}
+                    onChange={(e) => setStep3Minutes(e.target.value)}
+                    placeholder={`목표 ${timingConfig.step3.targetMinutes}분`}
+                  />
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ marginTop: 0 }}>
+                {nextRound}회차로 자동 등록됩니다.
+              </p>
+              <label>{fieldLabels?.itemLabel ?? "분야명"}</label>
+              <input
+                value={item}
+                onChange={(e) => setItem(e.target.value)}
+                placeholder="예: 어휘 Day5"
+              />
+              <label>{fieldLabels?.scopeLabel ?? "학습내용"}</label>
+              <input
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                placeholder="예: 101~150번"
+              />
+              <label>{fieldLabels?.completedLabel ?? "완수여부"}</label>
+              <div className="chips">
+                <div
+                  className={"chip" + (completed ? " on" : "")}
+                  onClick={() => setCompleted(true)}
+                >
+                  완료
+                </div>
+                <div
+                  className={"chip" + (!completed ? " on" : "")}
+                  onClick={() => setCompleted(false)}
+                >
+                  미완료
+                </div>
+              </div>
+            </>
+          )}
 
           <div style={{ height: 14 }} />
           <button className="btn" onClick={submit} disabled={submitting}>
@@ -990,6 +1279,51 @@ function AssignmentSubmitForm({
       <button className="btn ghost" onClick={onBack}>
         ← 처음으로
       </button>
+    </div>
+  );
+}
+
+function ExamCompletionCheckScreen({
+  studentCode,
+  studentName,
+  onDone,
+}: {
+  studentCode: string;
+  studentName: string;
+  onDone: () => void;
+}) {
+  const examCheckStore = useMemo(() => createExamCheckStore(), []);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function answer(value: ExamCheckAnswer) {
+    setSubmitting(true);
+    await examCheckStore.submit({
+      id: crypto.randomUUID(),
+      studentCode,
+      studentName,
+      answer: value,
+      answeredAt: new Date().toISOString(),
+    });
+    setSubmitting(false);
+    onDone();
+  }
+
+  return (
+    <div className="card">
+      <h2>모의고사 성적 접수 확인</h2>
+      <p className="sub">{studentName} 학생</p>
+      <p className="muted">모의고사 성적 접수가 완료되었나요?</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+        <button className="btn" onClick={() => answer("yes")} disabled={submitting}>
+          {EXAM_CHECK_ANSWER_LABELS.yes}
+        </button>
+        <button className="btn secondary" onClick={() => answer("no")} disabled={submitting}>
+          {EXAM_CHECK_ANSWER_LABELS.no}
+        </button>
+        <button className="btn ghost" onClick={() => answer("na")} disabled={submitting}>
+          {EXAM_CHECK_ANSWER_LABELS.na}
+        </button>
+      </div>
     </div>
   );
 }
