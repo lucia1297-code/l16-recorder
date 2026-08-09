@@ -633,140 +633,118 @@ function RosterManager() {
             <tbody>
               {roster.map((e) => {
                 const isEditing = editingCode === e.studentCode;
-                const typeLabel = e.studentType === "S" ? "특별관리" : e.studentType === "W2" ? "주2타임" : e.studentType === "W1" ? "주1타임" : "";
                 const typeColor = e.studentType === "S" ? "#9b59b6" : e.studentType === "W2" ? "#e67e22" : e.studentType === "W1" ? "#e74c3c" : "#aaa";
                 return (
                   <tr key={e.studentCode} style={{ background: isEditing ? "#f8f9ff" : "transparent" }}>
                     <td style={{ fontSize: 12, color: "#666" }}>{e.studentCode}</td>
                     <td style={{ fontWeight: 600 }}>{e.name}</td>
-                    <td>{e.school}</td>
-                    {/* 전화번호 */}
+                    <td style={{ fontSize: 13 }}>{e.school}</td>
+
+                    {/* 전화번호 - 수정 버튼 클릭 시만 편집 */}
                     <td>
                       {isEditing ? (
                         <div>
-                          <input
-                            value={editPhone}
-                            onChange={(ev) => setEditPhone(ev.target.value)}
-                            placeholder="010-1234-5678"
-                            style={{ padding: 4, fontSize: 13, width: 130 }}
-                          />
+                          <input value={editPhone} onChange={(ev) => setEditPhone(ev.target.value)} placeholder="010-1234-5678" style={{ padding: 4, fontSize: 13, width: 130 }} />
                           {editError && <div style={{ color: "red", fontSize: 11 }}>{editError}</div>}
                         </div>
                       ) : (
                         <span style={{ fontSize: 13 }}>{e.phone}</span>
                       )}
                     </td>
-                    {/* 등급 */}
+
+                    {/* 등급 - 항상 바로 선택 가능 */}
                     <td style={{ textAlign: "center" }}>
-                      {isEditing ? (
-                        <select
-                          value={e.studentType ?? ""}
-                          onChange={(ev) => {
-                            const updated = roster.map((r) =>
-                              r.studentCode === e.studentCode
-                                ? { ...r, studentType: ev.target.value as "S" | "W2" | "W1" | "" }
-                                : r
-                            );
-                            setRoster(updated);
-                          }}
-                          style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}
-                        >
-                          <option value="">미설정</option>
-                          <option value="S">S - 특별관리</option>
-                          <option value="W2">W2 - 주2타임</option>
-                          <option value="W1">W1 - 주1타임</option>
-                        </select>
-                      ) : (
-                        e.studentType ? (
-                          <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: typeColor + "22", color: typeColor, border: `1px solid ${typeColor}` }}>
-                            {e.studentType}
-                          </span>
-                        ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>
-                      )}
+                      <select
+                        value={e.studentType ?? ""}
+                        onChange={(ev) => {
+                          const updated = roster.map((r) =>
+                            r.studentCode === e.studentCode ? { ...r, studentType: ev.target.value as "S" | "W2" | "W1" | "" } : r
+                          );
+                          setRoster(updated);
+                          rosterStore.saveRoster(updated);
+                        }}
+                        style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: `2px solid ${e.studentType ? typeColor : "#ddd"}`, background: e.studentType ? typeColor + "18" : "#fff", color: e.studentType ? typeColor : "#888", fontWeight: e.studentType ? 700 : 400, cursor: "pointer" }}
+                      >
+                        <option value="">미설정</option>
+                        <option value="S">S - 특별관리</option>
+                        <option value="W2">W2 - 주2타임</option>
+                        <option value="W1">W1 - 주1타임</option>
+                      </select>
                     </td>
-                    {/* 주간시수 */}
+
+                    {/* 주간시수 - 항상 바로 선택 가능 */}
                     <td style={{ textAlign: "center" }}>
-                      {isEditing ? (
-                        <select
-                          value={e.weeklySession ?? ""}
-                          onChange={(ev) => {
-                            const val = ev.target.value === "" ? null : Number(ev.target.value) as 1|2|3|4|5|6;
-                            const updated = roster.map((r) =>
-                              r.studentCode === e.studentCode ? { ...r, weeklySession: val } : r
-                            );
-                            setRoster(updated);
-                          }}
-                          style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}
-                        >
-                          <option value="">미설정</option>
-                          {[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n}회/주</option>)}
-                        </select>
-                      ) : (
-                        e.weeklySession ? (
-                          <div>
-                            <span style={{ fontWeight: 700, color: "#2980b9" }}>{e.weeklySession}회/주</span>
-                            <div style={{ fontSize: 10, color: "#aaa" }}>기한 {getReminderDays(e.weeklySession)}일</div>
-                          </div>
-                        ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>
-                      )}
+                      <select
+                        value={e.weeklySession ?? ""}
+                        onChange={(ev) => {
+                          const val = ev.target.value === "" ? null : Number(ev.target.value) as 1|2|3|4|5|6;
+                          const updated = roster.map((r) =>
+                            r.studentCode === e.studentCode ? { ...r, weeklySession: val } : r
+                          );
+                          setRoster(updated);
+                          rosterStore.saveRoster(updated);
+                        }}
+                        style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: `2px solid ${e.weeklySession ? "#2980b9" : "#ddd"}`, background: e.weeklySession ? "#eaf4fb" : "#fff", color: e.weeklySession ? "#2980b9" : "#888", fontWeight: e.weeklySession ? 700 : 400, cursor: "pointer" }}
+                      >
+                        <option value="">미설정</option>
+                        {[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n}회/주</option>)}
+                      </select>
+                      {e.weeklySession ? <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>기한 {getReminderDays(e.weeklySession)}일</div> : null}
                     </td>
-                    {/* 학부모번호 */}
+
+                    {/* 학부모번호 - 항상 바로 편집, 포커스 벗어나면 저장 */}
                     <td>
-                      {isEditing ? (
-                        <input
-                          value={e.parentPhone ?? ""}
-                          onChange={(ev) => {
-                            const updated = roster.map((r) =>
-                              r.studentCode === e.studentCode ? { ...r, parentPhone: ev.target.value || undefined } : r
-                            );
-                            setRoster(updated);
-                          }}
-                          placeholder="010-0000-0000"
-                          style={{ width: 120, fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: 12, color: e.parentPhone ? "#333" : "#ccc" }}>
-                          {e.parentPhone || "미등록"}
-                        </span>
-                      )}
+                      <input
+                        defaultValue={e.parentPhone ?? ""}
+                        placeholder="미등록"
+                        style={{ width: 115, fontSize: 12, padding: "3px 6px", borderRadius: 4, border: `1px solid ${e.parentPhone ? "#2980b9" : "#ddd"}`, color: e.parentPhone ? "#333" : "#aaa" }}
+                        onBlur={async (ev) => {
+                          const val = ev.target.value.trim();
+                          if (val === (e.parentPhone ?? "")) return;
+                          const updated = roster.map((r) =>
+                            r.studentCode === e.studentCode ? { ...r, parentPhone: val || undefined } : r
+                          );
+                          setRoster(updated);
+                          await rosterStore.saveRoster(updated);
+                          setNotice(`${e.name} 학부모번호 저장`);
+                          setTimeout(() => setNotice(""), 1500);
+                        }}
+                      />
                     </td>
-                    {/* 독려제외 */}
+
+                    {/* 독려제외 - 항상 바로 클릭 가능 */}
                     <td style={{ textAlign: "center" }}>
-                      {isEditing ? (
+                      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", cursor: "pointer", gap: 2 }}>
                         <input
                           type="checkbox"
                           checked={!!e.excludeFromReminder}
-                          onChange={(ev) => {
+                          onChange={async (ev) => {
                             const updated = roster.map((r) =>
                               r.studentCode === e.studentCode ? { ...r, excludeFromReminder: ev.target.checked } : r
                             );
                             setRoster(updated);
+                            await rosterStore.saveRoster(updated);
                           }}
                           style={{ width: 18, height: 18 }}
                         />
-                      ) : (
-                        <span style={{ fontSize: 13 }}>{e.excludeFromReminder ? "✅ 제외" : "-"}</span>
-                      )}
+                        {e.excludeFromReminder && (
+                          <span style={{ fontSize: 10, color: "#27ae60", fontWeight: 700 }}>제외중</span>
+                        )}
+                      </label>
                     </td>
-                    {/* 관리 버튼 */}
+
+                    {/* 관리 - 전화번호 수정/코드전송만 */}
                     <td>
                       {isEditing ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          <button
-                            className="btn"
-                            style={{ padding: "4px 10px", fontSize: 12, background: "#27ae60", color: "#fff", border: "none" }}
-                            onClick={async () => {
-                              await savePhone(e);
-                              await rosterStore.saveRoster(roster);
-                              setNotice(`${e.name} 저장 완료`);
-                              setTimeout(() => setNotice(""), 2000);
-                            }}
-                          >저장</button>
+                          <button className="btn" style={{ padding: "4px 10px", fontSize: 12, background: "#27ae60", color: "#fff", border: "none" }} onClick={() => savePhone(e)}>저장</button>
                           <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={cancelEdit}>취소</button>
-                          <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => sendCode(e)}>코드전송</button>
                         </div>
                       ) : (
-                        <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(e)}>수정</button>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(e)}>번호수정</button>
+                          <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => sendCode(e)}>코드전송</button>
+                        </div>
                       )}
                     </td>
                   </tr>
