@@ -48,6 +48,7 @@ export interface ExamInfo {
 export interface WrongAnswerEntry {
   questionNo: number; // 1~totalQuestions
   reasons: WrongReason[];
+  isThreePoint?: boolean; // 3점 문항 여부
 }
 
 // ===== 최종 회고 =====
@@ -71,13 +72,26 @@ export interface ExamResult {
 }
 
 // 제출 전 작성 중 상태 (자동 저장 대상)
+export interface QuestionDetail {
+  questionNo: number;
+  chosenOption: string;       // 선택한 선지 번호
+  confidenceBefore: number;   // 자신감 (0~100)
+  reasonStudent: string;      // 선택 이유
+  evidenceSentence: string;   // 근거 문장
+  missedSignal: string;       // 놓친 신호
+  optionElimination: Record<string, string>; // 선지 소거 {1:"반대", 2:"정답후보"...}
+  studentNextAction: string;  // 다음 행동 계획
+}
+
 export interface DraftResult {
   phone?: string;
   student: Partial<StudentInfo>;
   exam: Partial<ExamInfo>;
   teacher: string;
   score: number | null;
+  solvingTime: number | null; // 총 풀이 시간 (분)
   wrongAnswers: WrongAnswerEntry[];
   reflection: Partial<Reflection>;
   step: number;
+  questionDetails?: QuestionDetail[]; // 상위 3개 상세 입력
 }

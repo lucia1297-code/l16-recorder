@@ -29,6 +29,8 @@ export class SupabaseRosterStore implements RosterStore {
       teacher: e.teacher,
       note: e.note,
       registered_at: e.registeredAt,
+      student_type: e.studentType ?? "",
+      exclude_from_reminder: e.excludeFromReminder ?? false,
     }));
     const { error } = await sb.from("students").upsert(rows, { onConflict: "student_code" });
     if (error) throw error;
@@ -48,6 +50,8 @@ export class SupabaseRosterStore implements RosterStore {
       teacher: r.teacher ?? "",
       note: r.note ?? "",
       registeredAt: r.registered_at ?? undefined,
+      studentType: (r.student_type ?? "") as "S" | "W2" | "W1" | "",
+      excludeFromReminder: r.exclude_from_reminder ?? false,
     }));
   }
 

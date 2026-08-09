@@ -44,18 +44,24 @@ import {
   type MockExamTimingConfig,
   type TimingEvaluation,
 } from "../../core/mockExamTiming";
+import {
+  saveSubmissionToNeon,
+  saveAttemptToNeon,
+  type NeonQuestionAttempt,
+} from "../../lib/neonStorage";
 
 const EMPTY_DRAFT: DraftResult = {
   student: {},
   exam: { year: new Date().getFullYear(), totalQuestions: 45, maxScore: 100 },
   teacher: "",
   score: null,
+  solvingTime: null,
   wrongAnswers: [],
   reflection: {},
   step: 0,
 };
 
-const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "오답번호", "오답원인", "회고", "제출"];
+const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "풀이시간", "오답번호", "오답원인", "상세분석", "회고", "제출"];
 
 export default function StudentFlow() {
   const storage = useStorage();
@@ -159,7 +165,7 @@ export default function StudentFlow() {
   }
 
   async function submit() {
-    const errs = validateStep(7, draft);
+    const errs = validateStep(9, draft);
     if (errs.length) return setErrors(errs);
     const result: ExamResult = {
       id: crypto.randomUUID(),
@@ -173,6 +179,46 @@ export default function StudentFlow() {
       submittedAt: new Date().toISOString(),
     };
     await storage.saveResult(result);
+
+    // Neon DB 저장 (비동기 - 실패해도 제출 완료)
+    saveSubmissionToNeon({
+      id: result.id,
+      studentId: result.student.studentCode,
+      studentName: result.student.name,
+      school: result.student.school,
+      grade: result.student.grade,
+      examId: `${result.exam.year}_${result.exam.month}_${result.exam.examName}`,
+      examName: result.exam.examName,
+      examYear: result.exam.year,
+      examMonth: result.exam.month,
+      score: result.score,
+      maxScore: result.exam.maxScore,
+      wrongAnswers: result.wrongAnswers,
+      reflection: result.reflection,
+      submittedAt: result.submittedAt,
+    }).catch(console.error);
+
+    // 상세 분석 Neon 저장
+    if (draft.questionDetails && draft.questionDetails.length > 0) {
+      for (const detail of draft.questionDetails) {
+        const attempt: NeonQuestionAttempt = {
+          submissionId: result.id,
+          studentId: result.student.studentCode,
+          examId: `${result.exam.year}_${result.exam.month}_${result.exam.examName}`,
+          questionNo: detail.questionNo,
+          chosenOption: detail.chosenOption,
+          confidenceBefore: detail.confidenceBefore,
+          reasonStudent: detail.reasonStudent,
+          evidenceSentence: detail.evidenceSentence,
+          missedSignal: detail.missedSignal,
+          optionElimination: detail.optionElimination,
+          studentNextAction: detail.studentNextAction,
+          isThreePoint: draft.wrongAnswers.find((w) => w.questionNo === detail.questionNo)?.isThreePoint ?? false,
+        };
+        saveAttemptToNeon(attempt).catch(console.error);
+      }
+    }
+
     await storage.clearDraft();
     setDone(true);
   }
@@ -285,10 +331,12 @@ export default function StudentFlow() {
         {step === 2 && <StepSchool draft={draft} set={set} />}
         {step === 3 && <StepExam draft={draft} set={set} />}
         {step === 4 && <StepScore draft={draft} set={set} />}
-        {step === 5 && <StepWrongNumbers draft={draft} set={set} />}
-        {step === 6 && <StepWrongReasons draft={draft} set={set} />}
-        {step === 7 && <StepReflection draft={draft} set={set} />}
-        {step === 8 && <StepReview draft={draft} />}
+        {step === 5 && <StepSolvingTime draft={draft} set={set} />}
+        {step === 6 && <StepWrongNumbers draft={draft} set={set} />}
+        {step === 7 && <StepWrongReasons draft={draft} set={set} />}
+        {step === 8 && <StepQuestionDetail draft={draft} set={set} />}
+        {step === 9 && <StepReflection draft={draft} set={set} />}
+        {step === 10 && <StepReview draft={draft} />}
       </div>
 
       {step > 0 && (
@@ -329,11 +377,19 @@ function validateStep(step: number, d: DraftResult): string[] {
       return validateExamInfo(d.exam);
     case 4:
       return d.score == null || d.score < 0 ? ["총점을 입력하세요."] : [];
-    case 5:
-      return []; // 오답 0개 허용 (만점)
+    case 5: {
+      const times = d.solvingTime as unknown as (number | null)[] | null;
+      const arr = Array.isArray(times) ? times : [];
+      const allOk = arr.length === 3 && arr.every((t) => t != null && t > 0);
+      return allOk ? [] : ["⚠️ Step 1·2·3 풀이 시간을 모두 입력해야 다음으로 진행할 수 있습니다."];
+    }
     case 6:
-      return [];
+      return []; // 오답 0개 허용 (만점)
     case 7:
+      return [];
+    case 8:
+      return []; // 상세분석은 선택 입력
+    case 9:
       return validateReflection(d.reflection);
     default:
       return [];
@@ -710,9 +766,15 @@ function StepExam({ draft, set }: StepProps) {
 }
 
 function StepScore({ draft, set }: StepProps) {
+  const autoCalculated = draft.wrongAnswers.length > 0;
   return (
     <>
       <label>내 총점</label>
+      {autoCalculated && (
+        <p className="muted" style={{ fontSize: 13, color: "#27ae60", marginBottom: 6 }}>
+          ✅ 오답 체크에서 자동 계산됨 — 직접 수정할 수 있습니다.
+        </p>
+      )}
       <input
         type="number"
         value={draft.score ?? ""}
@@ -730,21 +792,155 @@ function StepScore({ draft, set }: StepProps) {
   );
 }
 
+// ── Step별 목표시간 ──────────────────────────────
+const STEP_TARGETS = [
+  { label: "Step 1 (18~28번)", target: 5 },
+  { label: "Step 2 (29~38번)", target: 15 },
+  { label: "Step 3 (39~45번)", target: 15 },
+];
+
+function StepSolvingTime({ draft, set }: StepProps) {
+  const times = (draft.solvingTime as unknown as number[] | null) ?? [null, null, null];
+  const asArr = Array.isArray(times) ? times : [null, null, null];
+
+  function setTime(idx: number, val: number | null) {
+    const next = [...asArr] as (number | null)[];
+    next[idx] = val;
+    set({ solvingTime: next as unknown as number });
+  }
+
+  const allEntered = asArr.every((t) => t != null && t > 0);
+  const totalActual = asArr.reduce((s, t) => s + (t ?? 0), 0);
+  const totalTarget = STEP_TARGETS.reduce((s, t) => s + t.target, 0);
+
+  // 가상 점수 계산
+  const baseScore = draft.score ?? 0;
+  let bonus = 0;
+  asArr.forEach((t, i) => {
+    if (t == null) return;
+    const diff = STEP_TARGETS[i].target - t; // 양수=빠름, 음수=느림
+    bonus += diff; // 분당 +1/-1
+  });
+  const virtualScore = Math.min(100, Math.max(0, baseScore + bonus));
+
+  return (
+    <>
+      <p className="muted">각 Step별 실제 풀이 시간을 입력하세요.</p>
+      <p style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>
+        목표 초과 시 분당 -1점 · 목표보다 빠르면 분당 +1점 가산한 가상점수를 계산합니다.
+      </p>
+
+      {STEP_TARGETS.map((st, i) => {
+        const t = asArr[i];
+        const diff = t != null ? st.target - t : null;
+        const color = diff == null ? "#aaa" : diff > 0 ? "#27ae60" : diff < 0 ? "#e74c3c" : "#3498db";
+        return (
+          <div key={i} style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 10, background: "#f9f9f9", border: "1px solid #eee" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{st.label}</span>
+              <span style={{ fontSize: 12, color: "#888" }}>목표: {st.target}분</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={t ?? ""}
+                placeholder="분"
+                onChange={(e) => setTime(i, e.target.value === "" ? null : Number(e.target.value))}
+                style={{ width: 80, fontSize: 18, textAlign: "center", fontWeight: 700, padding: "6px 8px" }}
+              />
+              <span style={{ fontSize: 13 }}>분</span>
+              {diff != null && (
+                <span style={{ fontWeight: 700, color, fontSize: 14 }}>
+                  {diff > 0 ? `+${diff}점 (${diff}분 빠름)` : diff < 0 ? `${diff}점 (${Math.abs(diff)}분 초과)` : "정확히 맞춤"}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* 미입력 경고 */}
+      {!allEntered && (
+        <div style={{ padding: "14px 16px", borderRadius: 10, background: "#fdecea", border: "2px solid #e74c3c", marginBottom: 12 }}>
+          <p style={{ margin: 0, fontWeight: 700, color: "#e74c3c", fontSize: 15 }}>
+            ⛔ 3개 Step 시간을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
+          </p>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "#888" }}>
+            기억이 정확하지 않으면 대략적인 시간을 입력하세요.
+          </p>
+        </div>
+      )}
+
+      {/* 전체 요약 */}
+      {allEntered && (
+        <div style={{ padding: "14px 16px", borderRadius: 10,
+          background: totalActual > totalTarget ? "#fdecea" : "#f0f9f0",
+          border: `2px solid ${totalActual > totalTarget ? "#e74c3c" : "#2ecc71"}`,
+          marginBottom: 12 }}>
+          <p style={{ margin: "0 0 6px", fontWeight: 700, fontSize: 15 }}>
+            총 풀이 시간: {totalActual}분
+            {totalActual > totalTarget
+              ? ` (목표 ${totalTarget}분 초과 +${totalActual - totalTarget}분)`
+              : ` (목표 ${totalTarget}분보다 ${totalTarget - totalActual}분 빠름)`}
+          </p>
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#2c3e50" }}>{baseScore}점</div>
+              <div style={{ fontSize: 12, color: "#888" }}>실제 점수</div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#aaa", alignSelf: "center" }}>→</div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 700,
+                color: virtualScore > baseScore ? "#27ae60" : virtualScore < baseScore ? "#e74c3c" : "#3498db" }}>
+                {virtualScore}점
+              </div>
+              <div style={{ fontSize: 12, color: "#888" }}>가상 점수 ({bonus >= 0 ? "+" : ""}{bonus}점)</div>
+            </div>
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: "#666" }}>
+            * 가상점수 = 실제점수 {bonus >= 0 ? "+" : ""}{bonus}점 (step별 시간 가산)
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function StepWrongNumbers({ draft, set }: StepProps) {
   const total = draft.exam.totalQuestions ?? 45;
+  const maxScore = draft.exam.maxScore ?? 100;
   const wrongSet = new Set(draft.wrongAnswers.map((w) => w.questionNo));
 
   function toggle(n: number) {
+    let newWrong;
     if (wrongSet.has(n)) {
-      set({ wrongAnswers: draft.wrongAnswers.filter((w) => w.questionNo !== n) });
+      newWrong = draft.wrongAnswers.filter((w) => w.questionNo !== n);
     } else {
-      set({
-        wrongAnswers: [...draft.wrongAnswers, { questionNo: n, reasons: [] }].sort(
-          (a, b) => a.questionNo - b.questionNo,
-        ),
-      });
+      newWrong = [...draft.wrongAnswers, { questionNo: n, reasons: [], isThreePoint: false }].sort(
+        (a, b) => a.questionNo - b.questionNo,
+      );
     }
+    const autoScore = calcAutoScore(newWrong, maxScore);
+    set({ wrongAnswers: newWrong, score: autoScore });
   }
+
+  function toggleThreePoint(n: number) {
+    const newWrong = draft.wrongAnswers.map((w) =>
+      w.questionNo === n ? { ...w, isThreePoint: !w.isThreePoint } : w
+    );
+    const autoScore = calcAutoScore(newWrong, maxScore);
+    set({ wrongAnswers: newWrong, score: autoScore });
+  }
+
+  function calcAutoScore(wrongs: typeof draft.wrongAnswers, max: number) {
+    const threeCount = wrongs.filter((w) => w.isThreePoint).length;
+    const twoCount = wrongs.length - threeCount;
+    return max - threeCount * 3 - twoCount * 2;
+  }
+
+  const autoScore = calcAutoScore(draft.wrongAnswers, maxScore);
 
   return (
     <>
@@ -760,6 +956,52 @@ function StepWrongNumbers({ draft, set }: StepProps) {
           </div>
         ))}
       </div>
+
+      {draft.wrongAnswers.length > 0 && (
+        <>
+          <p className="muted" style={{ marginTop: 16, marginBottom: 8 }}>
+            3점 문항에 체크하세요:
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {draft.wrongAnswers.map((w) => (
+              <label
+                key={w.questionNo}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  background: w.isThreePoint ? "#e8f4fd" : "#f5f5f5",
+                  border: w.isThreePoint ? "2px solid #3498db" : "2px solid #ddd",
+                  borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                  fontWeight: 600, fontSize: 15,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!w.isThreePoint}
+                  onChange={() => toggleThreePoint(w.questionNo)}
+                  style={{ width: 18, height: 18 }}
+                />
+                {w.questionNo}번 3점
+              </label>
+            ))}
+          </div>
+
+          <div style={{
+            marginTop: 16, padding: "12px 16px",
+            background: "#f0f9f0", borderRadius: 10,
+            border: "2px solid #2ecc71",
+          }}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: 16 }}>
+              자동 계산 점수: <span style={{ color: "#27ae60", fontSize: 20 }}>{autoScore}점</span>
+              <span style={{ color: "#888", fontSize: 13, marginLeft: 8 }}>/ {maxScore}점</span>
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#666" }}>
+              2점 문항 {draft.wrongAnswers.filter((w) => !w.isThreePoint).length}개 ×2점
+              + 3점 문항 {draft.wrongAnswers.filter((w) => w.isThreePoint).length}개 ×3점 감점
+            </p>
+          </div>
+        </>
+      )}
+
       <p className="muted center" style={{ marginTop: 12 }}>
         선택 {wrongSet.size}개
       </p>
@@ -789,23 +1031,207 @@ function StepWrongReasons({ draft, set }: StepProps) {
   return (
     <>
       <p className="muted">문항별 오답 원인을 선택하세요 (복수 선택 가능).</p>
-      {draft.wrongAnswers.map((w) => (
-        <div className="reason-block" key={w.questionNo}>
-          <div className="qno">{w.questionNo}번</div>
-          <div className="chips">
-            {WRONG_REASONS.map((r) => (
-              <div
-                key={r}
-                className={"chip" + (w.reasons.includes(r) ? " on" : "")}
-                onClick={() => toggleReason(w.questionNo, r)}
-              >
-                {WRONG_REASON_LABELS[r]}
+      <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4 }}>
+        {draft.wrongAnswers.map((w) => (
+          <div className="reason-block" key={w.questionNo}>
+            <div className="qno">
+              {w.questionNo}번
+              {w.isThreePoint && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: "#e74c3c", fontWeight: 700 }}>3점</span>
+              )}
+            </div>
+            <div className="chips">
+              {WRONG_REASONS.map((r) => (
+                <div
+                  key={r}
+                  className={"chip" + (w.reasons.includes(r) ? " on" : "")}
+                  onClick={() => toggleReason(w.questionNo, r)}
+                >
+                  {WRONG_REASON_LABELS[r]}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function StepQuestionDetail({ draft, set }: StepProps) {
+  const { wrongAnswers, questionDetails = [] } = draft;
+
+  // 상위 3개 자동 선정 (헷갈림 표시 → 3점 문항 → 번호 순)
+  const top3 = useMemo(() => {
+    const sorted = [...wrongAnswers].sort((a, b) => {
+      if (a.isThreePoint && !b.isThreePoint) return -1;
+      if (!a.isThreePoint && b.isThreePoint) return 1;
+      return a.questionNo - b.questionNo;
+    });
+    return sorted.slice(0, 3);
+  }, [wrongAnswers]);
+
+  // 선택된 상세 분석 문항
+  const [selected, setSelected] = useState<number[]>(
+    () => top3.map((w) => w.questionNo)
+  );
+
+  function getDetail(qNo: number): import("../../core/types").QuestionDetail {
+    return questionDetails.find((d) => d.questionNo === qNo) ?? {
+      questionNo: qNo,
+      chosenOption: "",
+      confidenceBefore: 50,
+      reasonStudent: "",
+      evidenceSentence: "",
+      missedSignal: "",
+      optionElimination: { "1": "", "2": "", "3": "", "4": "", "5": "" },
+      studentNextAction: "",
+    };
+  }
+
+  function updateDetail(qNo: number, patch: Partial<import("../../core/types").QuestionDetail>) {
+    const existing = getDetail(qNo);
+    const updated = { ...existing, ...patch };
+    const others = questionDetails.filter((d) => d.questionNo !== qNo);
+    set({ questionDetails: [...others, updated] });
+  }
+
+  function toggleSelect(qNo: number) {
+    setSelected((prev) =>
+      prev.includes(qNo)
+        ? prev.filter((n) => n !== qNo)
+        : prev.length < 3 + wrongAnswers.length
+          ? [...prev, qNo]
+          : prev
+    );
+  }
+
+  if (wrongAnswers.length === 0) {
+    return (
+      <div>
+        <p className="muted">오답이 없습니다 (만점). 다음 단계로 이동하세요.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+        상위 3개 문항이 자동 선정됐습니다. 추가로 선택하거나 해제할 수 있습니다.
+      </p>
+
+      {/* 문항 선택 */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        {wrongAnswers.map((w) => {
+          const isSelected = selected.includes(w.questionNo);
+          const isAuto = top3.some((t) => t.questionNo === w.questionNo);
+          return (
+            <button
+              key={w.questionNo}
+              onClick={() => toggleSelect(w.questionNo)}
+              style={{
+                padding: "6px 14px", borderRadius: 8, cursor: "pointer",
+                fontWeight: 700, fontSize: 14,
+                background: isSelected ? "#2980b9" : "#f0f0f0",
+                color: isSelected ? "#fff" : "#333",
+                border: isAuto ? "2px solid #e74c3c" : "2px solid transparent",
+              }}
+            >
+              {w.questionNo}번{isAuto ? " ★" : ""}
+            </button>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>★ 자동 선정 | 파란색 = 상세 입력</p>
+
+      {/* 선택된 문항별 상세 입력 */}
+      {selected.sort((a, b) => a - b).map((qNo) => {
+        const detail = getDetail(qNo);
+        const wrong = wrongAnswers.find((w) => w.questionNo === qNo);
+        return (
+          <div key={qNo} style={{ border: "2px solid #3498db", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <h4 style={{ margin: "0 0 12px", color: "#2980b9" }}>
+              {qNo}번 문항 상세분석
+              {wrong?.isThreePoint && <span style={{ marginLeft: 8, color: "#e74c3c", fontSize: 13 }}>3점</span>}
+            </h4>
+
+            <label style={{ fontSize: 13, fontWeight: 600 }}>내가 고른 선지</label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, marginTop: 4 }}>
+              {["1", "2", "3", "4", "5"].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => updateDetail(qNo, { chosenOption: n })}
+                  style={{
+                    width: 40, height: 40, borderRadius: "50%", fontWeight: 700,
+                    background: detail.chosenOption === n ? "#e74c3c" : "#f0f0f0",
+                    color: detail.chosenOption === n ? "#fff" : "#333",
+                    border: "none", cursor: "pointer", fontSize: 16,
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <label style={{ fontSize: 13, fontWeight: 600 }}>
+              자신감: {detail.confidenceBefore}%
+            </label>
+            <input
+              type="range" min={0} max={100} step={10}
+              value={detail.confidenceBefore}
+              onChange={(e) => updateDetail(qNo, { confidenceBefore: Number(e.target.value) })}
+              style={{ width: "100%", marginBottom: 12 }}
+            />
+
+            <label style={{ fontSize: 13, fontWeight: 600 }}>선택 이유</label>
+            <input
+              value={detail.reasonStudent}
+              onChange={(e) => updateDetail(qNo, { reasonStudent: e.target.value })}
+              placeholder="왜 이 선지를 골랐나요?"
+              style={{ marginBottom: 8 }}
+            />
+
+            <label style={{ fontSize: 13, fontWeight: 600 }}>근거로 삼은 문장</label>
+            <input
+              value={detail.evidenceSentence}
+              onChange={(e) => updateDetail(qNo, { evidenceSentence: e.target.value })}
+              placeholder="어떤 문장/표현을 근거로 삼았나요?"
+              style={{ marginBottom: 8 }}
+            />
+
+            <label style={{ fontSize: 13, fontWeight: 600 }}>놓친 신호</label>
+            <input
+              value={detail.missedSignal}
+              onChange={(e) => updateDetail(qNo, { missedSignal: e.target.value })}
+              placeholder="무엇을 못 봤나요?"
+              style={{ marginBottom: 8 }}
+            />
+
+            <label style={{ fontSize: 13, fontWeight: 600 }}>선지 소거 메모 (선택)</label>
+            {["1", "2", "3", "4", "5"].map((n) => (
+              <div key={n} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontWeight: 700, width: 24, textAlign: "center" }}>{n}번</span>
+                <input
+                  value={detail.optionElimination[n] ?? ""}
+                  onChange={(e) => updateDetail(qNo, {
+                    optionElimination: { ...detail.optionElimination, [n]: e.target.value }
+                  })}
+                  placeholder={`${n}번 선지 판단`}
+                  style={{ flex: 1, marginBottom: 0 }}
+                />
               </div>
             ))}
+
+            <label style={{ fontSize: 13, fontWeight: 600, marginTop: 8, display: "block" }}>다음에 할 행동</label>
+            <input
+              value={detail.studentNextAction}
+              onChange={(e) => updateDetail(qNo, { studentNextAction: e.target.value })}
+              placeholder="다음에는 어떻게 풀겠나요?"
+            />
           </div>
-        </div>
-      ))}
-    </>
+        );
+      })}
+    </div>
   );
 }
 

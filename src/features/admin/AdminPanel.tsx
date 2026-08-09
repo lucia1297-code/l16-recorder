@@ -1,22 +1,23 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
 import type { ExamResult } from "../../core/types";
-import { WRONG_REASON_LABELS } from "../../core/types";
+import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
-import { validateLoginInput } from "../../core/authLogic";
+
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, buildManualEntry, type RosterEntry } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
-import { createAuth } from "../../lib/authFactory";
-import { OtpService } from "../../lib/otpService";
-import { createSmsProvider } from "../../lib/smsFactory";
+
+
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
 import { createMockExamTimingStore } from "../../lib/mockExamTimingStoreFactory";
 import { createWarningStore } from "../../lib/warningStoreFactory";
 import { createExamCheckStore } from "../../lib/examCheckStoreFactory";
+import { createSmsProvider } from "../../lib/smsFactory";
+import { generateReportToken, buildReportUrl } from "../../lib/reportToken";
 import { createTeacherLogStore } from "../../lib/teacherLogStoreFactory";
 import {
   MAX_ASSIGNMENT_TYPES,
@@ -43,182 +44,79 @@ import {
   type ExamScoreRecord,
 } from "../../core/teacherLog";
 
-const ADMIN_2FA_SESSION_KEY = "asx.admin.2fa";
+const ADMIN_SESSION_KEY = "asx.admin.ok";
 
 export default function AdminPanel() {
-  const auth = useMemo(() => createAuth(), []);
-  const otp = useMemo(() => new OtpService(createSmsProvider()), []);
-  const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
-
-  const [authed, setAuthed] = useState(() => auth.isLoggedIn());
-  const [twoFactorOk, setTwoFactorOk] = useState(
-    () => !adminPhone || sessionStorage.getItem(ADMIN_2FA_SESSION_KEY) === "1",
+  const [authed, setAuthed] = useState(
+    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"
   );
 
   function handleLogout() {
-    auth.logout();
-    sessionStorage.removeItem(ADMIN_2FA_SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
     setAuthed(false);
-    setTwoFactorOk(!adminPhone);
   }
 
-  if (!authed) return <Login auth={auth} onOk={() => setAuthed(true)} />;
-  if (!twoFactorOk && adminPhone)
+  if (!authed)
     return (
-      <TwoFactorStep
-        otp={otp}
-        phone={adminPhone}
+      <SimpleAdminLogin
         onOk={() => {
-          sessionStorage.setItem(ADMIN_2FA_SESSION_KEY, "1");
-          setTwoFactorOk(true);
+          sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+          setAuthed(true);
         }}
-        onCancel={handleLogout}
       />
     );
   return <AdminHome onLogout={handleLogout} />;
 }
 
-function Login({ auth, onOk }: { auth: ReturnType<typeof createAuth>; onOk: () => void }) {
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [errors, setErrors] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  async function submit() {
-    const errs = validateLoginInput({ email, password: pw }, auth.requiresEmail);
-    if (errs.length) return setErrors(errs);
-    setLoading(true);
-    const result = await auth.login(email, pw);
-    setLoading(false);
-    if (result.ok) onOk();
-    else setErrors([result.error ?? "로그인에 실패했습니다."]);
-  }
-
-  return (
-    <div className="card">
-      <h2>관리자 로그인</h2>
-      <p className="sub">
-        {auth.requiresEmail ? "이메일과 비밀번호를 입력하세요." : "비밀번호를 입력하세요."}
-      </p>
-      {errors.length > 0 && (
-        <div className="errors">
-          <ul>
-            {errors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {auth.requiresEmail && (
-        <>
-          <label>이메일</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" />
-        </>
-      )}
-      <label>비밀번호</label>
-      <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호" />
-      <div style={{ height: 12 }} />
-      <button className="btn" onClick={submit} disabled={loading}>
-        {loading ? "확인 중…" : "로그인"}
-      </button>
-      {!auth.requiresEmail && (
-        <p className="muted center" style={{ marginTop: 10, fontSize: 13 }}>
-          (.env 의 VITE_ADMIN_PASSWORD로 설정 — 미설정 시 개발용 기본값 사용)
-        </p>
-      )}
-    </div>
-  );
-}
-
-function TwoFactorStep({
-  otp,
-  phone,
-  onOk,
-  onCancel,
-}: {
-  otp: OtpService;
-  phone: string;
-  onOk: () => void;
-  onCancel: () => void;
-}) {
+function SimpleAdminLogin({ onOk }: { onOk: () => void }) {
+  const correctCode = import.meta.env.VITE_ADMIN_ACCESS_CODE as string | undefined ?? "129712";
   const [code, setCode] = useState("");
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [errors, setErrors] = useState<string[]>([]);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    // 로그인 성공 직후 자동으로 1회 발송
-    requestCode();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function requestCode() {
-    setSending(true);
-    setErrors([]);
-    const r = await otp.requestOtp(phone);
-    setSending(false);
-    if (r.ok) setSent(true);
-    else setErrors([r.error ?? "인증번호 전송에 실패했습니다."]);
-  }
-
-  async function verify() {
-    setVerifying(true);
-    setErrors([]);
-    const r = await otp.verifyOtp(phone, code);
-    setVerifying(false);
-    if (r.ok) onOk();
-    else setErrors([r.error ?? "인증에 실패했습니다."]);
+  function submit() {
+    if (!correctCode) {
+      setError("관리자 접속 코드가 설정되지 않았습니다.");
+      return;
+    }
+    if (code.trim() === correctCode) {
+      onOk();
+    } else {
+      setError("접속 코드가 틀렸습니다.");
+      setCode("");
+    }
   }
 
   return (
-    <div className="card">
-      <h2>2단계 인증</h2>
-      <p className="sub">관리자 등록 번호({maskPhone(phone)})로 전송된 인증번호를 입력하세요.</p>
-      {errors.length > 0 && (
+    <div className="card" style={{ maxWidth: 360, margin: "60px auto" }}>
+      <h2>관리자 로그인</h2>
+      <p className="muted">관리자 접속 코드를 입력하세요.</p>
+      {error && (
         <div className="errors">
-          <ul>
-            {errors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
+          <ul><li>{error}</li></ul>
         </div>
       )}
-      <label>인증번호 (6자리)</label>
+      <label>접속 코드</label>
       <input
+        type="password"
         value={code}
-        placeholder="123456"
-        inputMode="numeric"
-        maxLength={6}
         onChange={(e) => setCode(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="접속 코드 입력"
+        autoFocus
       />
       <div style={{ height: 12 }} />
-      <button className="btn" onClick={verify} disabled={verifying || code.length !== 6}>
-        {verifying ? "확인 중…" : "인증 확인"}
-      </button>
-      <div style={{ height: 8 }} />
-      <button className="btn secondary" onClick={requestCode} disabled={sending}>
-        {sending ? "전송 중…" : sent ? "재전송" : "인증번호 받기"}
-      </button>
-      <div style={{ height: 8 }} />
-      <button className="btn ghost" onClick={onCancel}>
-        취소하고 로그아웃
+      <button className="btn" onClick={submit}>
+        입장
       </button>
     </div>
   );
-}
-
-function maskPhone(phone: string): string {
-  const digits = phone.replace(/[^0-9]/g, "");
-  if (digits.length < 7) return phone;
-  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
 
 function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -235,7 +133,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
     <div className="admin-shell">
       <div className="tabs admin-rail">
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
-          학생 목록
+          모의고사 제출목록
         </button>
         <button className={tab === "dash" ? "on" : ""} onClick={() => setTab("dash")}>
           대시보드
@@ -252,6 +150,12 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "teacherlog" ? "on" : ""} onClick={() => setTab("teacherlog")}>
           학생별 과제입력
         </button>
+        <button className={tab === "submit" ? "on" : ""} onClick={() => setTab("submit")}>
+          제출 현황
+        </button>
+        <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>
+          학생 분석
+        </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
@@ -267,6 +171,8 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "review" && <AssignmentReviewManager />}
         {tab === "teacherlog" && <TeacherLogManager />}
         {tab === "pending" && <PendingManager />}
+        {tab === "submit" && <SubmissionStatus rows={rows} />}
+        {tab === "report" && <StudentAnalysisReport rows={rows} />}
       </div>
     </div>
   );
@@ -302,7 +208,7 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
 
   return (
     <div className="card">
-      <h2>학생 목록 ({filtered.length})</h2>
+      <h2>모의고사 제출목록 ({filtered.length})</h2>
       <div className="admin-tools">
         <input placeholder="이름/코드 검색" value={q} onChange={(e) => setQ(e.target.value)} />
         <input placeholder="학교" value={school} onChange={(e) => setSchool(e.target.value)} />
@@ -325,6 +231,7 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
                 <th>학교</th>
                 <th>학년</th>
                 <th>시험</th>
+                <th>제출일</th>
                 <th>점수</th>
                 <th>%</th>
                 <th>오답</th>
@@ -337,12 +244,11 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
                   <td>{r.student.name}</td>
                   <td>{r.student.school}</td>
                   <td>{r.student.grade}</td>
-                  <td>
-                    {r.exam.examName} ({r.exam.month}월)
+                  <td>{r.exam.examName} ({r.exam.month}월)</td>
+                  <td style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>
+                    {new Date(r.submittedAt).toLocaleDateString("ko-KR")}
                   </td>
-                  <td>
-                    {r.score}/{r.exam.maxScore}
-                  </td>
+                  <td>{r.score}/{r.exam.maxScore}</td>
                   <td>{percentScore(r.score, r.exam.maxScore)}</td>
                   <td>{r.wrongAnswers.map((w) => w.questionNo).join(",")}</td>
                 </tr>
@@ -487,7 +393,12 @@ function RosterManager() {
     if (preview.length === 0) return;
     setSaving(true);
     const now = new Date().toISOString();
-    const stamped = preview.map((e) => ({ ...e, registeredAt: e.registeredAt ?? now }));
+    // 기존 명부에 있던 학생은 registeredAt 그대로 유지, 신규 학생만 오늘 날짜
+    const existingMap = new Map(roster.map((r) => [r.studentCode, r.registeredAt]));
+    const stamped = preview.map((e) => ({
+      ...e,
+      registeredAt: e.registeredAt ?? existingMap.get(e.studentCode) ?? undefined,
+    }));
     await rosterStore.saveRoster(stamped);
     const all = await rosterStore.listRoster();
     setRoster(all);
@@ -712,6 +623,10 @@ function RosterManager() {
                 <th>이름</th>
                 <th>학교</th>
                 <th>전화번호</th>
+                <th>등급</th>
+                <th>주간시수</th>
+                <th>학부모번호</th>
+                <th>독려제외</th>
                 <th>관리</th>
               </tr>
             </thead>
@@ -738,40 +653,117 @@ function RosterManager() {
                       e.phone
                     )}
                   </td>
+                  {/* 등급 */}
+                  <td>
+                    <select
+                      value={e.studentType ?? ""}
+                      onChange={async (ev) => {
+                        const updated = roster.map((r) =>
+                          r.studentCode === e.studentCode
+                            ? { ...r, studentType: ev.target.value as "S" | "W2" | "W1" | "" }
+                            : r
+                        );
+                        setRoster(updated);
+                        await rosterStore.saveRoster(updated);
+                      }}
+                      style={{
+                        fontSize: 12, padding: "3px 6px", borderRadius: 4,
+                        border: "1px solid #ddd", background: "#fff",
+                        appearance: "auto" as const, WebkitAppearance: "auto" as any,
+                        cursor: "pointer",
+                        color: e.studentType === "S" ? "#9b59b6" : e.studentType === "W2" ? "#e67e22" : e.studentType === "W1" ? "#e74c3c" : "#333",
+                        fontWeight: e.studentType ? 700 : 400,
+                      }}
+                    >
+                      <option value="">-</option>
+                      <option value="S">S (특별관리)</option>
+                      <option value="W2">W2 (주2타임)</option>
+                      <option value="W1">W1 (주1타임)</option>
+                    </select>
+                  </td>
+                  {/* 주간 시수 */}
+                  <td>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <select
+                        value={e.weeklySession ?? ""}
+                        onChange={(ev) => {
+                          const val = ev.target.value === "" ? null : Number(ev.target.value) as 1|2|3|4|5|6;
+                          const updated = roster.map((r) =>
+                            r.studentCode === e.studentCode ? { ...r, weeklySession: val } : r
+                          );
+                          setRoster(updated);
+                        }}
+                        style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd", background: "#fff" }}
+                      >
+                        <option value="">-</option>
+                        <option value="1">1회</option>
+                        <option value="2">2회</option>
+                        <option value="3">3회</option>
+                        <option value="4">4회</option>
+                        <option value="5">5회</option>
+                        <option value="6">6회</option>
+                      </select>
+                      <button
+                        onClick={async () => {
+                          await rosterStore.saveRoster(roster);
+                          setNotice(`${e.name} 시수 저장 완료`);
+                          setTimeout(() => setNotice(""), 2000);
+                        }}
+                        style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, background: "#3498db", color: "#fff", border: "none", cursor: "pointer" }}
+                      >
+                        저장
+                      </button>
+                    </div>
+                    {e.weeklySession && (
+                      <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
+                        독려기한: {getReminderDays(e.weeklySession)}일
+                      </div>
+                    )}
+                  </td>
+                  {/* 학부모 번호 */}
+                  <td>
+                    <input
+                      defaultValue={e.parentPhone ?? ""}
+                      placeholder="010-0000-0000"
+                      style={{ width: 120, fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid #ddd" }}
+                      onBlur={async (ev) => {
+                        const val = ev.target.value.trim();
+                        if (val === (e.parentPhone ?? "")) return;
+                        const updated = roster.map((r) =>
+                          r.studentCode === e.studentCode ? { ...r, parentPhone: val || undefined } : r
+                        );
+                        setRoster(updated);
+                        await rosterStore.saveRoster(updated);
+                      }}
+                    />
+                  </td>
+                  {/* 독려 제외 */}
+                  <td style={{ textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={!!e.excludeFromReminder}
+                      onChange={async (ev) => {
+                        const updated = roster.map((r) =>
+                          r.studentCode === e.studentCode
+                            ? { ...r, excludeFromReminder: ev.target.checked }
+                            : r
+                        );
+                        setRoster(updated);
+                        await rosterStore.saveRoster(updated);
+                      }}
+                      style={{ width: 18, height: 18 }}
+                    />
+                  </td>
                   <td>
                     {editingCode === e.studentCode ? (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          className="btn ghost"
-                          style={{ padding: "4px 8px", fontSize: 12 }}
-                          onClick={() => savePhone(e)}
-                        >
-                          저장
-                        </button>
-                        <button
-                          className="btn ghost"
-                          style={{ padding: "4px 8px", fontSize: 12 }}
-                          onClick={cancelEdit}
-                        >
-                          취소
-                        </button>
+                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => savePhone(e)}>저장</button>
+                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={cancelEdit}>취소</button>
                       </div>
                     ) : (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          className="btn ghost"
-                          style={{ padding: "4px 8px", fontSize: 12 }}
-                          onClick={() => startEdit(e)}
-                        >
-                          번호수정
-                        </button>
-                        <button
-                          className="btn ghost"
-                          style={{ padding: "4px 8px", fontSize: 12 }}
-                          onClick={() => sendCode(e)}
-                        >
-                          전송
-                        </button>
+                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => startEdit(e)}>번호수정</button>
+                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => sendCode(e)}>전송</button>
                       </div>
                     )}
                   </td>
@@ -789,6 +781,185 @@ function RosterManager() {
           </button>
         </>
       )}
+
+      {/* ── 과제 독려 발송 섹션 ── */}
+      {roster.length > 0 && (
+        <ReminderSection roster={roster} />
+      )}
+    </div>
+  );
+}
+
+// ── 과제 독려 발송 섹션 ─────────────────────────────
+function ReminderSection({ roster }: { roster: RosterEntry[] }) {
+  const storage = useStorage();
+  const smsProvider = useMemo(() => createSmsProvider(), []);
+  const [results, setResults] = useState<ExamResult[]>([]);
+  const [sending, setSending] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    storage.listResults().then(setResults);
+  }, [storage]);
+
+  // 학생별 마지막 제출일 계산
+  const lastSubmitMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of results) {
+      const prev = map.get(r.student.studentCode);
+      if (!prev || r.submittedAt > prev) map.set(r.student.studentCode, r.submittedAt);
+    }
+    return map;
+  }, [results]);
+
+  // 독려 대상: W1 학생 중 독려제외 아닌 학생
+  const today = new Date();
+
+  function daysSince(isoDate: string) {
+    return Math.floor((today.getTime() - new Date(isoDate).getTime()) / 86400000);
+  }
+
+  const reminderTargets = useMemo(() =>
+    roster
+      .filter((r) => !r.excludeFromReminder)
+      .map((r) => {
+        const lastDate = lastSubmitMap.get(r.studentCode);
+        const days = lastDate ? daysSince(lastDate) : 999;
+        const threshold = getReminderDays(r.weeklySession); // 시수별 기한
+        return { ...r, days, lastDate, threshold };
+      })
+      .filter((r) => r.days >= r.threshold)
+      .sort((a, b) => b.days - a.days),
+    [roster, lastSubmitMap]);
+
+  // 1회·2회 학생 자동 발송 대상 (시수 설정된 학생)
+  const autoTargets = reminderTargets.filter((r) => r.weeklySession === 1 || r.weeklySession === 2);
+  const otherTargets = reminderTargets.filter((r) => r.weeklySession !== 1 && r.weeklySession !== 2);
+
+  async function sendReminder(student: typeof reminderTargets[0]) {
+    setSending(student.studentCode);
+    setNotice("");
+    try {
+      const msg = `[L16] ${student.name} 학생, 과제 제출이 ${student.days}일 경과됐습니다. 빠른 제출 부탁드립니다.`;
+      await smsProvider.send(student.phone, msg);
+      setNotice(`${student.name} 학생에게 독려 문자를 발송했습니다.`);
+    } catch {
+      setNotice(`${student.name} 학생 발송 실패`);
+    }
+    setSending(null);
+  }
+
+  async function sendAllAuto() {
+    setSending("__all__");
+    setNotice("");
+    let ok = 0;
+    for (const s of autoTargets) {
+      try {
+        const msg = `[L16] ${s.name} 학생, 과제 제출이 ${s.days}일 경과됐습니다. 빠른 제출 부탁드립니다.`;
+        await smsProvider.send(s.phone, msg);
+        ok++;
+      } catch { /* 계속 진행 */ }
+    }
+    setNotice(`${ok}명에게 독려 문자 발송 완료`);
+    setSending(null);
+  }
+
+  if (reminderTargets.length === 0) return (
+    <div style={{ marginTop: 24, padding: 16, background: "#f0f9f0", borderRadius: 10, border: "1px solid #2ecc71" }}>
+      <p style={{ margin: 0, color: "#27ae60", fontWeight: 600 }}>✅ 3일 이상 미제출 학생 없음</p>
+    </div>
+  );
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h3 style={{ margin: 0, color: "#e74c3c" }}>
+          ⚠️ 과제 독려 대상 ({reminderTargets.length}명)
+        </h3>
+        {autoTargets.length > 0 && (
+          <button
+            className="btn"
+            style={{ background: "#e74c3c", fontSize: 13, padding: "6px 14px" }}
+            onClick={sendAllAuto}
+            disabled={sending === "__all__"}
+          >
+            {sending === "__all__" ? "발송 중…" : `전체 자동 발송 (${autoTargets.length}명)`}
+          </button>
+        )}
+      </div>
+      {notice && <p style={{ color: "#27ae60", fontSize: 13, marginBottom: 8 }}>{notice}</p>}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>등급</th>
+              <th>시수</th>
+              <th>학교</th>
+              <th>경과일</th>
+              <th>마지막 제출</th>
+              <th>학부모번호</th>
+              <th>발송</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...autoTargets, ...otherTargets].map((s) => (
+              <tr key={s.studentCode}>
+                <td style={{ fontWeight: 700 }}>{s.name}</td>
+                <td>
+                  <span style={{
+                    padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                    background: s.studentType === "W1" ? "#e74c3c" : s.studentType === "W2" ? "#f39c12" : "#9b59b6",
+                    color: "#fff",
+                  }}>
+                    {s.studentType || "-"}
+                  </span>
+                </td>
+                <td style={{ textAlign: "center" }}>
+                  {s.weeklySession ? `${s.weeklySession}회` : "-"}
+                </td>
+                <td>{s.school}</td>
+                <td>
+                  <span style={{
+                    fontWeight: 700,
+                    color: s.days >= s.threshold * 2 ? "#e74c3c" : "#f39c12",
+                    background: s.days >= s.threshold * 2 ? "#fdecea" : "#fef9e7",
+                    padding: "2px 8px", borderRadius: 6, fontSize: 13,
+                  }}>
+                    D+{s.days}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>
+                    (기한:{s.threshold}일)
+                  </span>
+                </td>
+                <td style={{ fontSize: 12, color: "#888" }}>
+                  {s.lastDate ? new Date(s.lastDate).toLocaleDateString("ko-KR") : "미제출"}
+                </td>
+                <td style={{ fontSize: 12, color: s.parentPhone ? "#333" : "#ccc" }}>
+                  {s.parentPhone || "미등록"}
+                </td>
+                <td>
+                  {(s.weeklySession === 1 || s.weeklySession === 2) ? (
+                    <button
+                      onClick={() => sendReminder(s)}
+                      disabled={sending === s.studentCode}
+                      style={{ padding: "3px 10px", fontSize: 12, borderRadius: 6, background: "#e74c3c", color: "#fff", border: "none", cursor: "pointer" }}
+                    >
+                      {sending === s.studentCode ? "발송중…" : "독려 발송"}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "#aaa" }}>수동 확인</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
+        * 1회/수업 학생: 5일 초과 시 독려 · 2회/수업 학생: 2일 초과 시 독려 · 학부모 발송은 번호 등록 후 활성화
+      </p>
     </div>
   );
 }
@@ -1574,6 +1745,7 @@ function AssignmentReviewManager() {
                 <th>학생</th>
                 <th>과제</th>
                 <th>회차</th>
+                <th>제출일</th>
                 <th>내용</th>
                 <th>상태</th>
                 <th>메모</th>
@@ -1590,6 +1762,9 @@ function AssignmentReviewManager() {
                     <td>{student?.name ?? sub.studentCode}</td>
                     <td>{type?.name ?? "-"}</td>
                     <td>{sub.round}</td>
+                    <td style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>
+                      {new Date(sub.submittedAt).toLocaleDateString("ko-KR")}
+                    </td>
                     <td style={{ fontSize: 12 }}>{renderContent(sub)}</td>
                     <td
                       style={{
@@ -2082,6 +2257,615 @@ function TeacherLogManager() {
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 제출 현황 탭
+// ═══════════════════════════════════════════════════
+
+
+// ═══════════════════════════════════════════════════
+// 제출 현황 탭
+// ═══════════════════════════════════════════════════
+
+function daysSince(isoDate: string): number {
+  return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
+}
+
+function dayBadge(days: number) {
+  const color = days === 0 ? "#2ecc71" : days <= 3 ? "#f39c12" : "#e74c3c";
+  return (
+    <span style={{
+      fontWeight: "bold", color,
+      background: color + "22",
+      borderRadius: 6, padding: "2px 10px", fontSize: 13,
+    }}>
+      D+{days}
+    </span>
+  );
+}
+
+function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
+  const storage = useStorage();
+  const rosterStore = useMemo(() => createRosterStore(), []);
+
+  // 자체적으로 최신 데이터 로드 (탭 진입 시마다)
+  const [rows, setRows] = useState<ExamResult[]>(initialRows);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      storage.listResults(),
+      rosterStore.listRoster(),
+    ]).then(([results, r]) => {
+      setRows(results);
+      setRoster(r);
+      setLoading(false);
+    });
+  }, [storage, rosterStore]);
+
+  // 학생별 마지막 제출일 집계
+  const submittedMap = useMemo(() => {
+    const map = new Map<string, {
+      name: string; school: string; grade: string; lastDate: string; count: number;
+    }>();
+    for (const r of rows) {
+      const prev = map.get(r.student.studentCode);
+      if (!prev || r.submittedAt > prev.lastDate) {
+        map.set(r.student.studentCode, {
+          name: r.student.name,
+          school: r.student.school,
+          grade: r.student.grade,
+          lastDate: r.submittedAt,
+          count: (prev?.count ?? 0) + 1,
+        });
+      } else {
+        map.set(r.student.studentCode, { ...prev, count: prev.count + 1 });
+      }
+    }
+    return map;
+  }, [rows]);
+
+  // 제출한 학생 목록 (경과일 많은 순)
+  const submitted = useMemo(() =>
+    Array.from(submittedMap.entries())
+      .map(([code, v]) => ({ code, ...v, days: daysSince(v.lastDate) }))
+      .sort((a, b) => b.days - a.days),
+    [submittedMap]);
+
+  // 미제출 학생: 명부에 있지만 제출 기록 없는 학생
+  const notSubmitted = useMemo(() =>
+    roster.filter((r) => !submittedMap.has(r.studentCode)),
+    [roster, submittedMap]);
+
+  // CSV 다운로드
+  function exportSubmittedCSV() {
+    const header = "이름,학생코드,학교,학년,경과일(D+),마지막제출일,총제출횟수";
+    const body = submitted.map((s) =>
+      `${s.name},${s.code},${s.school},${s.grade},${s.days},${new Date(s.lastDate).toLocaleDateString("ko-KR")},${s.count}`
+    ).join("\n");
+    const blob = new Blob(["\uFEFF" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `제출현황_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportNotSubmittedCSV() {
+    const header = "이름,학생코드,학교,학년,선생님,비고";
+    const body = notSubmitted.map((s) =>
+      `${s.name},${s.studentCode},${s.school},${s.grade},${s.teacher},${s.note}`
+    ).join("\n");
+    const blob = new Blob(["\uFEFF" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `미제출학생_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (loading) return <div className="card"><p className="muted center">불러오는 중…</p></div>;
+
+  return (
+    <div className="card">
+
+      {/* ── 섹션 1: 제출 학생 경과일 ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2>✅ 제출 학생 경과일 ({submitted.length}명)</h2>
+        <button className="btn" style={{ padding: "4px 12px", fontSize: 13 }}
+          onClick={exportSubmittedCSV} disabled={submitted.length === 0}>
+          CSV 저장
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        마지막 제출 후 경과일 &nbsp;·&nbsp;
+        <span style={{ color: "#2ecc71" }}>●</span> 당일 &nbsp;
+        <span style={{ color: "#f39c12" }}>●</span> 3일 이내 &nbsp;
+        <span style={{ color: "#e74c3c" }}>●</span> 4일 이상
+      </p>
+      {submitted.length === 0 ? (
+        <p className="muted center">제출된 데이터가 없습니다.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>경과일</th>
+                <th>이름</th>
+                <th>학교</th>
+                <th>학년</th>
+                <th>총제출</th>
+                <th>마지막 제출일</th>
+                <th>리포트 링크</th>
+              </tr>
+            </thead>
+            <tbody>
+              {submitted.map((s) => (
+                <tr key={s.code}>
+                  <td>{dayBadge(s.days)}</td>
+                  <td style={{ fontWeight: 600 }}>{s.name}</td>
+                  <td>{s.school}</td>
+                  <td>{s.grade}</td>
+                  <td style={{ textAlign: "center" }}>{s.count}회</td>
+                  <td style={{ fontSize: 12, color: "#888" }}>
+                    {new Date(s.lastDate).toLocaleDateString("ko-KR")}
+                  </td>
+                  <td>
+                    <ReportLinkButton studentCode={s.code} studentName={s.name} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ height: 28 }} />
+
+      {/* ── 섹션 2: 미제출 학생 ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 style={{ color: "#e74c3c" }}>❌ 미제출 학생 ({notSubmitted.length}명)</h2>
+        <button className="btn" style={{ padding: "4px 12px", fontSize: 13 }}
+          onClick={exportNotSubmittedCSV} disabled={notSubmitted.length === 0}>
+          CSV 저장
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        명부에 등록됐지만 아직 한 번도 제출하지 않은 학생입니다.
+        {roster.length === 0 && " (명부 관리 탭에서 학생을 등록하면 자동 표시됩니다)"}
+      </p>
+      {notSubmitted.length === 0 ? (
+        <p className="muted center" style={{ color: "#2ecc71", fontWeight: 600 }}>
+          {roster.length === 0 ? "명부가 비어 있습니다." : "🎉 전원 제출 완료!"}
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>이름</th>
+                <th>학생코드</th>
+                <th>학교</th>
+                <th>학년</th>
+                <th>담당교사</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notSubmitted.map((s, i) => (
+                <tr key={s.studentCode}>
+                  <td style={{ color: "#aaa" }}>{i + 1}</td>
+                  <td style={{ fontWeight: 700, color: "#e74c3c" }}>{s.name}</td>
+                  <td style={{ fontSize: 12, color: "#888" }}>{s.studentCode}</td>
+                  <td>{s.school}</td>
+                  <td>{s.grade}</td>
+                  <td>{s.teacher}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 학생 분석 리포트
+// ═══════════════════════════════════════════════════
+
+const REPORT_NOTE_KEY = "asx.report.note";
+
+function StudentAnalysisReport({ rows }: { rows: ExamResult[] }) {
+  const [note, setNote] = useState(() => localStorage.getItem(REPORT_NOTE_KEY) ?? "");
+  const [saved, setSaved] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<string>("__all__");
+
+  function saveNote() {
+    localStorage.setItem(REPORT_NOTE_KEY, note);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  // ── 학생 목록 ──
+  const studentList = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) map.set(r.student.studentCode, r.student.name);
+    return Array.from(map.entries())
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
+  // ── 월 추출 ──
+  function getYearMonth(isoDate: string) {
+    const d = new Date(isoDate);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  // ── 학생별 × 월별 데이터 집계 ──
+  const studentMonthlyData = useMemo(() => {
+    // { studentCode → { name, months → { ym → data } } }
+    const studentMap = new Map<string, {
+      name: string;
+      months: Map<string, {
+        submissions: {
+          examName: string;
+          score: number;
+          maxScore: number;
+          date: string;
+          wrongNos: number[];
+          wrongWithReasons: { no: number; reasons: string[]; isThreePoint: boolean }[];
+        }[];
+        reasons: Map<string, number>;
+        reflections: { examName: string; hardestReason: string; nextGoal: string; satisfaction: number | string }[];
+      }>;
+    }>();
+
+    for (const r of rows) {
+      const code = r.student.studentCode;
+      const ym = getYearMonth(r.submittedAt);
+
+      if (!studentMap.has(code)) {
+        studentMap.set(code, { name: r.student.name, months: new Map() });
+      }
+      const student = studentMap.get(code)!;
+
+      if (!student.months.has(ym)) {
+        student.months.set(ym, { submissions: [], reasons: new Map(), reflections: [] });
+      }
+      const month = student.months.get(ym)!;
+
+      // 제출 기록
+      month.submissions.push({
+        examName: r.exam.examName,
+        score: r.score,
+        maxScore: r.exam.maxScore,
+        date: new Date(r.submittedAt).toLocaleDateString("ko-KR"),
+        wrongNos: r.wrongAnswers.map((w) => w.questionNo).sort((a, b) => a - b),
+        wrongWithReasons: r.wrongAnswers.map((w) => ({
+          no: w.questionNo,
+          reasons: w.reasons.map((reason) => WRONG_REASON_LABELS[reason as WrongReason] ?? reason),
+          isThreePoint: w.isThreePoint ?? false,
+        })),
+      });
+
+      // 오답 원인 집계
+      for (const w of r.wrongAnswers) {
+        for (const reason of w.reasons) {
+          const label = WRONG_REASON_LABELS[reason as WrongReason] ?? reason;
+          month.reasons.set(label, (month.reasons.get(label) ?? 0) + 1);
+        }
+      }
+
+      // 회고
+      if (r.reflection?.hardestReason || r.reflection?.nextGoal) {
+        month.reflections.push({
+          examName: r.exam.examName,
+          hardestReason: r.reflection?.hardestReason ?? "",
+          nextGoal: r.reflection?.nextGoal ?? "",
+          satisfaction: r.reflection?.satisfaction ?? "-",
+        });
+      }
+    }
+
+    // 필터링
+    const filtered = selectedStudent === "__all__"
+      ? Array.from(studentMap.entries())
+      : Array.from(studentMap.entries()).filter(([code]) => code === selectedStudent);
+
+    return filtered
+      .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+      .map(([code, data]) => ({
+        code,
+        name: data.name,
+        months: Array.from(data.months.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([ym, mdata]) => {
+            // 월 전체 틀린 번호 빈도
+            const wrongFreqMap = new Map<number, { cnt: number; reasons: string[]; isThreePoint: boolean }>();
+            for (const sub of mdata.submissions) {
+              for (const w of sub.wrongWithReasons) {
+                const prev = wrongFreqMap.get(w.no);
+                if (prev) {
+                  prev.cnt++;
+                  prev.reasons = [...new Set([...prev.reasons, ...w.reasons])];
+                } else {
+                  wrongFreqMap.set(w.no, { cnt: 1, reasons: w.reasons, isThreePoint: w.isThreePoint });
+                }
+              }
+            }
+            const wrongFreq = Array.from(wrongFreqMap.entries())
+              .map(([no, v]) => ({ no, ...v }))
+              .sort((a, b) => b.cnt - a.cnt || a.no - b.no);
+
+            const avgScore = mdata.submissions.length > 0
+              ? Math.round(mdata.submissions.reduce((s, x) => s + x.score, 0) / mdata.submissions.length)
+              : 0;
+            const avgPct = mdata.submissions.length > 0
+              ? Math.round(mdata.submissions.reduce((s, x) => s + (x.score / x.maxScore) * 100, 0) / mdata.submissions.length)
+              : 0;
+
+            const topReasons = Array.from(mdata.reasons.entries())
+              .map(([label, cnt]) => ({ label, cnt }))
+              .sort((a, b) => b.cnt - a.cnt);
+            const totalReasonCnt = topReasons.reduce((s, r) => s + r.cnt, 0);
+
+            return { ym, avgScore, avgPct, submissions: mdata.submissions, wrongFreq, topReasons, totalReasonCnt, reflections: mdata.reflections };
+          }),
+      }));
+  }, [rows, selectedStudent]);
+
+  if (rows.length === 0)
+    return <div className="card"><h2>학생 분석 리포트</h2><p className="muted center">제출 데이터가 없습니다.</p></div>;
+
+  return (
+    <div className="card">
+      <h2>📊 학생별 월간 분석 리포트</h2>
+
+      {/* ── 학생 선택 ── */}
+      <div style={{ marginBottom: 20 }}>
+        <label style={{ fontWeight: 600, marginRight: 8 }}>학생 선택:</label>
+        <select
+          value={selectedStudent}
+          onChange={(e) => setSelectedStudent(e.target.value)}
+          style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
+        >
+          <option value="__all__">전체 학생</option>
+          {studentList.map((s) => (
+            <option key={s.code} value={s.code}>{s.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* ── 학생별 카드 ── */}
+      {studentMonthlyData.map(({ code, name, months }) => (
+        <div key={code} style={{ marginBottom: 32, border: "3px solid #2c3e50", borderRadius: 14 }}>
+
+          {/* 학생 헤더 */}
+          <div style={{ background: "#2c3e50", color: "#fff", padding: "10px 18px", borderRadius: "11px 11px 0 0" }}>
+            <span style={{ fontSize: 18, fontWeight: 700 }}>👤 {name}</span>
+            <span style={{ marginLeft: 12, fontSize: 13, opacity: 0.7 }}>{months.length}개월 데이터</span>
+          </div>
+
+          {/* 월별 카드 */}
+          {months.map(({ ym, avgScore, avgPct, submissions, wrongFreq, topReasons, totalReasonCnt, reflections }) => (
+            <div key={ym} style={{ padding: 16, borderBottom: "1px solid #eee" }}>
+
+              {/* 월 헤더 */}
+              <div style={{ background: "#ecf0f1", borderRadius: 8, padding: "6px 14px", marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>📅 {ym.replace("-", "년 ")}월</span>
+                <span style={{ fontSize: 13, color: "#666" }}>{submissions.length}회 제출</span>
+              </div>
+
+              {/* 1. 점수 */}
+              <h4 style={{ margin: "0 0 8px", color: "#2980b9" }}>① 점수</h4>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                <div style={{ background: "#eaf4fb", borderRadius: 8, padding: "6px 14px", textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#2980b9" }}>{avgScore}점</div>
+                  <div style={{ fontSize: 11, color: "#888" }}>월평균</div>
+                </div>
+                <div style={{ background: "#eaf4fb", borderRadius: 8, padding: "6px 14px", textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#2980b9" }}>{avgPct}%</div>
+                  <div style={{ fontSize: 11, color: "#888" }}>정답률</div>
+                </div>
+                {submissions.map((sub, i) => (
+                  <div key={i} style={{ background: "#f9f9f9", borderRadius: 8, padding: "6px 14px", textAlign: "center" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{sub.score}/{sub.maxScore}</div>
+                    <div style={{ fontSize: 11, color: "#888" }}>{sub.examName}</div>
+                    <div style={{ fontSize: 10, color: "#aaa" }}>{sub.date}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 2. 틀린 번호 */}
+              <h4 style={{ margin: "0 0 8px", color: "#e74c3c" }}>② 틀린 번호 분석</h4>
+              {wrongFreq.length === 0 ? (
+                <p className="muted" style={{ marginBottom: 10 }}>오답 없음 (만점)</p>
+              ) : (
+                <>
+                  {/* 번호 시각화 */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                    {wrongFreq.map((w) => (
+                      <div
+                        key={w.no}
+                        title={`원인: ${w.reasons.join(", ") || "미입력"}`}
+                        style={{
+                          padding: "4px 10px", borderRadius: 6, fontWeight: 700, fontSize: 13,
+                          background: w.cnt > 1 ? "#e74c3c" : w.isThreePoint ? "#e67e22" : "#f0f0f0",
+                          color: w.cnt > 1 || w.isThreePoint ? "#fff" : "#333",
+                          border: w.isThreePoint ? "2px solid #e67e22" : "2px solid transparent",
+                        }}
+                      >
+                        {w.no}번{w.isThreePoint ? "★" : ""}{w.cnt > 1 ? ` ×${w.cnt}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                  {/* 번호별 원인 표 */}
+                  <div className="table-wrap" style={{ marginBottom: 10 }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>문항</th>
+                          <th>3점</th>
+                          <th>반복</th>
+                          <th>오답 원인</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wrongFreq.map((w) => (
+                          <tr key={w.no}>
+                            <td style={{ fontWeight: 700, color: "#e74c3c" }}>{w.no}번</td>
+                            <td style={{ textAlign: "center" }}>{w.isThreePoint ? "★" : ""}</td>
+                            <td style={{ textAlign: "center", color: w.cnt > 1 ? "#e74c3c" : "#aaa" }}>
+                              {w.cnt > 1 ? `${w.cnt}회` : "-"}
+                            </td>
+                            <td style={{ fontSize: 12 }}>{w.reasons.join(", ") || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {/* 3. 오답 원인 분포 */}
+              <h4 style={{ margin: "0 0 8px", color: "#8e44ad" }}>③ 오답 원인 분포</h4>
+              {topReasons.length === 0 ? (
+                <p className="muted" style={{ marginBottom: 10 }}>원인 데이터 없음</p>
+              ) : (
+                <div style={{ marginBottom: 10 }}>
+                  {topReasons.map((r) => (
+                    <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ minWidth: 70, fontSize: 13 }}>{r.label}</span>
+                      <div style={{ flex: 1, background: "#eee", borderRadius: 4, height: 10 }}>
+                        <div style={{
+                          width: `${Math.round(r.cnt / totalReasonCnt * 100)}%`,
+                          background: "#8e44ad", height: 10, borderRadius: 4
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 12, minWidth: 40 }}>{r.cnt}건 ({Math.round(r.cnt / totalReasonCnt * 100)}%)</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 4. 회고 */}
+              <h4 style={{ margin: "0 0 8px", color: "#27ae60" }}>④ 회고 기록</h4>
+              {reflections.length === 0 ? (
+                <p className="muted">회고 기록 없음</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>시험</th>
+                        <th>어려웠던 점</th>
+                        <th>다음 목표</th>
+                        <th>만족도</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reflections.map((r, i) => (
+                        <tr key={i}>
+                          <td style={{ fontSize: 12 }}>{r.examName}</td>
+                          <td style={{ fontSize: 12 }}>{r.hardestReason}</td>
+                          <td style={{ fontSize: 12 }}>{r.nextGoal}</td>
+                          <td style={{ textAlign: "center" }}>{r.satisfaction}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {/* ── 대책 메모 ── */}
+      <h3>📝 대책 메모 (선생님 전용)</h3>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={6}
+        style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd", fontSize: 14, resize: "vertical", boxSizing: "border-box" }}
+        placeholder="예) 어휘 오답이 많으므로 매주 단어 테스트 강화..."
+      />
+      <div style={{ height: 8 }} />
+      <button className="btn" onClick={saveNote}>
+        {saved ? "✅ 저장됨" : "저장"}
+      </button>
+    </div>
+  );
+}
+
+// ── 리포트 링크 버튼 ──────────────────────────────
+function ReportLinkButton({ studentCode, studentName }: { studentCode: string; studentName: string }) {
+  const [link, setLink] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function generate() {
+    setLoading(true);
+    const token = await generateReportToken(studentCode);
+    const url = buildReportUrl(studentCode, token);
+    setLink(url);
+    setLoading(false);
+  }
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function sendSms() {
+    const msg = `[L16] ${studentName}님의 학습 리포트: ${link}`;
+    // 솔라피 문자 발송은 관리자 서버 필요 — 클립보드 복사로 대체
+    window.open(`sms:?body=${encodeURIComponent(msg)}`);
+  }
+
+  if (!link) {
+    return (
+      <button
+        onClick={generate}
+        disabled={loading}
+        style={{ padding: "3px 10px", fontSize: 12, borderRadius: 6, background: "#3498db", color: "#fff", border: "none", cursor: "pointer" }}
+      >
+        {loading ? "생성중…" : "링크 생성"}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", gap: 4 }}>
+        <button
+          onClick={copyLink}
+          style={{ padding: "3px 8px", fontSize: 11, borderRadius: 6, background: copied ? "#27ae60" : "#2ecc71", color: "#fff", border: "none", cursor: "pointer" }}
+        >
+          {copied ? "복사됨 ✓" : "복사"}
+        </button>
+        <button
+          onClick={sendSms}
+          style={{ padding: "3px 8px", fontSize: 11, borderRadius: 6, background: "#f39c12", color: "#fff", border: "none", cursor: "pointer" }}
+        >
+          문자
+        </button>
+      </div>
+      <input
+        readOnly
+        value={link}
+        style={{ fontSize: 10, padding: "2px 4px", borderRadius: 4, border: "1px solid #ddd", width: 160 }}
+        onClick={(e) => (e.target as HTMLInputElement).select()}
+      />
     </div>
   );
 }

@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import StudentFlow from "./features/student/StudentFlow";
 import AdminPanel from "./features/admin/AdminPanel";
+import StudentReport from "./features/student/StudentReport";
 import { checkAdminAccessCode } from "./core/adminGate";
+import { parseReportHash } from "./lib/reportToken";
 
 const GATE_SESSION_KEY = "asx.admin.gate";
 const TAP_THRESHOLD = 5;
@@ -12,8 +14,20 @@ export default function App() {
   const [showGatePrompt, setShowGatePrompt] = useState(false);
   const [gateCode, setGateCode] = useState("");
   const [gateError, setGateError] = useState("");
+  const [reportParams, setReportParams] = useState<{ studentCode: string; token: string } | null>(null);
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 해시 기반 리포트 라우팅
+  useEffect(() => {
+    function checkHash() {
+      const parsed = parseReportHash();
+      setReportParams(parsed);
+    }
+    checkHash();
+    window.addEventListener("hashchange", checkHash);
+    return () => window.removeEventListener("hashchange", checkHash);
+  }, []);
 
   function handleTitleTap() {
     tapCountRef.current += 1;
@@ -84,7 +98,12 @@ export default function App() {
         </div>
       )}
 
-      {!showGatePrompt && (role === "student" ? <StudentFlow /> : <AdminPanel />)}
+      {/* 리포트 링크로 접속한 경우 */}
+      {reportParams && (
+        <StudentReport studentCode={reportParams.studentCode} token={reportParams.token} />
+      )}
+
+      {!reportParams && !showGatePrompt && (role === "student" ? <StudentFlow /> : <AdminPanel />)}
     </div>
   );
 }

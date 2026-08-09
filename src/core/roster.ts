@@ -11,6 +11,18 @@ export interface RosterEntry {
   teacher: string;
   note: string;
   registeredAt?: string; // ISO — 계도기간(신규등록 후 2주) 계산용
+  studentType?: "S" | "W2" | "W1" | ""; // 특별관리(S) / 주2타임(W2) / 주1타임(W1)
+  excludeFromReminder?: boolean; // 독려 문자 제외 여부
+  weeklySession?: 1 | 2 | 3 | 4 | 5 | 6 | null; // 주간 수업 시수
+}
+
+// 수업 시수별 과제 제출 기한 (일)
+export function getReminderDays(weeklySession: number | null | undefined): number {
+  if (weeklySession === 1) return 5;
+  if (weeklySession === 2) return 2;
+  // 3회 이상은 2일 기준
+  if (weeklySession != null && weeklySession >= 3) return 2;
+  return 3; // 미설정 기본값
 }
 
 export interface ParseRosterResult {
@@ -44,7 +56,7 @@ export function parseRosterRows(
   dataRows.forEach((row, idx) => {
     const rowNum = idx + 2; // 실제 엑셀 행 번호 (1행=헤더)
     const cells = (row ?? []).map((c) => String(c ?? "").trim());
-    const [studentCodeRaw, name, school, grade, phoneRaw, teacher, note, parentPhoneRaw] = [
+    const [studentCodeRaw, name, school, grade, phoneRaw, teacher, note, parentPhoneRaw, studentTypeRaw] = [
       cells[0] ?? "",
       cells[1] ?? "",
       cells[2] ?? "",
@@ -53,6 +65,7 @@ export function parseRosterRows(
       cells[5] ?? "",
       cells[6] ?? "",
       cells[7] ?? "",
+      cells[8] ?? "",
     ];
 
     // 완전히 빈 행은 조용히 무시 (학생코드는 자동생성 대상이라 존재 여부 판단에서 제외)
@@ -91,6 +104,9 @@ export function parseRosterRows(
     fileCodes.add(studentCode);
     codePool.add(studentCode);
 
+    const rawType = (studentTypeRaw ?? "").trim().toUpperCase();
+    const studentType = (["S", "W2", "W1"].includes(rawType) ? rawType : "") as "S" | "W2" | "W1" | "";
+
     valid.push({
       studentCode,
       name,
@@ -100,6 +116,8 @@ export function parseRosterRows(
       parentPhone: parentPhoneRaw ? normalizePhoneNumber(parentPhoneRaw) : undefined,
       teacher,
       note,
+      studentType,
+      excludeFromReminder: false,
     });
   });
 
