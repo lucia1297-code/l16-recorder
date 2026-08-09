@@ -631,144 +631,147 @@ function RosterManager() {
               </tr>
             </thead>
             <tbody>
-              {roster.map((e) => (
-                <tr key={e.studentCode}>
-                  <td>{e.studentCode}</td>
-                  <td>{e.name}</td>
-                  <td>{e.school}</td>
-                  <td>
-                    {editingCode === e.studentCode ? (
-                      <div>
+              {roster.map((e) => {
+                const isEditing = editingCode === e.studentCode;
+                const typeLabel = e.studentType === "S" ? "특별관리" : e.studentType === "W2" ? "주2타임" : e.studentType === "W1" ? "주1타임" : "";
+                const typeColor = e.studentType === "S" ? "#9b59b6" : e.studentType === "W2" ? "#e67e22" : e.studentType === "W1" ? "#e74c3c" : "#aaa";
+                return (
+                  <tr key={e.studentCode} style={{ background: isEditing ? "#f8f9ff" : "transparent" }}>
+                    <td style={{ fontSize: 12, color: "#666" }}>{e.studentCode}</td>
+                    <td style={{ fontWeight: 600 }}>{e.name}</td>
+                    <td>{e.school}</td>
+                    {/* 전화번호 */}
+                    <td>
+                      {isEditing ? (
+                        <div>
+                          <input
+                            value={editPhone}
+                            onChange={(ev) => setEditPhone(ev.target.value)}
+                            placeholder="010-1234-5678"
+                            style={{ padding: 4, fontSize: 13, width: 130 }}
+                          />
+                          {editError && <div style={{ color: "red", fontSize: 11 }}>{editError}</div>}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 13 }}>{e.phone}</span>
+                      )}
+                    </td>
+                    {/* 등급 */}
+                    <td style={{ textAlign: "center" }}>
+                      {isEditing ? (
+                        <select
+                          value={e.studentType ?? ""}
+                          onChange={(ev) => {
+                            const updated = roster.map((r) =>
+                              r.studentCode === e.studentCode
+                                ? { ...r, studentType: ev.target.value as "S" | "W2" | "W1" | "" }
+                                : r
+                            );
+                            setRoster(updated);
+                          }}
+                          style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}
+                        >
+                          <option value="">미설정</option>
+                          <option value="S">S - 특별관리</option>
+                          <option value="W2">W2 - 주2타임</option>
+                          <option value="W1">W1 - 주1타임</option>
+                        </select>
+                      ) : (
+                        e.studentType ? (
+                          <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: typeColor + "22", color: typeColor, border: `1px solid ${typeColor}` }}>
+                            {e.studentType}
+                          </span>
+                        ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>
+                      )}
+                    </td>
+                    {/* 주간시수 */}
+                    <td style={{ textAlign: "center" }}>
+                      {isEditing ? (
+                        <select
+                          value={e.weeklySession ?? ""}
+                          onChange={(ev) => {
+                            const val = ev.target.value === "" ? null : Number(ev.target.value) as 1|2|3|4|5|6;
+                            const updated = roster.map((r) =>
+                              r.studentCode === e.studentCode ? { ...r, weeklySession: val } : r
+                            );
+                            setRoster(updated);
+                          }}
+                          style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}
+                        >
+                          <option value="">미설정</option>
+                          {[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n}회/주</option>)}
+                        </select>
+                      ) : (
+                        e.weeklySession ? (
+                          <div>
+                            <span style={{ fontWeight: 700, color: "#2980b9" }}>{e.weeklySession}회/주</span>
+                            <div style={{ fontSize: 10, color: "#aaa" }}>기한 {getReminderDays(e.weeklySession)}일</div>
+                          </div>
+                        ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>
+                      )}
+                    </td>
+                    {/* 학부모번호 */}
+                    <td>
+                      {isEditing ? (
                         <input
-                          value={editPhone}
-                          onChange={(ev) => setEditPhone(ev.target.value)}
-                          placeholder="010-1234-5678"
-                          style={{ padding: 6, fontSize: 13, width: 130 }}
+                          value={e.parentPhone ?? ""}
+                          onChange={(ev) => {
+                            const updated = roster.map((r) =>
+                              r.studentCode === e.studentCode ? { ...r, parentPhone: ev.target.value || undefined } : r
+                            );
+                            setRoster(updated);
+                          }}
+                          placeholder="010-0000-0000"
+                          style={{ width: 120, fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}
                         />
-                        {editError && (
-                          <div style={{ color: "var(--red)", fontSize: 11 }}>{editError}</div>
-                        )}
-                      </div>
-                    ) : (
-                      e.phone
-                    )}
-                  </td>
-                  {/* 등급 */}
-                  <td>
-                    <select
-                      value={e.studentType ?? ""}
-                      onChange={async (ev) => {
-                        const updated = roster.map((r) =>
-                          r.studentCode === e.studentCode
-                            ? { ...r, studentType: ev.target.value as "S" | "W2" | "W1" | "" }
-                            : r
-                        );
-                        setRoster(updated);
-                        await rosterStore.saveRoster(updated);
-                      }}
-                      style={{
-                        fontSize: 12, padding: "3px 6px", borderRadius: 4,
-                        border: "1px solid #ddd", background: "#fff",
-                        appearance: "auto" as const, WebkitAppearance: "auto" as any,
-                        cursor: "pointer",
-                        color: e.studentType === "S" ? "#9b59b6" : e.studentType === "W2" ? "#e67e22" : e.studentType === "W1" ? "#e74c3c" : "#333",
-                        fontWeight: e.studentType ? 700 : 400,
-                      }}
-                    >
-                      <option value="">-</option>
-                      <option value="S">S (특별관리)</option>
-                      <option value="W2">W2 (주2타임)</option>
-                      <option value="W1">W1 (주1타임)</option>
-                    </select>
-                  </td>
-                  {/* 주간 시수 */}
-                  <td>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                      <select
-                        value={e.weeklySession ?? ""}
-                        onChange={(ev) => {
-                          const val = ev.target.value === "" ? null : Number(ev.target.value) as 1|2|3|4|5|6;
-                          const updated = roster.map((r) =>
-                            r.studentCode === e.studentCode ? { ...r, weeklySession: val } : r
-                          );
-                          setRoster(updated);
-                        }}
-                        style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd", background: "#fff" }}
-                      >
-                        <option value="">-</option>
-                        <option value="1">1회</option>
-                        <option value="2">2회</option>
-                        <option value="3">3회</option>
-                        <option value="4">4회</option>
-                        <option value="5">5회</option>
-                        <option value="6">6회</option>
-                      </select>
-                      <button
-                        onClick={async () => {
-                          await rosterStore.saveRoster(roster);
-                          setNotice(`${e.name} 시수 저장 완료`);
-                          setTimeout(() => setNotice(""), 2000);
-                        }}
-                        style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, background: "#3498db", color: "#fff", border: "none", cursor: "pointer" }}
-                      >
-                        저장
-                      </button>
-                    </div>
-                    {e.weeklySession && (
-                      <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
-                        독려기한: {getReminderDays(e.weeklySession)}일
-                      </div>
-                    )}
-                  </td>
-                  {/* 학부모 번호 */}
-                  <td>
-                    <input
-                      defaultValue={e.parentPhone ?? ""}
-                      placeholder="010-0000-0000"
-                      style={{ width: 120, fontSize: 12, padding: "2px 6px", borderRadius: 4, border: "1px solid #ddd" }}
-                      onBlur={async (ev) => {
-                        const val = ev.target.value.trim();
-                        if (val === (e.parentPhone ?? "")) return;
-                        const updated = roster.map((r) =>
-                          r.studentCode === e.studentCode ? { ...r, parentPhone: val || undefined } : r
-                        );
-                        setRoster(updated);
-                        await rosterStore.saveRoster(updated);
-                      }}
-                    />
-                  </td>
-                  {/* 독려 제외 */}
-                  <td style={{ textAlign: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={!!e.excludeFromReminder}
-                      onChange={async (ev) => {
-                        const updated = roster.map((r) =>
-                          r.studentCode === e.studentCode
-                            ? { ...r, excludeFromReminder: ev.target.checked }
-                            : r
-                        );
-                        setRoster(updated);
-                        await rosterStore.saveRoster(updated);
-                      }}
-                      style={{ width: 18, height: 18 }}
-                    />
-                  </td>
-                  <td>
-                    {editingCode === e.studentCode ? (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => savePhone(e)}>저장</button>
-                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={cancelEdit}>취소</button>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => startEdit(e)}>번호수정</button>
-                        <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} onClick={() => sendCode(e)}>전송</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                      ) : (
+                        <span style={{ fontSize: 12, color: e.parentPhone ? "#333" : "#ccc" }}>
+                          {e.parentPhone || "미등록"}
+                        </span>
+                      )}
+                    </td>
+                    {/* 독려제외 */}
+                    <td style={{ textAlign: "center" }}>
+                      {isEditing ? (
+                        <input
+                          type="checkbox"
+                          checked={!!e.excludeFromReminder}
+                          onChange={(ev) => {
+                            const updated = roster.map((r) =>
+                              r.studentCode === e.studentCode ? { ...r, excludeFromReminder: ev.target.checked } : r
+                            );
+                            setRoster(updated);
+                          }}
+                          style={{ width: 18, height: 18 }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 13 }}>{e.excludeFromReminder ? "✅ 제외" : "-"}</span>
+                      )}
+                    </td>
+                    {/* 관리 버튼 */}
+                    <td>
+                      {isEditing ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <button
+                            className="btn"
+                            style={{ padding: "4px 10px", fontSize: 12, background: "#27ae60", color: "#fff", border: "none" }}
+                            onClick={async () => {
+                              await savePhone(e);
+                              await rosterStore.saveRoster(roster);
+                              setNotice(`${e.name} 저장 완료`);
+                              setTimeout(() => setNotice(""), 2000);
+                            }}
+                          >저장</button>
+                          <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={cancelEdit}>취소</button>
+                          <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => sendCode(e)}>코드전송</button>
+                        </div>
+                      ) : (
+                        <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(e)}>수정</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
