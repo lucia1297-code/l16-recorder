@@ -819,18 +819,23 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
     return Math.floor((today.getTime() - new Date(isoDate).getTime()) / 86400000);
   }
 
-  const reminderTargets = useMemo(() =>
-    roster
+  const reminderTargets = useMemo(() => {
+    const now = new Date();
+    return roster
       .filter((r) => !r.excludeFromReminder)
+      .filter((r) => !isInGracePeriod(r.registeredAt, now))
       .map((r) => {
         const lastDate = lastSubmitMap.get(r.studentCode);
-        const days = lastDate ? daysSince(lastDate) : 999;
-        const threshold = getReminderDays(r.weeklySession); // 시수별 기한
-        return { ...r, days, lastDate, threshold };
+        // 제출 기록 없으면 등록일 기준, 등록일도 없으면 독려 대상 제외
+        const baseDate = lastDate ?? r.registeredAt;
+        if (!baseDate) return null;
+        const days = daysSince(baseDate);
+        const threshold = getReminderDays(r.weeklySession);
+        return { ...r, days, lastDate: lastDate ?? null, threshold, neverSubmitted: !lastDate };
       })
-      .filter((r) => r.days >= r.threshold)
-      .sort((a, b) => b.days - a.days),
-    [roster, lastSubmitMap]);
+      .filter((r): r is NonNullable<typeof r> => r !== null && r.days >= r.threshold)
+      .sort((a, b) => b.days - a.days);
+  }, [roster, lastSubmitMap]);
 
   // 1회·2회 학생 자동 발송 대상 (시수 설정된 학생)
   const autoTargets = reminderTargets.filter((r) => r.weeklySession === 1 || r.weeklySession === 2);
@@ -927,15 +932,14 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
                     background: s.days >= s.threshold * 2 ? "#fdecea" : "#fef9e7",
                     padding: "2px 8px", borderRadius: 6, fontSize: 13,
                   }}>
-                    D+{s.days}
+                    {s.neverSubmitted ? "미제출" : `D+${s.days}`}
                   </span>
                   <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>
                     (기한:{s.threshold}일)
                   </span>
                 </td>
                 <td style={{ fontSize: 12, color: "#888" }}>
-                  {s.lastDate ? new Date(s.lastDate).toLocaleDateString("ko-KR") : "미제출"}
-                </td>
+                  {s.lastDate ? new Date(s.lastDate).toLocaleDateString("ko-KR") : "한 번도 미제출"}</td>
                 <td style={{ fontSize: 12, color: s.parentPhone ? "#333" : "#ccc" }}>
                   {s.parentPhone || "미등록"}
                 </td>
