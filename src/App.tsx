@@ -122,19 +122,19 @@ export default function App() {
           background: "#fef9e7", border: "2px solid #f39c12", borderRadius: 10,
           padding: "10px 16px", margin: "8px 0", display: "flex", alignItems: "center", gap: 12,
         }}>
-          <span style={{ fontSize: 20 }}>👨‍🏫</span>
+          <span style={{ fontSize: 20 }}>👩‍🎓</span>
           <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, fontWeight: 700, color: "#e67e22", fontSize: 14 }}>관리자 미리보기 모드</p>
+            <p style={{ margin: 0, fontWeight: 700, color: "#e67e22", fontSize: 14 }}>
+              학생체험 모드 — <span style={{ color: "#e74c3c" }}>감아랑</span> 학생으로 접속 중
+            </p>
             <p style={{ margin: 0, fontSize: 12, color: "#888" }}>학생과 동일한 화면입니다. 실제 데이터는 저장되지 않습니다.</p>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={exitPreview}
-              style={{ padding: "6px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: "#e74c3c", color: "#fff", border: "none", cursor: "pointer" }}
-            >
-              관리자 화면으로
-            </button>
-          </div>
+          <button
+            onClick={exitPreview}
+            style={{ padding: "6px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: "#e74c3c", color: "#fff", border: "none", cursor: "pointer" }}
+          >
+            관리자 화면으로
+          </button>
         </div>
       )}
 
