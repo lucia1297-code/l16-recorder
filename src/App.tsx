@@ -44,6 +44,12 @@ export default function App() {
     tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, TAP_WINDOW_MS);
     if (tapCountRef.current >= TAP_THRESHOLD) {
       tapCountRef.current = 0;
+      // 학생체험 모드 중이면 → 관리자로 즉시 복귀
+      if (previewMode) {
+        exitPreview();
+        return;
+      }
+      // 일반 학생 화면 → 관리자 접속
       if (sessionStorage.getItem(GATE_SESSION_KEY) === "1") {
         setRole("admin");
         setPreviewMode(false);
@@ -127,7 +133,7 @@ export default function App() {
             <p style={{ margin: 0, fontWeight: 700, color: "#e67e22", fontSize: 14 }}>
               학생체험 모드 — <span style={{ color: "#e74c3c" }}>감아랑</span> 학생으로 접속 중
             </p>
-            <p style={{ margin: 0, fontSize: 12, color: "#888" }}>학생과 동일한 화면입니다. 실제 데이터는 저장되지 않습니다.</p>
+            <p style={{ margin: 0, fontSize: 12, color: "#888" }}>학생과 동일한 화면입니다. 실제 데이터는 저장되지 않습니다. · <strong>제목 5번 탭 → 관리자 복귀</strong></p>
           </div>
           <button
             onClick={exitPreview}
