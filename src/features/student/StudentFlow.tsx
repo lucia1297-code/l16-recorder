@@ -78,19 +78,36 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   const [matched, setMatched] = useState(false);
   const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment">("select");
 
-  // 미리보기 모드 - 전화인증 건너뛰기
+  // 미리보기 모드 - 감아랑 학생으로 자동 설정
   useEffect(() => {
-    if (previewMode) {
+    if (!previewMode) return;
+    rosterStore.listRoster().then((roster) => {
+      // 명부에서 감아랑 찾기
+      const student = roster.find((r) => r.name === "감아랑") ?? {
+        studentCode: "PREVIEW",
+        name: "감아랑",
+        school: "세화여고",
+        grade: "3",
+        phone: "01012345678",
+        teacher: "김민수",
+        note: "",
+      };
       setPhoneVerified(true);
       setMatched(true);
       setLoaded(true);
       setDraft((prev) => ({
         ...prev,
-        phone: "01000000000",
-        student: { name: "관리자(미리보기)", studentCode: "ADMIN", school: "이지수능교육", grade: "3" },
+        phone: student.phone,
+        student: {
+          name: student.name,
+          studentCode: student.studentCode,
+          school: student.school,
+          grade: student.grade,
+        },
+        teacher: student.teacher ?? "",
         step: 1,
       }));
-    }
+    });
   }, [previewMode]);
 
   function refreshRoster() {
