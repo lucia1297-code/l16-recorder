@@ -63,7 +63,7 @@ const EMPTY_DRAFT: DraftResult = {
 
 const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "풀이시간", "오답번호", "오답원인", "상세분석", "회고", "제출"];
 
-export default function StudentFlow() {
+export default function StudentFlow({ previewMode = false }: { previewMode?: boolean }) {
   const storage = useStorage();
   const otp = useMemo(() => new OtpService(createSmsProvider()), []);
   const rosterStore = useMemo(() => createRosterStore(), []);
@@ -77,6 +77,21 @@ export default function StudentFlow() {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [matched, setMatched] = useState(false);
   const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment">("select");
+
+  // 미리보기 모드 - 전화인증 건너뛰기
+  useEffect(() => {
+    if (previewMode) {
+      setPhoneVerified(true);
+      setMatched(true);
+      setLoaded(true);
+      setDraft((prev) => ({
+        ...prev,
+        phone: "01000000000",
+        student: { name: "관리자(미리보기)", studentCode: "ADMIN", school: "이지수능교육", grade: "3" },
+        step: 1,
+      }));
+    }
+  }, [previewMode]);
 
   function refreshRoster() {
     return rosterStore.listRoster().then((r) => {
@@ -178,6 +193,13 @@ export default function StudentFlow() {
       reflection: draft.reflection as Reflection,
       submittedAt: new Date().toISOString(),
     };
+
+    // 미리보기 모드: 실제 저장 없이 완료 화면만 표시
+    if (previewMode) {
+      setDone(true);
+      return;
+    }
+
     await storage.saveResult(result);
 
     // Neon DB 저장 (비동기 - 실패해도 제출 완료)
@@ -239,14 +261,14 @@ export default function StudentFlow() {
         <div className="stamp-wrap">
           <div className="stamp-ring" />
           <div className="stamp">
-            <span className="stamp-text">제출완료</span>
+            <span className="stamp-text">{previewMode ? "미리보기" : "제출완료"}</span>
             <span className="stamp-sub">L16 RECORDER</span>
           </div>
         </div>
-        <h2>제출이 완료됐습니다</h2>
-        <p className="muted">시험 결과가 저장되었습니다.</p>
+        <h2>{previewMode ? "미리보기 완료" : "제출이 완료됐습니다"}</h2>
+        <p className="muted">{previewMode ? "실제 데이터는 저장되지 않았습니다." : "시험 결과가 저장되었습니다."}</p>
         <button className="btn" onClick={restart}>
-          새로 입력하기
+          {previewMode ? "처음부터 다시 보기" : "새로 입력하기"}
         </button>
       </div>
     );
