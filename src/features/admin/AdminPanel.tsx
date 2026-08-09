@@ -116,7 +116,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -156,6 +156,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>
           학생 분석
         </button>
+        <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")} style={{ background: tab === "sms" ? "#e74c3c" : "", color: tab === "sms" ? "#fff" : "" }}>
+          문자알림
+        </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
@@ -173,6 +176,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "pending" && <PendingManager />}
         {tab === "submit" && <SubmissionStatus rows={rows} />}
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
+        {tab === "sms" && <SmsCenterPanel />}
       </div>
     </div>
   );
@@ -2851,6 +2855,239 @@ function ReportLinkButton({ studentCode, studentName }: { studentCode: string; s
         style={{ fontSize: 10, padding: "2px 4px", borderRadius: 4, border: "1px solid #ddd", width: 160 }}
         onClick={(e) => (e.target as HTMLInputElement).select()}
       />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 문자알림 코너
+// ═══════════════════════════════════════════════════
+
+type SmsMode = "urgent" | "regular" | "individual" | "parent";
+
+function SmsCenterPanel() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const smsProvider = useMemo(() => createSmsProvider(), []);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [mode, setMode] = useState<SmsMode>("urgent");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [parentTarget, setParentTarget] = useState<"both" | "father" | "mother">("both");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [results, setResults] = useState<{ name: string; ok: boolean }[]>([]);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    rosterStore.listRoster().then((r) => {
+      setRoster(r);
+      setSelected(new Set(r.map((s) => s.studentCode)));
+    });
+  }, [rosterStore]);
+
+  // 기본 메시지 템플릿
+  const templates: Record<SmsMode, string> = {
+    urgent: "[긴급] 이지수능교육 공지입니다. ",
+    regular: "[안내] 이지수능교육 공지입니다. ",
+    individual: "",
+    parent: "[학부모 안내] 이지수능교육입니다. ",
+  };
+
+  function toggleAll() {
+    if (selected.size === roster.length) setSelected(new Set());
+    else setSelected(new Set(roster.map((s) => s.studentCode)));
+  }
+
+  function toggleOne(code: string) {
+    const next = new Set(selected);
+    next.has(code) ? next.delete(code) : next.add(code);
+    setSelected(next);
+  }
+
+  async function sendAll() {
+    if (!message.trim()) { setNotice("메시지를 입력하세요."); return; }
+    if (selected.size === 0) { setNotice("대상을 선택하세요."); return; }
+    setSending(true);
+    setResults([]);
+    const targets = roster.filter((r) => selected.has(r.studentCode));
+    const log: { name: string; ok: boolean }[] = [];
+
+    for (const s of targets) {
+      if (mode === "parent") {
+        // 학부모에게 발송
+        const hasParent = !!s.parentPhone;
+        if (hasParent) {
+          try {
+            const msg = message.replace("{이름}", s.name);
+            await smsProvider.send(s.parentPhone!, msg);
+            log.push({ name: `${s.name}(학부모)`, ok: true });
+          } catch {
+            log.push({ name: `${s.name}(학부모)`, ok: false });
+          }
+        } else {
+          log.push({ name: `${s.name}(학부모 번호 없음)`, ok: false });
+        }
+      } else {
+        // 학생에게 발송
+        try {
+          const msg = message.replace("{이름}", s.name);
+          await smsProvider.send(s.phone, msg);
+          log.push({ name: s.name, ok: true });
+        } catch {
+          log.push({ name: s.name, ok: false });
+        }
+      }
+    }
+    setResults(log);
+    setSending(false);
+    const okCount = log.filter((l) => l.ok).length;
+    setNotice(`발송 완료: ${okCount}명 성공 / ${log.length - okCount}명 실패`);
+  }
+
+  const modeConfig: Record<SmsMode, { label: string; color: string; desc: string }> = {
+    urgent:     { label: "긴급 알림", color: "#e74c3c", desc: "긴급 공지 — 즉시 전송" },
+    regular:    { label: "상시 알림", color: "#2980b9", desc: "정기 안내 — 일반 공지" },
+    individual: { label: "개별 문자", color: "#27ae60", desc: "개인별 메시지 — 학생 선택 후 전송" },
+    parent:     { label: "학부모 알림", color: "#8e44ad", desc: "학부모 번호로 발송" },
+  };
+
+  return (
+    <div className="card">
+      <h2>📱 문자알림 코너</h2>
+
+      {/* 발송 유형 선택 */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {(Object.keys(modeConfig) as SmsMode[]).map((m) => (
+          <button
+            key={m}
+            onClick={() => { setMode(m); setMessage(templates[m]); setResults([]); setNotice(""); }}
+            style={{
+              padding: "10px 18px", borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: "pointer",
+              background: mode === m ? modeConfig[m].color : "#f5f5f5",
+              color: mode === m ? "#fff" : "#555",
+              border: `2px solid ${mode === m ? modeConfig[m].color : "#ddd"}`,
+            }}
+          >
+            {modeConfig[m].label}
+          </button>
+        ))}
+      </div>
+
+      <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
+        {modeConfig[mode].desc} · <code style={{ fontSize: 12 }}>{"{이름}"}</code> 입력 시 학생 이름으로 자동 치환
+      </p>
+
+      {/* 학부모 알림 옵션 */}
+      {mode === "parent" && (
+        <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>발송 대상:</span>
+          {(["both", "father", "mother"] as const).map((t) => (
+            <button key={t} onClick={() => setParentTarget(t)}
+              style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+                background: parentTarget === t ? "#8e44ad" : "#f5f5f5",
+                color: parentTarget === t ? "#fff" : "#555",
+                border: `1px solid ${parentTarget === t ? "#8e44ad" : "#ddd"}`,
+              }}>
+              {t === "both" ? "전체" : t === "father" ? "부" : "모"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 메시지 입력 */}
+      <label style={{ fontWeight: 700, fontSize: 14 }}>메시지</label>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        rows={4}
+        style={{ width: "100%", padding: 10, borderRadius: 8, border: `2px solid ${modeConfig[mode].color}`, fontSize: 14, resize: "vertical", boxSizing: "border-box", marginTop: 6 }}
+        placeholder="발송할 메시지를 입력하세요."
+      />
+      <div style={{ fontSize: 12, color: "#aaa", marginBottom: 16, textAlign: "right" }}>
+        {message.length}자
+      </div>
+
+      {/* 대상 선택 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h3 style={{ margin: 0 }}>발송 대상 ({selected.size}/{roster.length}명)</h3>
+        <button onClick={toggleAll} style={{ fontSize: 13, padding: "4px 12px", borderRadius: 6, border: "1px solid #ddd", cursor: "pointer", background: "#f5f5f5" }}>
+          {selected.size === roster.length ? "전체 해제" : "전체 선택"}
+        </button>
+      </div>
+
+      <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #eee", borderRadius: 8, marginBottom: 16 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#f9f9f9", borderBottom: "1px solid #eee" }}>
+              <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 12, width: 36 }}></th>
+              <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 12 }}>이름</th>
+              <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 12 }}>학교</th>
+              <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 12 }}>등급</th>
+              {mode === "parent" && <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 12 }}>학부모번호</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {roster.map((s) => {
+              const isSelected = selected.has(s.studentCode);
+              const noParent = mode === "parent" && !s.parentPhone;
+              return (
+                <tr key={s.studentCode}
+                  onClick={() => !noParent && toggleOne(s.studentCode)}
+                  style={{ background: isSelected ? "#f0f9f0" : "#fff", cursor: noParent ? "not-allowed" : "pointer", opacity: noParent ? 0.4 : 1, borderBottom: "1px solid #f5f5f5" }}>
+                  <td style={{ padding: "6px 10px" }}>
+                    <input type="checkbox" checked={isSelected && !noParent} readOnly style={{ width: 16, height: 16 }} />
+                  </td>
+                  <td style={{ padding: "6px 10px", fontWeight: 600, fontSize: 14 }}>{s.name}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 13, color: "#666" }}>{s.school}</td>
+                  <td style={{ padding: "6px 10px" }}>
+                    {s.studentType ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 6px", borderRadius: 4,
+                        background: s.studentType === "S" ? "#f3e8ff" : s.studentType === "W2" ? "#fff3e0" : "#fdecea",
+                        color: s.studentType === "S" ? "#9b59b6" : s.studentType === "W2" ? "#e67e22" : "#e74c3c" }}>
+                        {s.studentType}
+                      </span>
+                    ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>}
+                  </td>
+                  {mode === "parent" && (
+                    <td style={{ padding: "6px 10px", fontSize: 12, color: s.parentPhone ? "#333" : "#e74c3c" }}>
+                      {s.parentPhone || "미등록"}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 발송 버튼 */}
+      {notice && (
+        <p style={{ color: notice.includes("실패") ? "#e74c3c" : "#27ae60", fontWeight: 600, marginBottom: 8 }}>{notice}</p>
+      )}
+      <button
+        onClick={sendAll}
+        disabled={sending || selected.size === 0 || !message.trim()}
+        style={{
+          width: "100%", padding: "14px", fontSize: 16, fontWeight: 700, borderRadius: 10, border: "none", cursor: "pointer",
+          background: modeConfig[mode].color, color: "#fff", opacity: (sending || selected.size === 0 || !message.trim()) ? 0.5 : 1,
+        }}
+      >
+        {sending ? "발송 중…" : `${modeConfig[mode].label} 발송 (${selected.size}명)`}
+      </button>
+
+      {/* 발송 결과 */}
+      {results.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <h3>발송 결과</h3>
+          <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid #eee", borderRadius: 8 }}>
+            {results.map((r, i) => (
+              <div key={i} style={{ padding: "6px 12px", borderBottom: "1px solid #f5f5f5", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <span style={{ color: r.ok ? "#27ae60" : "#e74c3c", fontWeight: 700 }}>{r.ok ? "✅" : "❌"}</span>
+                <span>{r.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
