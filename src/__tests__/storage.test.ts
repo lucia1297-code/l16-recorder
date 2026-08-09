@@ -29,7 +29,7 @@ describe("LocalStorage adapter", () => {
 
   it("persists and loads a draft", async () => {
     const s = new LocalStorage();
-    await s.saveDraft({ step: 3, teacher: "김민수", score: 70, student: {}, exam: {}, wrongAnswers: [], reflection: {} });
+    await s.saveDraft({ step: 3, teacher: "김민수", score: 70, solvingTime: null, student: {}, exam: {}, wrongAnswers: [], reflection: {} });
     const d = await s.loadDraft();
     expect(d?.step).toBe(3);
     expect(d?.score).toBe(70);
@@ -37,7 +37,7 @@ describe("LocalStorage adapter", () => {
 
   it("clears draft", async () => {
     const s = new LocalStorage();
-    await s.saveDraft({ step: 1, teacher: "", score: null, student: {}, exam: {}, wrongAnswers: [], reflection: {} });
+    await s.saveDraft({ step: 1, teacher: "", score: null, solvingTime: null, student: {}, exam: {}, wrongAnswers: [], reflection: {} });
     await s.clearDraft();
     expect(await s.loadDraft()).toBeNull();
   });
