@@ -6,11 +6,13 @@ import { checkAdminAccessCode } from "./core/adminGate";
 import { parseReportHash } from "./lib/reportToken";
 
 const GATE_SESSION_KEY = "asx.admin.gate";
+const ADMIN_PREVIEW_KEY = "asx.admin.preview";
 const TAP_THRESHOLD = 5;
 const TAP_WINDOW_MS = 2000;
 
 export default function App() {
   const [role, setRole] = useState<"student" | "admin">("student");
+  const [previewMode, setPreviewMode] = useState(false); // 관리자가 학생 화면 미리보기
   const [showGatePrompt, setShowGatePrompt] = useState(false);
   const [gateCode, setGateCode] = useState("");
   const [gateError, setGateError] = useState("");
@@ -29,17 +31,22 @@ export default function App() {
     return () => window.removeEventListener("hashchange", checkHash);
   }, []);
 
+  // 관리자 미리보기 상태 복원
+  useEffect(() => {
+    if (sessionStorage.getItem(GATE_SESSION_KEY) === "1") {
+      setRole("admin");
+    }
+  }, []);
+
   function handleTitleTap() {
     tapCountRef.current += 1;
     if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => {
-      tapCountRef.current = 0;
-    }, TAP_WINDOW_MS);
-
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, TAP_WINDOW_MS);
     if (tapCountRef.current >= TAP_THRESHOLD) {
       tapCountRef.current = 0;
       if (sessionStorage.getItem(GATE_SESSION_KEY) === "1") {
-        setRole("admin"); // 이번 세션에 이미 코드를 통과했으면 바로 진입
+        setRole("admin");
+        setPreviewMode(false);
       } else {
         setShowGatePrompt(true);
       }
@@ -47,20 +54,29 @@ export default function App() {
   }
 
   function submitGateCode() {
-    const result = checkAdminAccessCode(
-      gateCode,
-      import.meta.env.VITE_ADMIN_ACCESS_CODE as string | undefined,
-    );
+    const result = checkAdminAccessCode(gateCode, import.meta.env.VITE_ADMIN_ACCESS_CODE as string | undefined);
     if (result.ok) {
       sessionStorage.setItem(GATE_SESSION_KEY, "1");
       setShowGatePrompt(false);
       setGateCode("");
       setGateError("");
       setRole("admin");
+      setPreviewMode(false);
     } else {
       setGateError(result.error ?? "접속 코드가 올바르지 않습니다.");
     }
   }
+
+  function enterPreview() {
+    setPreviewMode(true);
+  }
+
+  function exitPreview() {
+    setPreviewMode(false);
+  }
+
+  const isAdmin = role === "admin";
+  const showStudent = role === "student" || previewMode;
 
   return (
     <div className="app">
@@ -68,12 +84,59 @@ export default function App() {
         <h1 onClick={handleTitleTap} style={{ cursor: "default", userSelect: "none" }}>
           L16 Student Recorder Lite
         </h1>
-        {role === "admin" && (
-          <button className="role-switch" onClick={() => setRole("student")}>
+        {/* 관리자 미리보기 중 배너 */}
+        {isAdmin && previewMode && (
+          <button
+            onClick={exitPreview}
+            style={{
+              padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer",
+              background: "#e74c3c", color: "#fff", border: "none",
+            }}
+          >
+            🔴 미리보기 중 — 관리자로 돌아가기
+          </button>
+        )}
+        {/* 관리자 화면에서 미리보기/학생전환 버튼 */}
+        {isAdmin && !previewMode && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="role-switch"
+              onClick={enterPreview}
+              style={{ background: "#f39c12", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+            >
+              👁 학생 화면 미리보기
+            </button>
+          </div>
+        )}
+        {/* 일반 학생 화면에서 관리자 접근 버튼 (숨김) */}
+        {role === "admin" && !previewMode && (
+          <button className="role-switch" onClick={() => { setRole("student"); }}>
             ← 학생
           </button>
         )}
       </div>
+
+      {/* 관리자 미리보기 안내 배너 */}
+      {isAdmin && previewMode && (
+        <div style={{
+          background: "#fef9e7", border: "2px solid #f39c12", borderRadius: 10,
+          padding: "10px 16px", margin: "8px 0", display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <span style={{ fontSize: 20 }}>👨‍🏫</span>
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontWeight: 700, color: "#e67e22", fontSize: 14 }}>관리자 미리보기 모드</p>
+            <p style={{ margin: 0, fontSize: 12, color: "#888" }}>학생과 동일한 화면입니다. 실제 데이터는 저장되지 않습니다.</p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={exitPreview}
+              style={{ padding: "6px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: "#e74c3c", color: "#fff", border: "none", cursor: "pointer" }}
+            >
+              관리자 화면으로
+            </button>
+          </div>
+        </div>
+      )}
 
       {showGatePrompt && (
         <div className="card">
@@ -84,26 +147,29 @@ export default function App() {
             type="password"
             value={gateCode}
             onChange={(e) => setGateCode(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitGateCode()}
             placeholder="접속 코드"
           />
           <div style={{ height: 12 }} />
           <div className="nav-buttons">
-            <button className="btn secondary" onClick={() => setShowGatePrompt(false)}>
-              취소
-            </button>
-            <button className="btn" onClick={submitGateCode}>
-              확인
-            </button>
+            <button className="btn secondary" onClick={() => setShowGatePrompt(false)}>취소</button>
+            <button className="btn" onClick={submitGateCode}>확인</button>
           </div>
         </div>
       )}
 
-      {/* 리포트 링크로 접속한 경우 */}
+      {/* 리포트 링크 접속 */}
       {reportParams && (
         <StudentReport studentCode={reportParams.studentCode} token={reportParams.token} />
       )}
 
-      {!reportParams && !showGatePrompt && (role === "student" ? <StudentFlow /> : <AdminPanel />)}
+      {/* 메인 화면 */}
+      {!reportParams && !showGatePrompt && (
+        <>
+          {showStudent && <StudentFlow previewMode={previewMode} />}
+          {isAdmin && !previewMode && <AdminPanel />}
+        </>
+      )}
     </div>
   );
 }
