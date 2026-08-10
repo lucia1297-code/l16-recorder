@@ -31,6 +31,10 @@ export class SupabaseRosterStore implements RosterStore {
       registered_at: e.registeredAt,
       student_type: e.studentType ?? "",
       exclude_from_reminder: e.excludeFromReminder ?? false,
+      weekly_session: e.weeklySession ?? null,
+      lesson_days: JSON.stringify(e.lessonDays ?? []),
+      class_sessions: JSON.stringify(e.classSessions ?? []),
+      last_assignment_saved_at: e.lastAssignmentSavedAt ?? null,
     }));
     const { error } = await sb.from("students").upsert(rows, { onConflict: "student_code" });
     if (error) throw error;
@@ -52,6 +56,10 @@ export class SupabaseRosterStore implements RosterStore {
       registeredAt: r.registered_at ?? undefined,
       studentType: (r.student_type ?? "") as "S" | "W2" | "W1" | "",
       excludeFromReminder: r.exclude_from_reminder ?? false,
+      weeklySession: (r.weekly_session ?? null) as 1|2|3|4|5|6|null,
+      lessonDays: (() => { try { return JSON.parse(r.lesson_days ?? "[]"); } catch { return []; } })(),
+      classSessions: (() => { try { return JSON.parse(r.class_sessions ?? "[]"); } catch { return []; } })(),
+      lastAssignmentSavedAt: r.last_assignment_saved_at ?? undefined,
     }));
   }
 
