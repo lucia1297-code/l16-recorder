@@ -798,7 +798,335 @@ function RosterManager() {
 
       {/* ── 과제 독려 발송 섹션 ── */}
       {roster.length > 0 && (
+        <LessonScheduleManager roster={roster} setRoster={setRoster} rosterStore={rosterStore} />
+      )}
+      {roster.length > 0 && (
         <ReminderSection roster={roster} />
+      )}
+    </div>
+  );
+}
+
+// ── 학생별 수업 요일 등록 ─────────────────────────────
+const DAY_LABELS: Record<string, string> = {
+  mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일"
+};
+const ALL_DAYS = ["mon","tue","wed","thu","fri","sat","sun"] as const;
+
+function LessonScheduleManager({ roster, setRoster, rosterStore }: {
+  roster: RosterEntry[];
+  setRoster: (r: RosterEntry[]) => void;
+  rosterStore: ReturnType<typeof createRosterStore>;
+}) {
+  const [selectedStudent, setSelectedStudent] = useState<string>("");
+  const [editMode, setEditMode] = useState(false);
+  const [tempDays, setTempDays] = useState<string[]>([]);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [addingSession, setAddingSession] = useState<{
+    date: string;
+    status: "cancelled" | "absent" | "makeup";
+    makeupDate: string;
+    time: string;
+    reason: string;
+  } | null>(null);
+  const [notice, setNotice] = useState("");
+
+  const student = roster.find((r) => r.studentCode === selectedStudent);
+  const sessions = student?.classSessions ?? [];
+
+  function startEdit() {
+    setTempDays(student?.lessonDays ?? []);
+    setEditMode(true);
+  }
+
+  async function saveDays() {
+    const updated = roster.map((r) =>
+      r.studentCode === selectedStudent ? { ...r, lessonDays: tempDays as any } : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+    setEditMode(false);
+    setNotice("저장 완료");
+    setTimeout(() => setNotice(""), 2000);
+  }
+
+  async function saveSession() {
+    if (!addingSession || !student) return;
+    const session: import("../../core/roster").ClassSession = {
+      date: addingSession.date,
+      status: addingSession.status,
+      makeupDate: addingSession.makeupDate || undefined,
+      makeupDone: false,
+      note: [addingSession.time, addingSession.reason].filter(Boolean).join(" | ") || undefined,
+    };
+    const updated = roster.map((r) =>
+      r.studentCode === selectedStudent
+        ? { ...r, classSessions: [...(r.classSessions ?? []), session].sort((a, b) => b.date.localeCompare(a.date)) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+    setAddingSession(null);
+    setNotice("수업 이력 저장 완료");
+    setTimeout(() => setNotice(""), 2000);
+  }
+
+  async function deleteSession(date: string) {
+    const updated = roster.map((r) =>
+      r.studentCode === selectedStudent
+        ? { ...r, classSessions: (r.classSessions ?? []).filter((s) => s.date !== date) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+  }
+
+  async function toggleMakeup(date: string) {
+    const updated = roster.map((r) =>
+      r.studentCode === selectedStudent
+        ? { ...r, classSessions: (r.classSessions ?? []).map((s) =>
+            s.date === date ? { ...s, makeupDone: !s.makeupDone } : s) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+  }
+
+  // 달력 생성
+  const [year, month] = calMonth.split("-").map(Number);
+  const firstDay = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const sessionDates = new Set(sessions.map((s) => s.date));
+
+  const statusLabel: Record<string, string> = { normal: "정상", cancelled: "휴강", absent: "결강", makeup: "보충" };
+  const statusColor: Record<string, string> = { cancelled: "#f39c12", absent: "#e74c3c", makeup: "#2980b9" };
+
+  return (
+    <div style={{ marginTop: 24, padding: 20, border: "2px solid #2980b9", borderRadius: 12 }}>
+      <h3 style={{ margin: "0 0 16px", color: "#2980b9" }}>📅 학생별 수업 요일 등록</h3>
+
+      {/* 학생 선택 */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ fontWeight: 600, marginRight: 8 }}>학생 선택:</label>
+        <select
+          value={selectedStudent}
+          onChange={(e) => { setSelectedStudent(e.target.value); setEditMode(false); setShowCalendar(false); }}
+          style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
+        >
+          <option value="">-- 학생 선택 --</option>
+          {roster.map((r) => (
+            <option key={r.studentCode} value={r.studentCode}>{r.name} ({r.school})</option>
+          ))}
+        </select>
+      </div>
+
+      {student && (
+        <>
+          {notice && <p style={{ color: "#27ae60", fontWeight: 600, marginBottom: 8 }}>{notice}</p>}
+
+          {/* ── 수업 요일 ── */}
+          <div style={{ background: "#f8f9ff", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>수업 요일</span>
+              {!editMode ? (
+                <button onClick={startEdit} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "1px solid #2980b9", color: "#2980b9", background: "#fff", cursor: "pointer" }}>
+                  수정
+                </button>
+              ) : (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={saveDays} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "none", background: "#27ae60", color: "#fff", cursor: "pointer" }}>저장</button>
+                  <button onClick={() => setEditMode(false)} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "1px solid #ddd", background: "#fff", cursor: "pointer" }}>취소</button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              {ALL_DAYS.map((day) => {
+                const active = editMode ? tempDays.includes(day) : (student.lessonDays ?? []).includes(day);
+                return (
+                  <button key={day}
+                    onClick={() => {
+                      if (!editMode) return;
+                      setTempDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]);
+                    }}
+                    style={{
+                      width: 44, height: 44, borderRadius: "50%", fontWeight: 700, fontSize: 16, cursor: editMode ? "pointer" : "default",
+                      background: active ? "#2980b9" : "#f0f0f0",
+                      color: active ? "#fff" : "#888",
+                      border: active ? "2px solid #2980b9" : "2px solid #ddd",
+                    }}
+                  >
+                    {DAY_LABELS[day]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 주 n회 표시 */}
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#2c3e50" }}>
+              주&nbsp;
+              <span style={{ fontSize: 22, color: "#2980b9" }}>
+                {editMode ? tempDays.length : (student.lessonDays ?? []).length}
+              </span>
+              &nbsp;회
+              {(editMode ? tempDays : (student.lessonDays ?? [])).length > 0 && (
+                <span style={{ fontSize: 13, color: "#888", marginLeft: 8 }}>
+                  ({(editMode ? tempDays : (student.lessonDays ?? [])).map((d) => DAY_LABELS[d]).join(", ")})
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* ── 수업 이력 + 달력 ── */}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+
+            {/* 달력 */}
+            <div style={{ flex: "1 1 300px", background: "#f9f9f9", borderRadius: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <button onClick={() => {
+                  const d = new Date(year, month - 2, 1);
+                  setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                }} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer" }}>‹</button>
+                <span style={{ fontWeight: 700 }}>{year}년 {month}월</span>
+                <button onClick={() => {
+                  const d = new Date(year, month, 1);
+                  setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                }} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer" }}>›</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
+                {["일","월","화","수","목","금","토"].map((d) => (
+                  <div key={d} style={{ fontSize: 11, color: "#888", fontWeight: 600, padding: "2px 0" }}>{d}</div>
+                ))}
+                {Array(firstDay).fill(null).map((_, i) => <div key={`e${i}`} />)}
+                {Array.from({ length: daysInMonth }, (_, i) => {
+                  const dateStr = `${calMonth}-${String(i + 1).padStart(2, "0")}`;
+                  const session = sessions.find((s) => s.date === dateStr);
+                  const isLesson = (student.lessonDays ?? []).includes(
+                    ["sun","mon","tue","wed","thu","fri","sat"][new Date(dateStr).getDay()] as any
+                  );
+                  return (
+                    <div key={i} onClick={() => {
+                      if (session) return;
+                      setAddingSession({ date: dateStr, status: "cancelled", makeupDate: "", time: "", reason: "" });
+                    }}
+                      style={{
+                        padding: "4px 2px", borderRadius: 6, fontSize: 12, cursor: session ? "default" : "pointer",
+                        background: session ? statusColor[session.status] ?? "#eee" : isLesson ? "#eaf4fb" : "transparent",
+                        color: session ? "#fff" : isLesson ? "#2980b9" : "#333",
+                        fontWeight: session || isLesson ? 700 : 400,
+                        border: session ? "none" : "1px solid transparent",
+                        position: "relative",
+                      }}
+                      title={session ? `${statusLabel[session.status]}${session.note ? " | " + session.note : ""}` : isLesson ? "클릭: 이력 추가" : ""}
+                    >
+                      {i + 1}
+                      {session && <div style={{ fontSize: 8, lineHeight: 1 }}>{statusLabel[session.status]}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: 11, color: "#aaa", marginTop: 8 }}>파란 날짜 = 수업일 · 클릭하면 이력 추가</p>
+            </div>
+
+            {/* 수업 이력 목록 */}
+            <div style={{ flex: "1 1 280px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>수업 이력</span>
+                <button
+                  onClick={() => setAddingSession({ date: new Date().toISOString().slice(0, 10), status: "cancelled", makeupDate: "", time: "", reason: "" })}
+                  style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "none", background: "#e74c3c", color: "#fff", cursor: "pointer" }}
+                >
+                  ⚡ 긴급 보충일 추가
+                </button>
+              </div>
+
+              {sessions.length === 0 ? (
+                <p className="muted">수업 이력이 없습니다.</p>
+              ) : (
+                <div style={{ maxHeight: 260, overflowY: "auto" }}>
+                  {sessions.map((s) => (
+                    <div key={s.date} style={{ padding: "8px 10px", borderRadius: 8, marginBottom: 6, background: "#fff", border: `1px solid ${statusColor[s.status] ?? "#eee"}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <span style={{ fontWeight: 700, color: statusColor[s.status], fontSize: 13 }}>{statusLabel[s.status]}</span>
+                          <span style={{ marginLeft: 8, fontSize: 13, color: "#555" }}>{s.date}</span>
+                          {s.makeupDate && (
+                            <span style={{ marginLeft: 6, fontSize: 12, color: "#888" }}>→ 보충: {s.makeupDate}</span>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {s.makeupDate && (
+                            <button onClick={() => toggleMakeup(s.date)} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, border: "1px solid #ddd", cursor: "pointer", background: s.makeupDone ? "#e8f8f5" : "#fef9e7" }}>
+                              {s.makeupDone ? "✅완료" : "미완"}
+                            </button>
+                          )}
+                          <button onClick={() => deleteSession(s.date)} style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, border: "1px solid #e74c3c", color: "#e74c3c", cursor: "pointer", background: "#fff" }}>삭제</button>
+                        </div>
+                      </div>
+                      {s.note && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{s.note}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── 이력 추가 모달 ── */}
+          {addingSession && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 340, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+                <h3 style={{ margin: "0 0 16px" }}>수업 이력 추가 — {student.name}</h3>
+
+                <label style={{ fontSize: 13, fontWeight: 600 }}>날짜</label>
+                <input type="date" value={addingSession.date}
+                  onChange={(e) => setAddingSession({ ...addingSession, date: e.target.value })}
+                  style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14, marginBottom: 10 }} />
+
+                <label style={{ fontSize: 13, fontWeight: 600 }}>구분</label>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10, marginTop: 4 }}>
+                  {(["cancelled","absent","makeup"] as const).map((st) => (
+                    <button key={st} onClick={() => setAddingSession({ ...addingSession, status: st })}
+                      style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                        background: addingSession.status === st ? statusColor[st] : "#f5f5f5",
+                        color: addingSession.status === st ? "#fff" : "#555",
+                        border: `1px solid ${addingSession.status === st ? statusColor[st] : "#ddd"}` }}>
+                      {statusLabel[st]}
+                    </button>
+                  ))}
+                </div>
+
+                {addingSession.status === "cancelled" && (
+                  <>
+                    <label style={{ fontSize: 13, fontWeight: 600 }}>보충 날짜 (선택)</label>
+                    <input type="date" value={addingSession.makeupDate}
+                      onChange={(e) => setAddingSession({ ...addingSession, makeupDate: e.target.value })}
+                      style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14, marginBottom: 10 }} />
+                  </>
+                )}
+
+                <label style={{ fontSize: 13, fontWeight: 600 }}>시간 (예: 14:00)</label>
+                <input type="time" value={addingSession.time}
+                  onChange={(e) => setAddingSession({ ...addingSession, time: e.target.value })}
+                  style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14, marginBottom: 10 }} />
+
+                <label style={{ fontSize: 13, fontWeight: 600 }}>사유 / 메모</label>
+                <textarea value={addingSession.reason}
+                  onChange={(e) => setAddingSession({ ...addingSession, reason: e.target.value })}
+                  rows={2} placeholder="예) 학교 시험 / 개인 사정 / 긴급 보충"
+                  style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14, resize: "none", boxSizing: "border-box", marginBottom: 14 }} />
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={saveSession} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: "#2980b9", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>저장</button>
+                  <button onClick={() => setAddingSession(null)} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #ddd", background: "#fff", fontSize: 14, cursor: "pointer" }}>취소</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
