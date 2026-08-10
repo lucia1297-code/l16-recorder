@@ -838,6 +838,11 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
   const student = roster.find((r) => r.studentCode === selectedStudent);
   const sessions = student?.classSessions ?? [];
 
+  // 학생 선택 시 tempDays 자동 동기화
+  useEffect(() => {
+    setTempDays(student?.lessonDays ?? []);
+  }, [selectedStudent, roster]);
+
   function startEdit() {
     setTempDays(student?.lessonDays ?? []);
     setEditMode(true);
