@@ -3,6 +3,15 @@ import { generateStudentCode } from "./studentCode";
 
 export type DayOfWeek = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
+// 요일별 수업 횟수 (1=일반, 2=연강)
+export type LessonDayMap = Partial<Record<DayOfWeek, 1 | 2>>;
+
+// 총 주간 시수 계산
+export function calcWeeklyTotal(lessonDayMap: LessonDayMap | undefined): number {
+  if (!lessonDayMap) return 0;
+  return Object.values(lessonDayMap).reduce((sum, n) => sum + (n ?? 0), 0);
+}
+
 export interface ClassSession {
   date: string;           // ISO date (YYYY-MM-DD)
   status: "normal" | "cancelled" | "absent" | "makeup"; // 정상/휴강/결강/보충
@@ -24,7 +33,7 @@ export interface RosterEntry {
   studentType?: "S" | "W2" | "W1" | "";
   excludeFromReminder?: boolean;
   weeklySession?: 1 | 2 | 3 | 4 | 5 | 6 | null;
-  lessonDays?: DayOfWeek[];        // 수업 요일 (복수 선택)
+  lessonDays?: LessonDayMap;       // 수업 요일별 횟수 {mon:1, wed:2} 형태
   classSessions?: ClassSession[];  // 수업 이력 (휴강/결강/보충)
   lastAssignmentSavedAt?: string;  // 마지막 과제 저장일 (ISO)
 }
