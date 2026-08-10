@@ -3124,10 +3124,10 @@ function SmsCenterPanel() {
 
   // 기본 메시지 템플릿
   const templates: Record<SmsMode, string> = {
-    urgent: "[긴급] 이지수능교육 공지입니다. ",
-    regular: "[안내] 이지수능교육 공지입니다. ",
+    urgent: "[긴급] ",
+    regular: "[안내] ",
     individual: "",
-    parent: "[학부모 안내] 이지수능교육입니다. ",
+    parent: "[학부모 안내] ",
   };
 
   function toggleAll() {
