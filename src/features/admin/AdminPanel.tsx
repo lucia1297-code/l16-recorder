@@ -2517,10 +2517,11 @@ function dayBadge(days: number) {
 function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
   const storage = useStorage();
   const rosterStore = useMemo(() => createRosterStore(), []);
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
 
-  // 자체적으로 최신 데이터 로드 (탭 진입 시마다)
   const [rows, setRows] = useState<ExamResult[]>(initialRows);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2528,14 +2529,28 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
     Promise.all([
       storage.listResults(),
       rosterStore.listRoster(),
-    ]).then(([results, r]) => {
+      assignmentStore.listSubmissions(),
+    ]).then(([results, r, subs]) => {
       setRows(results);
       setRoster(r);
+      setSubmissions(subs);
       setLoading(false);
     });
-  }, [storage, rosterStore]);
+  }, [storage, rosterStore, assignmentStore]);
 
-  // 학생별 마지막 제출일 집계
+  // 제출한 학생 코드 집합 — 모의고사 + 일반과제 모두 포함
+  const allSubmittedCodes = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => { set.add(r.student.studentCode); set.add(r.student.name); });
+    submissions.forEach((s) => {
+      set.add(s.studentCode);
+      const entry = roster.find((r) => r.studentCode === s.studentCode);
+      if (entry) set.add(entry.name);
+    });
+    return set;
+  }, [rows, submissions, roster]);
+
+  // 학생별 마지막 제출일 집계 (모의고사 기준)
   const submittedMap = useMemo(() => {
     const map = new Map<string, {
       name: string; school: string; grade: string; lastDate: string; count: number;
@@ -2557,17 +2572,18 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
     return map;
   }, [rows]);
 
-  // 제출한 학생 목록 (경과일 많은 순)
   const submitted = useMemo(() =>
     Array.from(submittedMap.entries())
       .map(([code, v]) => ({ code, ...v, days: daysSince(v.lastDate) }))
       .sort((a, b) => b.days - a.days),
     [submittedMap]);
 
-  // 미제출 학생: 명부에 있지만 제출 기록 없는 학생
+  // 미제출 학생: 모의고사도 일반과제도 한 번도 제출 안 한 학생
   const notSubmitted = useMemo(() =>
-    roster.filter((r) => !submittedMap.has(r.studentCode)),
-    [roster, submittedMap]);
+    roster.filter((r) =>
+      !allSubmittedCodes.has(r.studentCode) && !allSubmittedCodes.has(r.name)
+    ),
+    [roster, allSubmittedCodes]);
 
   // CSV 다운로드
   function exportSubmittedCSV() {
