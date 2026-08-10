@@ -185,7 +185,7 @@ export default function StudentReport({ studentCode, token }: { studentCode: str
       ))}
 
       <div style={{ textAlign: "center", color: "#aaa", fontSize: 12, marginTop: 20 }}>
-        L16 Student Recorder © 이지수능교육
+        L16 Student Recorder
       </div>
     </div>
   );
