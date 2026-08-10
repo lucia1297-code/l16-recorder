@@ -2028,18 +2028,28 @@ function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
       .then(([exams, subs]) => { setExamRows(exams); setSubmissions(subs); });
   }, [storage, assignmentStore]);
 
-  // 한 번이라도 제출한 학생 코드
+  // 한 번이라도 제출한 학생 코드 + 이름 모두 체크
   const submittedCodes = useMemo(() => {
     const set = new Set<string>();
-    examRows.forEach((r) => set.add(r.student.studentCode));
-    submissions.forEach((s) => set.add(s.studentCode));
+    examRows.forEach((r) => {
+      set.add(r.student.studentCode);
+      set.add(r.student.name); // 이름으로도 매칭
+    });
+    submissions.forEach((s) => {
+      set.add(s.studentCode);
+      // 이름 매칭을 위해 roster에서 찾기
+      const rosterEntry = roster.find((r) => r.studentCode === s.studentCode);
+      if (rosterEntry) set.add(rosterEntry.name);
+    });
     return set;
-  }, [examRows, submissions]);
+  }, [examRows, submissions, roster]);
 
   // 계도기간이면서 아직 한 번도 제출 안 한 학생만
   const inGrace = useMemo(
     () => roster.filter((r) =>
-      isInGracePeriod(r.registeredAt, now) && !submittedCodes.has(r.studentCode)
+      isInGracePeriod(r.registeredAt, now) &&
+      !submittedCodes.has(r.studentCode) &&
+      !submittedCodes.has(r.name)
     ),
     [roster, now, submittedCodes],
   );
