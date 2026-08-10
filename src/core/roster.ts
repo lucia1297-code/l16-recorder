@@ -15,10 +15,13 @@ export function calcWeeklyTotal(lessonDayMap: LessonDayMap | undefined): number 
 export interface ClassSession {
   date: string;           // ISO date (YYYY-MM-DD)
   status: "normal" | "cancelled" | "absent" | "makeup"; // 정상/휴강/결강/보충
+  attended?: boolean;     // 실제 수업 진행 여부 (정상 수업일 출석 체크)
   makeupDate?: string;    // 보충 날짜
   makeupDone?: boolean;   // 보충 완료 여부
   note?: string;
 }
+
+export type StudentStatus = "active" | "paused" | "withdrawn"; // 수강중/중단/퇴원
 
 export interface RosterEntry {
   studentCode: string;
@@ -33,9 +36,12 @@ export interface RosterEntry {
   studentType?: "S" | "W2" | "W1" | "";
   excludeFromReminder?: boolean;
   weeklySession?: 1 | 2 | 3 | 4 | 5 | 6 | null;
-  lessonDays?: LessonDayMap;       // 수업 요일별 횟수 {mon:1, wed:2} 형태
-  classSessions?: ClassSession[];  // 수업 이력 (휴강/결강/보충)
-  lastAssignmentSavedAt?: string;  // 마지막 과제 저장일 (ISO)
+  lessonDays?: LessonDayMap;
+  classSessions?: ClassSession[];
+  lastAssignmentSavedAt?: string;
+  studentStatus?: StudentStatus;  // 수강 상태 (기본값: active)
+  pausedAt?: string;              // 중단 시작일
+  pausedReason?: string;          // 중단 사유
 }
 
 // 수업 시수별 과제 제출 기한 (일)
@@ -217,5 +223,95 @@ export function buildManualEntry(
       note: "관리자 직접 등록",
     },
     errors: [],
+  };
+}
+
+// ── 월별 정산 계산 ──────────────────────────────────
+
+const DAY_NAMES: DayOfWeek[] = ["sun","mon","tue","wed","thu","fri","sat"];
+
+export interface MonthlySettlement {
+  studentCode: string;
+  name: string;
+  year: number;
+  month: number;
+  possibleCount: number;  // 총 가능 수업수 (요일 기준)
+  actualCount: number;    // 실제 수업수 (정상 + 보충완료)
+  makeupCount: number;    // 보충 수업수
+  cancelledCount: number; // 휴강수
+  absentCount: number;    // 결강수
+  uncheckedCount: number; // 출석 미확인수
+}
+
+export function calcMonthlySettlement(
+  entry: RosterEntry,
+  year: number,
+  month: number
+): MonthlySettlement {
+  const lessonDays = entry.lessonDays ?? {};
+  const sessions = (entry.classSessions ?? []).filter((s) => {
+    const d = new Date(s.date);
+    return d.getFullYear() === year && d.getMonth() + 1 === month;
+  });
+
+  // 해당 월의 가능 수업일 계산
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let possibleCount = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = DAY_NAMES[new Date(year, month - 1, d).getDay()];
+    possibleCount += lessonDays[dow] ?? 0;
+  }
+
+  // 세션별 집계
+  const sessionMap = new Map(sessions.map((s) => [s.date, s]));
+  let cancelledCount = 0;
+  let absentCount = 0;
+  let makeupCount = 0;
+  let attendedCount = 0;
+  let uncheckedCount = 0;
+
+  // 정상 수업일 순회
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const dow = DAY_NAMES[new Date(year, month - 1, d).getDay()];
+    const times = lessonDays[dow] ?? 0;
+    if (times === 0) continue;
+
+    const session = sessionMap.get(dateStr);
+    if (!session) {
+      // 이력 없음 → 미확인
+      uncheckedCount += times;
+    } else if (session.status === "cancelled") {
+      cancelledCount += times;
+      if (session.makeupDone) makeupCount += times;
+    } else if (session.status === "absent") {
+      absentCount += times;
+    } else if (session.status === "normal") {
+      if (session.attended === false) absentCount += times;
+      else if (session.attended === true) attendedCount += times;
+      else uncheckedCount += times;
+    } else if (session.status === "makeup") {
+      makeupCount += times;
+    }
+  }
+
+  // 보충 수업 (보충일이 이 달에 있는 경우)
+  const extraMakeup = sessions.filter((s) =>
+    s.status === "makeup" &&
+    (() => { const d = new Date(s.date); return d.getFullYear() === year && d.getMonth() + 1 === month; })()
+  ).length;
+
+  const actualCount = attendedCount + makeupCount;
+
+  return {
+    studentCode: entry.studentCode,
+    name: entry.name,
+    year, month,
+    possibleCount,
+    actualCount,
+    makeupCount,
+    cancelledCount,
+    absentCount,
+    uncheckedCount,
   };
 }
