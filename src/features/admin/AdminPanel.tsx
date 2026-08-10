@@ -4,7 +4,7 @@ import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
@@ -744,17 +744,20 @@ function RosterManager() {
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
                         {(["mon","tue","wed","thu","fri","sat","sun"] as const).map((day) => {
                           const labels: Record<string, string> = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금", sat:"토", sun:"일" };
-                          const selected = (e.lessonDays ?? []).includes(day);
+                          const count = (e.lessonDays ?? {})[day] ?? 0;
                           return (
                             <button key={day} onClick={async () => {
-                              const days = e.lessonDays ?? [];
-                              const next = selected ? days.filter((d) => d !== day) : [...days, day];
+                              const next: LessonDayMap = { ...(e.lessonDays ?? {}) };
+                              if (count === 0) next[day] = 1;
+                              else if (count === 1) next[day] = 2;
+                              else delete next[day];
                               const updated = roster.map((r) => r.studentCode === e.studentCode ? { ...r, lessonDays: next } : r);
                               setRoster(updated);
                               await rosterStore.saveRoster(updated);
                             }} style={{ padding: "2px 5px", borderRadius: 4, fontSize: 11, border: "none", cursor: "pointer",
-                              background: selected ? "#2980b9" : "#f0f0f0", color: selected ? "#fff" : "#555", fontWeight: selected ? 700 : 400 }}>
-                              {labels[day]}
+                              background: count === 2 ? "#e74c3c" : count === 1 ? "#2980b9" : "#f0f0f0",
+                              color: count > 0 ? "#fff" : "#555", fontWeight: count > 0 ? 700 : 400 }}>
+                              {labels[day]}{count === 2 ? "×2" : ""}
                             </button>
                           );
                         })}
@@ -820,7 +823,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
 }) {
   const [selectedStudent, setSelectedStudent] = useState<string>("");
   const [editMode, setEditMode] = useState(false);
-  const [tempDays, setTempDays] = useState<string[]>([]);
+  const [tempDays, setTempDays] = useState<LessonDayMap>({});
   const [showCalendar, setShowCalendar] = useState(false);
   const [calMonth, setCalMonth] = useState(() => {
     const now = new Date();
@@ -840,11 +843,11 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
 
   // 학생 선택 시 tempDays 자동 동기화
   useEffect(() => {
-    setTempDays(student?.lessonDays ?? []);
+    setTempDays(student?.lessonDays ?? {});
   }, [selectedStudent, roster]);
 
   function startEdit() {
-    setTempDays(student?.lessonDays ?? []);
+    setTempDays(student?.lessonDays ?? {});
     setEditMode(true);
   }
 
@@ -914,6 +917,59 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
     <div style={{ marginTop: 24, padding: 20, border: "2px solid #2980b9", borderRadius: 12 }}>
       <h3 style={{ margin: "0 0 16px", color: "#2980b9" }}>📅 학생별 수업 요일 등록</h3>
 
+      {/* ── 학생 시수 현황 명단 ── */}
+      <div style={{ marginBottom: 20, background: "#f8f9ff", borderRadius: 10, padding: 14 }}>
+        <h4 style={{ margin: "0 0 10px", color: "#2c3e50" }}>📋 학생 시수 현황</h4>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "#2980b9", color: "#fff" }}>
+                <th style={{ padding: "6px 10px", textAlign: "left" }}>이름</th>
+                <th style={{ padding: "6px 10px", textAlign: "left" }}>학교</th>
+                <th style={{ padding: "6px 10px", textAlign: "center" }}>주 시수</th>
+                <th style={{ padding: "6px 10px", textAlign: "left" }}>수업 요일</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((r, i) => {
+                const total = calcWeeklyTotal(r.lessonDays);
+                return (
+                  <tr key={r.studentCode} style={{ background: i % 2 === 0 ? "#fff" : "#f5f5f5" }}>
+                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>{r.name}</td>
+                    <td style={{ padding: "6px 10px", color: "#666" }}>{r.school}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "center" }}>
+                      {total > 0 ? (
+                        <span style={{ fontWeight: 700, color: "#2980b9", background: "#eaf4fb", padding: "2px 10px", borderRadius: 12 }}>
+                          주 {total}회
+                        </span>
+                      ) : (
+                        <span style={{ color: "#ccc", fontSize: 12 }}>미설정</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "6px 10px" }}>
+                      {r.lessonDays && Object.keys(r.lessonDays).length > 0 ? (
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {Object.entries(r.lessonDays).map(([d, n]) => (
+                            <span key={d} style={{
+                              padding: "1px 7px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                              background: n === 2 ? "#e74c3c" : "#2980b9", color: "#fff"
+                            }}>
+                              {DAY_LABELS[d]}{n === 2 ? "×2" : ""}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: "#ccc", fontSize: 12 }}>-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 학생 선택 */}
       <div style={{ marginBottom: 16 }}>
         <label style={{ fontWeight: 600, marginRight: 8 }}>학생 선택:</label>
@@ -944,31 +1000,49 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               {ALL_DAYS.map((day) => {
-                const active = tempDays.includes(day);
+                const count = tempDays[day] ?? 0;
                 return (
-                  <button key={day}
-                    onClick={() => setTempDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day])}
-                    style={{
-                      width: 44, height: 44, borderRadius: "50%", fontWeight: 700, fontSize: 16, cursor: "pointer",
-                      background: active ? "#2980b9" : "#f0f0f0",
-                      color: active ? "#fff" : "#888",
-                      border: active ? "2px solid #2980b9" : "2px solid #ddd",
-                    }}
-                  >
-                    {DAY_LABELS[day]}
-                  </button>
+                  <div key={day} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                    <button
+                      onClick={() => {
+                        const next: LessonDayMap = { ...tempDays };
+                        if (count === 0) next[day] = 1;
+                        else if (count === 1) next[day] = 2;
+                        else delete next[day];
+                        setTempDays(next);
+                      }}
+                      style={{
+                        width: 44, height: 44, borderRadius: "50%", fontWeight: 700, fontSize: 16, cursor: "pointer",
+                        background: count === 2 ? "#e74c3c" : count === 1 ? "#2980b9" : "#f0f0f0",
+                        color: count > 0 ? "#fff" : "#888",
+                        border: count === 2 ? "2px solid #e74c3c" : count === 1 ? "2px solid #2980b9" : "2px solid #ddd",
+                        position: "relative",
+                      }}
+                    >
+                      {DAY_LABELS[day]}
+                    </button>
+                    <span style={{ fontSize: 10, fontWeight: 700,
+                      color: count === 2 ? "#e74c3c" : count === 1 ? "#2980b9" : "#ccc" }}>
+                      {count === 2 ? "연강" : count === 1 ? "1회" : ""}
+                    </span>
+                  </div>
                 );
               })}
             </div>
+            <p style={{ fontSize: 11, color: "#888", margin: "0 0 10px" }}>
+              1번 클릭 = 1회(파랑) · 2번 클릭 = 연강(빨강) · 3번 클릭 = 해제
+            </p>
 
             {/* 주 n회 표시 */}
             <div style={{ fontSize: 15, fontWeight: 700, color: "#2c3e50" }}>
               주&nbsp;
-              <span style={{ fontSize: 22, color: "#2980b9" }}>{tempDays.length}</span>
+              <span style={{ fontSize: 22, color: "#2980b9" }}>{calcWeeklyTotal(tempDays)}</span>
               &nbsp;회
-              {tempDays.length > 0 && (
+              {Object.keys(tempDays).length > 0 && (
                 <span style={{ fontSize: 13, color: "#888", marginLeft: 8 }}>
-                  ({tempDays.map((d) => DAY_LABELS[d]).join(", ")})
+                  ({Object.entries(tempDays).map(([d, n]) =>
+                    `${DAY_LABELS[d]}${n === 2 ? "(연강)" : ""}`
+                  ).join(", ")})
                 </span>
               )}
             </div>
@@ -998,9 +1072,9 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                 {Array.from({ length: daysInMonth }, (_, i) => {
                   const dateStr = `${calMonth}-${String(i + 1).padStart(2, "0")}`;
                   const session = sessions.find((s) => s.date === dateStr);
-                  const isLesson = (student.lessonDays ?? []).includes(
-                    ["sun","mon","tue","wed","thu","fri","sat"][new Date(dateStr).getDay()] as any
-                  );
+                  const isLesson = !!(student.lessonDays ?? {})[
+                    ["sun","mon","tue","wed","thu","fri","sat"][new Date(dateStr).getDay()] as DayOfWeek
+                  ];
                   return (
                     <div key={i} onClick={() => {
                       if (session) return;
