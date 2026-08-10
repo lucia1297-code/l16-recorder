@@ -932,29 +932,19 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
           <div style={{ background: "#f8f9ff", borderRadius: 10, padding: 14, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontWeight: 700, fontSize: 15 }}>수업 요일</span>
-              {!editMode ? (
-                <button onClick={startEdit} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "1px solid #2980b9", color: "#2980b9", background: "#fff", cursor: "pointer" }}>
-                  수정
-                </button>
-              ) : (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={saveDays} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "none", background: "#27ae60", color: "#fff", cursor: "pointer" }}>저장</button>
-                  <button onClick={() => setEditMode(false)} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "1px solid #ddd", background: "#fff", cursor: "pointer" }}>취소</button>
-                </div>
-              )}
+              <button onClick={saveDays} style={{ padding: "6px 16px", borderRadius: 6, fontSize: 13, border: "none", background: "#27ae60", color: "#fff", cursor: "pointer", fontWeight: 700 }}>
+                저장
+              </button>
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               {ALL_DAYS.map((day) => {
-                const active = editMode ? tempDays.includes(day) : (student.lessonDays ?? []).includes(day);
+                const active = tempDays.includes(day);
                 return (
                   <button key={day}
-                    onClick={() => {
-                      if (!editMode) return;
-                      setTempDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]);
-                    }}
+                    onClick={() => setTempDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day])}
                     style={{
-                      width: 44, height: 44, borderRadius: "50%", fontWeight: 700, fontSize: 16, cursor: editMode ? "pointer" : "default",
+                      width: 44, height: 44, borderRadius: "50%", fontWeight: 700, fontSize: 16, cursor: "pointer",
                       background: active ? "#2980b9" : "#f0f0f0",
                       color: active ? "#fff" : "#888",
                       border: active ? "2px solid #2980b9" : "2px solid #ddd",
@@ -969,13 +959,11 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
             {/* 주 n회 표시 */}
             <div style={{ fontSize: 15, fontWeight: 700, color: "#2c3e50" }}>
               주&nbsp;
-              <span style={{ fontSize: 22, color: "#2980b9" }}>
-                {editMode ? tempDays.length : (student.lessonDays ?? []).length}
-              </span>
+              <span style={{ fontSize: 22, color: "#2980b9" }}>{tempDays.length}</span>
               &nbsp;회
-              {(editMode ? tempDays : (student.lessonDays ?? [])).length > 0 && (
+              {tempDays.length > 0 && (
                 <span style={{ fontSize: 13, color: "#888", marginLeft: 8 }}>
-                  ({(editMode ? tempDays : (student.lessonDays ?? [])).map((d) => DAY_LABELS[d]).join(", ")})
+                  ({tempDays.map((d) => DAY_LABELS[d]).join(", ")})
                 </span>
               )}
             </div>
