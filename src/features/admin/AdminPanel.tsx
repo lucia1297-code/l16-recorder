@@ -2018,9 +2018,30 @@ function AssignmentReviewManager() {
 
 function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
   const now = useMemo(() => new Date(), []);
+  const storage = useStorage();
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
+  const [examRows, setExamRows] = useState<ExamResult[]>([]);
+  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
+
+  useEffect(() => {
+    Promise.all([storage.listResults(), assignmentStore.listSubmissions()])
+      .then(([exams, subs]) => { setExamRows(exams); setSubmissions(subs); });
+  }, [storage, assignmentStore]);
+
+  // 한 번이라도 제출한 학생 코드
+  const submittedCodes = useMemo(() => {
+    const set = new Set<string>();
+    examRows.forEach((r) => set.add(r.student.studentCode));
+    submissions.forEach((s) => set.add(s.studentCode));
+    return set;
+  }, [examRows, submissions]);
+
+  // 계도기간이면서 아직 한 번도 제출 안 한 학생만
   const inGrace = useMemo(
-    () => roster.filter((r) => isInGracePeriod(r.registeredAt, now)),
-    [roster, now],
+    () => roster.filter((r) =>
+      isInGracePeriod(r.registeredAt, now) && !submittedCodes.has(r.studentCode)
+    ),
+    [roster, now, submittedCodes],
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState(
