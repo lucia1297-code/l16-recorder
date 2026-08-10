@@ -4,7 +4,7 @@ import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
@@ -831,7 +831,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
   });
   const [addingSession, setAddingSession] = useState<{
     date: string;
-    status: "cancelled" | "absent" | "makeup";
+    status: "normal" | "cancelled" | "absent" | "makeup";
     makeupDate: string;
     time: string;
     reason: string;
@@ -926,41 +926,71 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
               <tr style={{ background: "#2980b9", color: "#fff" }}>
                 <th style={{ padding: "6px 10px", textAlign: "left" }}>이름</th>
                 <th style={{ padding: "6px 10px", textAlign: "left" }}>학교</th>
+                <th style={{ padding: "6px 10px", textAlign: "center" }}>상태</th>
                 <th style={{ padding: "6px 10px", textAlign: "center" }}>주 시수</th>
                 <th style={{ padding: "6px 10px", textAlign: "left" }}>수업 요일</th>
+                <th style={{ padding: "6px 10px", textAlign: "center" }}>변경</th>
               </tr>
             </thead>
             <tbody>
               {roster.map((r, i) => {
                 const total = calcWeeklyTotal(r.lessonDays);
+                const status = r.studentStatus ?? "active";
+                const statusConfig = {
+                  active: { label: "수강중", color: "#27ae60", bg: "#e8f8f5" },
+                  paused: { label: "중단", color: "#f39c12", bg: "#fef9e7" },
+                  withdrawn: { label: "퇴원", color: "#e74c3c", bg: "#fdecea" },
+                };
+                const sc = statusConfig[status];
                 return (
-                  <tr key={r.studentCode} style={{ background: i % 2 === 0 ? "#fff" : "#f5f5f5" }}>
-                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>{r.name}</td>
+                  <tr key={r.studentCode} style={{ background: status === "active" ? (i % 2 === 0 ? "#fff" : "#f5f5f5") : sc.bg, opacity: status === "withdrawn" ? 0.6 : 1 }}>
+                    <td style={{ padding: "6px 10px", fontWeight: 600, color: status !== "active" ? sc.color : "#333" }}>{r.name}</td>
                     <td style={{ padding: "6px 10px", color: "#666" }}>{r.school}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "center" }}>
+                      <span style={{ padding: "2px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: sc.bg, color: sc.color, border: `1px solid ${sc.color}` }}>
+                        {sc.label}
+                      </span>
+                      {r.pausedAt && <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>{r.pausedAt.slice(0, 10)}~</div>}
+                    </td>
                     <td style={{ padding: "6px 10px", textAlign: "center" }}>
                       {total > 0 ? (
                         <span style={{ fontWeight: 700, color: "#2980b9", background: "#eaf4fb", padding: "2px 10px", borderRadius: 12 }}>
                           주 {total}회
                         </span>
-                      ) : (
-                        <span style={{ color: "#ccc", fontSize: 12 }}>미설정</span>
-                      )}
+                      ) : <span style={{ color: "#ccc", fontSize: 12 }}>미설정</span>}
                     </td>
                     <td style={{ padding: "6px 10px" }}>
                       {r.lessonDays && Object.keys(r.lessonDays).length > 0 ? (
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           {Object.entries(r.lessonDays).map(([d, n]) => (
-                            <span key={d} style={{
-                              padding: "1px 7px", borderRadius: 10, fontSize: 12, fontWeight: 700,
-                              background: n === 2 ? "#e74c3c" : "#2980b9", color: "#fff"
-                            }}>
+                            <span key={d} style={{ padding: "1px 7px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: n === 2 ? "#e74c3c" : "#2980b9", color: "#fff" }}>
                               {DAY_LABELS[d]}{n === 2 ? "×2" : ""}
                             </span>
                           ))}
                         </div>
-                      ) : (
-                        <span style={{ color: "#ccc", fontSize: 12 }}>-</span>
-                      )}
+                      ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>}
+                    </td>
+                    <td style={{ padding: "6px 10px", textAlign: "center" }}>
+                      <select
+                        value={status}
+                        onChange={async (e) => {
+                          const newStatus = e.target.value as StudentStatus;
+                          const updated = roster.map((s) =>
+                            s.studentCode === r.studentCode ? {
+                              ...s,
+                              studentStatus: newStatus,
+                              pausedAt: newStatus === "paused" ? new Date().toISOString().slice(0, 10) : s.pausedAt,
+                            } : s
+                          );
+                          setRoster(updated);
+                          await rosterStore.saveRoster(updated);
+                        }}
+                        style={{ fontSize: 12, padding: "2px 4px", borderRadius: 4, border: `1px solid ${sc.color}`, color: sc.color, background: sc.bg }}
+                      >
+                        <option value="active">수강중</option>
+                        <option value="paused">중단</option>
+                        <option value="withdrawn">퇴원</option>
+                      </select>
                     </td>
                   </tr>
                 );
@@ -1075,23 +1105,55 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                   const isLesson = !!(student.lessonDays ?? {})[
                     ["sun","mon","tue","wed","thu","fri","sat"][new Date(dateStr).getDay()] as DayOfWeek
                   ];
+                  const isNormalAttended = session?.status === "normal" && session.attended === true;
+                  const isNormalUnchecked = session?.status === "normal" && session.attended === undefined;
+                  const bgColor = session
+                    ? (session.status === "cancelled" ? "#f39c12"
+                      : session.status === "absent" ? "#e74c3c"
+                      : session.status === "makeup" ? "#2980b9"
+                      : isNormalAttended ? "#27ae60"
+                      : "#95a5a6")
+                    : isLesson ? "#eaf4fb" : "transparent";
+                  const textColor = session ? "#fff" : isLesson ? "#2980b9" : "#333";
                   return (
-                    <div key={i} onClick={() => {
-                      if (session) return;
-                      setAddingSession({ date: dateStr, status: "cancelled", makeupDate: "", time: "", reason: "" });
+                    <div key={i} onClick={async () => {
+                      if (!isLesson && !session) return;
+                      if (session?.status === "normal") {
+                        // 출석 체크 토글: undefined → true → false → undefined
+                        const next = session.attended === undefined ? true : session.attended ? false : undefined;
+                        const updated = roster.map((r) =>
+                          r.studentCode === selectedStudent
+                            ? { ...r, classSessions: (r.classSessions ?? []).map((s) =>
+                                s.date === dateStr ? { ...s, attended: next } : s) }
+                            : r
+                        );
+                        setRoster(updated);
+                        await rosterStore.saveRoster(updated);
+                      } else if (!session) {
+                        // 새 이력 추가 (정상 수업일로 기본)
+                        setAddingSession({ date: dateStr, status: "normal" as any, makeupDate: "", time: "", reason: "" });
+                      }
                     }}
                       style={{
-                        padding: "4px 2px", borderRadius: 6, fontSize: 12, cursor: session ? "default" : "pointer",
-                        background: session ? statusColor[session.status] ?? "#eee" : isLesson ? "#eaf4fb" : "transparent",
-                        color: session ? "#fff" : isLesson ? "#2980b9" : "#333",
+                        padding: "4px 2px", borderRadius: 6, fontSize: 12,
+                        cursor: (isLesson || session) ? "pointer" : "default",
+                        background: bgColor, color: textColor,
                         fontWeight: session || isLesson ? 700 : 400,
-                        border: session ? "none" : "1px solid transparent",
-                        position: "relative",
+                        border: "1px solid transparent",
+                        minHeight: 28, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                       }}
-                      title={session ? `${statusLabel[session.status]}${session.note ? " | " + session.note : ""}` : isLesson ? "클릭: 이력 추가" : ""}
+                      title={session
+                        ? `${statusLabel[session.status]}${session.attended === true ? " ✅출석" : session.attended === false ? " ❌결석" : ""}${session.note ? " | " + session.note : ""}`
+                        : isLesson ? "클릭: 이력 추가" : ""}
                     >
                       {i + 1}
-                      {session && <div style={{ fontSize: 8, lineHeight: 1 }}>{statusLabel[session.status]}</div>}
+                      {session && (
+                        <div style={{ fontSize: 8, lineHeight: 1 }}>
+                          {session.status === "normal"
+                            ? (session.attended === true ? "✅" : session.attended === false ? "❌" : "?")
+                            : statusLabel[session.status]}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1142,7 +1204,111 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
             </div>
           </div>
 
-          {/* ── 이력 추가 모달 ── */}
+          {/* ── 월별 정산 ── */}
+          <div style={{ marginTop: 16, background: "#f0f9f0", borderRadius: 10, padding: 14, border: "2px solid #27ae60" }}>
+            <h4 style={{ margin: "0 0 12px", color: "#27ae60" }}>📊 {calMonth.replace("-", "년 ")}월 정산</h4>
+            {(() => {
+              const s = calcMonthlySettlement(student, year, month);
+              const attendRate = s.possibleCount > 0 ? Math.round(s.actualCount / s.possibleCount * 100) : 0;
+              return (
+                <div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                    {[
+                      { label: "가능 수업수", value: s.possibleCount, color: "#2c3e50", unit: "회" },
+                      { label: "실제 수업수", value: s.actualCount, color: "#27ae60", unit: "회" },
+                      { label: "보충 수업수", value: s.makeupCount, color: "#2980b9", unit: "회" },
+                      { label: "휴강수", value: s.cancelledCount, color: "#f39c12", unit: "회" },
+                      { label: "결강수", value: s.absentCount, color: "#e74c3c", unit: "회" },
+                      { label: "미확인", value: s.uncheckedCount, color: "#95a5a6", unit: "회" },
+                    ].map((item) => (
+                      <div key={item.label} style={{ background: "#fff", borderRadius: 8, padding: "8px 14px", textAlign: "center", border: `1px solid ${item.color}22` }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: item.color }}>{item.value}{item.unit}</div>
+                        <div style={{ fontSize: 11, color: "#888" }}>{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: "#fff", borderRadius: 8, padding: "8px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>출석률</span>
+                    <div style={{ flex: 1, background: "#eee", borderRadius: 4, height: 12 }}>
+                      <div style={{ width: `${attendRate}%`, background: attendRate >= 80 ? "#27ae60" : attendRate >= 60 ? "#f39c12" : "#e74c3c", height: 12, borderRadius: 4 }} />
+                    </div>
+                    <span style={{ fontWeight: 700, color: attendRate >= 80 ? "#27ae60" : "#e74c3c" }}>{attendRate}%</span>
+                  </div>
+                  {s.uncheckedCount > 0 && (
+                    <p style={{ margin: "8px 0 0", fontSize: 12, color: "#95a5a6" }}>
+                      ⚠️ 출석 미확인 {s.uncheckedCount}회 — 달력에서 날짜를 클릭하여 출석 확인하세요.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ── 전체 학생 월별 정산 ── */}
+          <div style={{ marginTop: 16, background: "#fafafa", borderRadius: 10, padding: 14, border: "1px solid #ddd" }}>
+            <h4 style={{ margin: "0 0 12px", color: "#2c3e50" }}>📋 전체 학생 {calMonth.replace("-", "년 ")}월 정산</h4>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#2c3e50", color: "#fff" }}>
+                    <th style={{ padding: "5px 8px", textAlign: "left" }}>이름</th>
+                    <th style={{ padding: "5px 8px", textAlign: "center" }}>가능</th>
+                    <th style={{ padding: "5px 8px", textAlign: "center", color: "#2ecc71" }}>실제</th>
+                    <th style={{ padding: "5px 8px", textAlign: "center", color: "#3498db" }}>보충</th>
+                    <th style={{ padding: "5px 8px", textAlign: "center", color: "#f39c12" }}>휴강</th>
+                    <th style={{ padding: "5px 8px", textAlign: "center", color: "#e74c3c" }}>결강</th>
+                    <th style={{ padding: "5px 8px", textAlign: "center" }}>출석률</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roster
+                    .filter((r) => (r.studentStatus ?? "active") !== "withdrawn")
+                    .map((r, i) => {
+                      const s = calcMonthlySettlement(r, year, month);
+                      const rate = s.possibleCount > 0 ? Math.round(s.actualCount / s.possibleCount * 100) : 0;
+                      const isPaused = r.studentStatus === "paused";
+                      return (
+                        <tr key={r.studentCode} style={{ background: isPaused ? "#fff8f0" : i % 2 === 0 ? "#fff" : "#f9f9f9" }}>
+                          <td style={{ padding: "5px 8px", fontWeight: 600, color: isPaused ? "#f39c12" : "#333" }}>
+                            {r.name}{isPaused ? " (중단)" : ""}
+                          </td>
+                          <td style={{ padding: "5px 8px", textAlign: "center" }}>{s.possibleCount}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", fontWeight: 700, color: "#27ae60" }}>{s.actualCount}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#2980b9" }}>{s.makeupCount}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#f39c12" }}>{s.cancelledCount}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#e74c3c" }}>{s.absentCount}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center" }}>
+                            <span style={{ fontWeight: 700, color: rate >= 80 ? "#27ae60" : rate >= 60 ? "#f39c12" : "#e74c3c" }}>
+                              {s.possibleCount > 0 ? `${rate}%` : "-"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: "#2c3e50", color: "#fff", fontWeight: 700 }}>
+                    <td style={{ padding: "5px 8px" }}>합계</td>
+                    {(() => {
+                      const all = roster
+                        .filter((r) => (r.studentStatus ?? "active") !== "withdrawn")
+                        .map((r) => calcMonthlySettlement(r, year, month));
+                      return (
+                        <>
+                          <td style={{ padding: "5px 8px", textAlign: "center" }}>{all.reduce((s, r) => s + r.possibleCount, 0)}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#2ecc71" }}>{all.reduce((s, r) => s + r.actualCount, 0)}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#3498db" }}>{all.reduce((s, r) => s + r.makeupCount, 0)}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#f39c12" }}>{all.reduce((s, r) => s + r.cancelledCount, 0)}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center", color: "#e74c3c" }}>{all.reduce((s, r) => s + r.absentCount, 0)}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "center" }}>-</td>
+                        </>
+                      );
+                    })()}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
           {addingSession && (
             <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 340, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
@@ -1155,8 +1321,8 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
 
                 <label style={{ fontSize: 13, fontWeight: 600 }}>구분</label>
                 <div style={{ display: "flex", gap: 8, marginBottom: 10, marginTop: 4 }}>
-                  {(["cancelled","absent","makeup"] as const).map((st) => (
-                    <button key={st} onClick={() => setAddingSession({ ...addingSession, status: st })}
+                  {(["normal","cancelled","absent","makeup"] as const).map((st) => (
+                    <button key={st} onClick={() => setAddingSession({ ...addingSession, status: st as any })}
                       style={{ flex: 1, padding: "6px 0", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer",
                         background: addingSession.status === st ? statusColor[st] : "#f5f5f5",
                         color: addingSession.status === st ? "#fff" : "#555",
