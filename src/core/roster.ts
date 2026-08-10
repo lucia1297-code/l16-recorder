@@ -1,19 +1,32 @@
 import { validatePhoneNumber, normalizePhoneNumber } from "./otpLogic";
 import { generateStudentCode } from "./studentCode";
 
+export type DayOfWeek = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface ClassSession {
+  date: string;           // ISO date (YYYY-MM-DD)
+  status: "normal" | "cancelled" | "absent" | "makeup"; // 정상/휴강/결강/보충
+  makeupDate?: string;    // 보충 날짜
+  makeupDone?: boolean;   // 보충 완료 여부
+  note?: string;
+}
+
 export interface RosterEntry {
   studentCode: string;
   name: string;
   school: string;
   grade: string;
-  phone: string; // normalized digits only
-  parentPhone?: string; // 학부모 전화번호 (선택, 과제제출 알림 발송용)
+  phone: string;
+  parentPhone?: string;
   teacher: string;
   note: string;
-  registeredAt?: string; // ISO — 계도기간(신규등록 후 2주) 계산용
-  studentType?: "S" | "W2" | "W1" | ""; // 특별관리(S) / 주2타임(W2) / 주1타임(W1)
-  excludeFromReminder?: boolean; // 독려 문자 제외 여부
-  weeklySession?: 1 | 2 | 3 | 4 | 5 | 6 | null; // 주간 수업 시수
+  registeredAt?: string;
+  studentType?: "S" | "W2" | "W1" | "";
+  excludeFromReminder?: boolean;
+  weeklySession?: 1 | 2 | 3 | 4 | 5 | 6 | null;
+  lessonDays?: DayOfWeek[];        // 수업 요일 (복수 선택)
+  classSessions?: ClassSession[];  // 수업 이력 (휴강/결강/보충)
+  lastAssignmentSavedAt?: string;  // 마지막 과제 저장일 (ISO)
 }
 
 // 수업 시수별 과제 제출 기한 (일)
