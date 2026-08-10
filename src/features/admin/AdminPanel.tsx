@@ -631,6 +631,8 @@ function RosterManager() {
                 <th>주간시수</th>
                 <th>학부모번호</th>
                 <th>독려제외</th>
+                <th>수업요일</th>
+                <th>수업이력</th>
                 <th>관리</th>
               </tr>
             </thead>
@@ -737,6 +739,33 @@ function RosterManager() {
                       </label>
                     </td>
 
+                    {/* 수업 요일 */}
+                    <td>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                        {(["mon","tue","wed","thu","fri","sat","sun"] as const).map((day) => {
+                          const labels: Record<string, string> = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금", sat:"토", sun:"일" };
+                          const selected = (e.lessonDays ?? []).includes(day);
+                          return (
+                            <button key={day} onClick={async () => {
+                              const days = e.lessonDays ?? [];
+                              const next = selected ? days.filter((d) => d !== day) : [...days, day];
+                              const updated = roster.map((r) => r.studentCode === e.studentCode ? { ...r, lessonDays: next } : r);
+                              setRoster(updated);
+                              await rosterStore.saveRoster(updated);
+                            }} style={{ padding: "2px 5px", borderRadius: 4, fontSize: 11, border: "none", cursor: "pointer",
+                              background: selected ? "#2980b9" : "#f0f0f0", color: selected ? "#fff" : "#555", fontWeight: selected ? 700 : 400 }}>
+                              {labels[day]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+
+                    {/* 수업 이력 */}
+                    <td>
+                      <ClassSessionManager entry={e} roster={roster} setRoster={setRoster} rosterStore={rosterStore} />
+                    </td>
+
                     {/* 관리 - 전화번호 수정/코드전송만 */}
                     <td>
                       {isEditing ? (
@@ -777,31 +806,63 @@ function RosterManager() {
 
 // ── 과제 독려 발송 섹션 ─────────────────────────────
 function ReminderSection({ roster }: { roster: RosterEntry[] }) {
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
   const storage = useStorage();
   const smsProvider = useMemo(() => createSmsProvider(), []);
-  const [results, setResults] = useState<ExamResult[]>([]);
+  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
+  const [examRows, setExamRows] = useState<ExamResult[]>([]);
+  const [assignmentTypes, setAssignmentTypes] = useState<{ id: string; name: string }[]>([]);
   const [sending, setSending] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    storage.listResults().then(setResults);
-  }, [storage]);
+    Promise.all([
+      assignmentStore.listSubmissions(),
+      assignmentStore.listTypes(),
+      storage.listResults(),
+    ]).then(([subs, types, exams]) => {
+      setSubmissions(subs);
+      setAssignmentTypes(types as { id: string; name: string }[]);
+      setExamRows(exams);
+    });
+  }, [assignmentStore, storage]);
 
-  // 학생별 마지막 제출일 계산
+  // 학생별 마지막 제출일 — 일반과제 OR 모의고사 중 최신
   const lastSubmitMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const r of results) {
+    for (const s of submissions) {
+      const prev = map.get(s.studentCode);
+      if (!prev || s.submittedAt > prev) map.set(s.studentCode, s.submittedAt);
+    }
+    for (const r of examRows) {
       const prev = map.get(r.student.studentCode);
       if (!prev || r.submittedAt > prev) map.set(r.student.studentCode, r.submittedAt);
     }
     return map;
-  }, [results]);
+  }, [submissions, examRows]);
 
-  // 독려 대상: W1 학생 중 독려제외 아닌 학생
-  const today = new Date();
+  // 학생별 제출한 과제 ID 목록
+  const submittedByStudent = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const s of submissions) {
+      if (!map.has(s.studentCode)) map.set(s.studentCode, new Set());
+      map.get(s.studentCode)!.add(s.typeId);
+    }
+    return map;
+  }, [submissions]);
+
+  // 과제 미저장 학생 (lastAssignmentSavedAt 없거나 1일 초과)
+  const unSavedStudents = useMemo(() => {
+    const now = Date.now();
+    return roster.filter((r) => {
+      if (!r.lastAssignmentSavedAt) return true;
+      const diff = (now - new Date(r.lastAssignmentSavedAt).getTime()) / 86400000;
+      return diff > 1;
+    });
+  }, [roster]);
 
   function daysSince(isoDate: string) {
-    return Math.floor((today.getTime() - new Date(isoDate).getTime()) / 86400000);
+    return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
   }
 
   const reminderTargets = useMemo(() => {
@@ -811,18 +872,18 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
       .filter((r) => !isInGracePeriod(r.registeredAt, now))
       .map((r) => {
         const lastDate = lastSubmitMap.get(r.studentCode);
-        // 제출 기록 없으면 등록일 기준, 등록일도 없으면 독려 대상 제외
         const baseDate = lastDate ?? r.registeredAt;
         if (!baseDate) return null;
         const days = daysSince(baseDate);
         const threshold = getReminderDays(r.weeklySession);
-        return { ...r, days, lastDate: lastDate ?? null, threshold, neverSubmitted: !lastDate };
+        const submitted = submittedByStudent.get(r.studentCode) ?? new Set();
+        const unsubmitted = assignmentTypes.filter((t) => !submitted.has(t.id));
+        return { ...r, days, lastDate: lastDate ?? null, threshold, neverSubmitted: !lastDate, unsubmitted };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null && r.days >= r.threshold)
       .sort((a, b) => b.days - a.days);
-  }, [roster, lastSubmitMap]);
+  }, [roster, lastSubmitMap, submittedByStudent, assignmentTypes]);
 
-  // 1회·2회 학생 자동 발송 대상 (시수 설정된 학생)
   const autoTargets = reminderTargets.filter((r) => r.weeklySession === 1 || r.weeklySession === 2);
   const otherTargets = reminderTargets.filter((r) => r.weeklySession !== 1 && r.weeklySession !== 2);
 
@@ -830,7 +891,10 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
     setSending(student.studentCode);
     setNotice("");
     try {
-      const msg = `[L16] ${student.name} 학생, 과제 제출이 ${student.days}일 경과됐습니다. 빠른 제출 부탁드립니다.`;
+      const unsubNames = student.unsubmitted.map((t) => t.name).join(", ");
+      const msg = unsubNames
+        ? `[L16] ${student.name} 학생, 미제출 과제: ${unsubNames}. 빠른 제출 부탁드립니다.`
+        : `[L16] ${student.name} 학생, 과제 제출이 ${student.days}일 경과됐습니다. 빠른 제출 부탁드립니다.`;
       await smsProvider.send(student.phone, msg);
       setNotice(`${student.name} 학생에게 독려 문자를 발송했습니다.`);
     } catch {
@@ -845,110 +909,253 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
     let ok = 0;
     for (const s of autoTargets) {
       try {
-        const msg = `[L16] ${s.name} 학생, 과제 제출이 ${s.days}일 경과됐습니다. 빠른 제출 부탁드립니다.`;
+        const unsubNames = s.unsubmitted.map((t) => t.name).join(", ");
+        const msg = unsubNames
+          ? `[L16] ${s.name} 학생, 미제출 과제: ${unsubNames}. 빠른 제출 부탁드립니다.`
+          : `[L16] ${s.name} 학생, 과제 제출이 ${s.days}일 경과됐습니다. 빠른 제출 부탁드립니다.`;
         await smsProvider.send(s.phone, msg);
         ok++;
-      } catch { /* 계속 진행 */ }
+      } catch { /* 계속 */ }
     }
     setNotice(`${ok}명에게 독려 문자 발송 완료`);
     setSending(null);
   }
 
-  if (reminderTargets.length === 0) return (
-    <div style={{ marginTop: 24, padding: 16, background: "#f0f9f0", borderRadius: 10, border: "1px solid #2ecc71" }}>
-      <p style={{ margin: 0, color: "#27ae60", fontWeight: 600 }}>✅ 3일 이상 미제출 학생 없음</p>
-    </div>
-  );
+  if (reminderTargets.length === 0 && unSavedStudents.length === 0)
+    return (
+      <div style={{ marginTop: 24, padding: 16, background: "#f0f9f0", borderRadius: 10, border: "1px solid #2ecc71" }}>
+        <p style={{ margin: 0, color: "#27ae60", fontWeight: 600 }}>✅ 독려 대상 없음 · 과제 미저장 학생 없음</p>
+      </div>
+    );
 
   return (
     <div style={{ marginTop: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <h3 style={{ margin: 0, color: "#e74c3c" }}>
-          ⚠️ 과제 독려 대상 ({reminderTargets.length}명)
-        </h3>
-        {autoTargets.length > 0 && (
-          <button
-            className="btn"
-            style={{ background: "#e74c3c", fontSize: 13, padding: "6px 14px" }}
-            onClick={sendAllAuto}
-            disabled={sending === "__all__"}
-          >
-            {sending === "__all__" ? "발송 중…" : `전체 자동 발송 (${autoTargets.length}명)`}
-          </button>
-        )}
-      </div>
-      {notice && <p style={{ color: "#27ae60", fontSize: 13, marginBottom: 8 }}>{notice}</p>}
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>이름</th>
-              <th>등급</th>
-              <th>시수</th>
-              <th>학교</th>
-              <th>경과일</th>
-              <th>마지막 제출</th>
-              <th>학부모번호</th>
-              <th>발송</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...autoTargets, ...otherTargets].map((s) => (
-              <tr key={s.studentCode}>
-                <td style={{ fontWeight: 700 }}>{s.name}</td>
-                <td>
-                  <span style={{
-                    padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700,
-                    background: s.studentType === "W1" ? "#e74c3c" : s.studentType === "W2" ? "#f39c12" : "#9b59b6",
-                    color: "#fff",
-                  }}>
-                    {s.studentType || "-"}
-                  </span>
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  {s.weeklySession ? `${s.weeklySession}회` : "-"}
-                </td>
-                <td>{s.school}</td>
-                <td>
-                  <span style={{
-                    fontWeight: 700,
-                    color: s.days >= s.threshold * 2 ? "#e74c3c" : "#f39c12",
-                    background: s.days >= s.threshold * 2 ? "#fdecea" : "#fef9e7",
-                    padding: "2px 8px", borderRadius: 6, fontSize: 13,
-                  }}>
-                    {s.neverSubmitted ? "미제출" : `D+${s.days}`}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>
-                    (기한:{s.threshold}일)
-                  </span>
-                </td>
-                <td style={{ fontSize: 12, color: "#888" }}>
-                  {s.lastDate ? new Date(s.lastDate).toLocaleDateString("ko-KR") : "한 번도 미제출"}</td>
-                <td style={{ fontSize: 12, color: s.parentPhone ? "#333" : "#ccc" }}>
-                  {s.parentPhone || "미등록"}
-                </td>
-                <td>
-                  {(s.weeklySession === 1 || s.weeklySession === 2) ? (
-                    <button
-                      onClick={() => sendReminder(s)}
-                      disabled={sending === s.studentCode}
-                      style={{ padding: "3px 10px", fontSize: 12, borderRadius: 6, background: "#e74c3c", color: "#fff", border: "none", cursor: "pointer" }}
-                    >
-                      {sending === s.studentCode ? "발송중…" : "독려 발송"}
-                    </button>
-                  ) : (
-                    <span style={{ fontSize: 12, color: "#aaa" }}>수동 확인</span>
-                  )}
-                </td>
-              </tr>
+      {/* ── 과제 미저장 알림 ── */}
+      {unSavedStudents.length > 0 && (
+        <div style={{ background: "#fdecea", border: "2px solid #e74c3c", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+          <p style={{ margin: "0 0 8px", fontWeight: 700, color: "#e74c3c", fontSize: 15 }}>
+            ⚠️ 과제 미저장 학생 ({unSavedStudents.length}명) — 1일 이상 경과
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {unSavedStudents.map((s) => (
+              <span key={s.studentCode} style={{ padding: "2px 10px", background: "#fff", borderRadius: 6, fontSize: 13, fontWeight: 600, border: "1px solid #e74c3c" }}>
+                {s.name}
+                {s.lastAssignmentSavedAt ? ` (D+${daysSince(s.lastAssignmentSavedAt)})` : " (미등록)"}
+              </span>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
-        * 1회/수업 학생: 5일 초과 시 독려 · 2회/수업 학생: 2일 초과 시 독려 · 학부모 발송은 번호 등록 후 활성화
-      </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── 독려 대상 ── */}
+      {reminderTargets.length > 0 && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ margin: 0, color: "#e74c3c" }}>⚠️ 과제 독려 대상 ({reminderTargets.length}명)</h3>
+            {autoTargets.length > 0 && (
+              <button className="btn" style={{ background: "#e74c3c", fontSize: 13, padding: "6px 14px" }}
+                onClick={sendAllAuto} disabled={sending === "__all__"}>
+                {sending === "__all__" ? "발송 중…" : `전체 자동 발송 (${autoTargets.length}명)`}
+              </button>
+            )}
+          </div>
+          {notice && <p style={{ color: "#27ae60", fontSize: 13, marginBottom: 8 }}>{notice}</p>}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>등급</th>
+                  <th>시수</th>
+                  <th>학교</th>
+                  <th>경과일</th>
+                  <th>마지막 제출</th>
+                  <th>미제출 과제</th>
+                  <th>발송</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...autoTargets, ...otherTargets].map((s) => (
+                  <tr key={s.studentCode}>
+                    <td style={{ fontWeight: 700 }}>{s.name}</td>
+                    <td>
+                      {s.studentType && (
+                        <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                          background: s.studentType === "W1" ? "#fdecea" : s.studentType === "W2" ? "#fff3e0" : "#f3e8ff",
+                          color: s.studentType === "W1" ? "#e74c3c" : s.studentType === "W2" ? "#e67e22" : "#9b59b6" }}>
+                          {s.studentType}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "center" }}>{s.weeklySession ? `${s.weeklySession}회` : "-"}</td>
+                    <td>{s.school}</td>
+                    <td>
+                      <span style={{ fontWeight: 700, color: s.days >= s.threshold * 2 ? "#e74c3c" : "#f39c12",
+                        background: s.days >= s.threshold * 2 ? "#fdecea" : "#fef9e7",
+                        padding: "2px 8px", borderRadius: 6, fontSize: 13 }}>
+                        {s.neverSubmitted ? "미제출" : `D+${s.days}`}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>(기한:{s.threshold}일)</span>
+                    </td>
+                    <td style={{ fontSize: 12, color: "#888" }}>
+                      {s.lastDate ? new Date(s.lastDate).toLocaleDateString("ko-KR") : "한 번도 미제출"}
+                    </td>
+                    <td style={{ fontSize: 12, color: s.unsubmitted.length > 0 ? "#e74c3c" : "#27ae60" }}>
+                      {s.unsubmitted.length > 0 ? s.unsubmitted.map((t) => t.name).join(", ") : "전체 제출"}
+                    </td>
+                    <td>
+                      {(s.weeklySession === 1 || s.weeklySession === 2) ? (
+                        <button onClick={() => sendReminder(s)} disabled={sending === s.studentCode}
+                          style={{ padding: "3px 10px", fontSize: 12, borderRadius: 6, background: "#e74c3c", color: "#fff", border: "none", cursor: "pointer" }}>
+                          {sending === s.studentCode ? "발송중…" : "독려 발송"}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "#aaa" }}>수동 확인</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 12, color: "#888", marginTop: 8 }}>
+            * 1회/주: 5일 초과 · 2회/주: 2일 초과 시 독려 · 미제출 과제 자동 표시
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+// ── 수업 이력 관리 컴포넌트 ─────────────────────────
+function ClassSessionManager({ entry, roster, setRoster, rosterStore }: {
+  entry: RosterEntry;
+  roster: RosterEntry[];
+  setRoster: (r: RosterEntry[]) => void;
+  rosterStore: ReturnType<typeof createRosterStore>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newDate, setNewDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newStatus, setNewStatus] = useState<"cancelled" | "absent" | "makeup">("cancelled");
+  const [makeupDate, setMakeupDate] = useState("");
+
+  const sessions = entry.classSessions ?? [];
+
+  async function addSession() {
+    const session: import("../../core/roster").ClassSession = {
+      date: newDate,
+      status: newStatus,
+      makeupDate: makeupDate || undefined,
+      makeupDone: false,
+    };
+    const updated = roster.map((r) =>
+      r.studentCode === entry.studentCode
+        ? { ...r, classSessions: [...(r.classSessions ?? []), session].sort((a, b) => b.date.localeCompare(a.date)) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+    setAdding(false);
+    setMakeupDate("");
+  }
+
+  async function toggleMakeupDone(sessionDate: string) {
+    const updated = roster.map((r) =>
+      r.studentCode === entry.studentCode
+        ? { ...r, classSessions: (r.classSessions ?? []).map((s) =>
+            s.date === sessionDate ? { ...s, makeupDone: !s.makeupDone } : s) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+  }
+
+  async function deleteSession(sessionDate: string) {
+    const updated = roster.map((r) =>
+      r.studentCode === entry.studentCode
+        ? { ...r, classSessions: (r.classSessions ?? []).filter((s) => s.date !== sessionDate) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+  }
+
+  const statusLabel: Record<string, string> = { normal: "정상", cancelled: "휴강", absent: "결강", makeup: "보충" };
+  const statusColor: Record<string, string> = { normal: "#27ae60", cancelled: "#f39c12", absent: "#e74c3c", makeup: "#2980b9" };
+
+  return (
+    <div style={{ minWidth: 120 }}>
+      {sessions.length > 0 && (
+        <div style={{ marginBottom: 4 }}>
+          {sessions.slice(0, 2).map((s) => (
+            <div key={s.date} style={{ fontSize: 11, marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ color: statusColor[s.status] ?? "#333", fontWeight: 700 }}>{statusLabel[s.status]}</span>
+              <span style={{ color: "#888" }}>{s.date.slice(5)}</span>
+              {s.status === "cancelled" && s.makeupDate && (
+                <span style={{ color: s.makeupDone ? "#27ae60" : "#e74c3c", fontSize: 10 }}>
+                  {s.makeupDone ? "✅보충완" : `보충${s.makeupDate.slice(5)}`}
+                </span>
+              )}
+            </div>
+          ))}
+          {sessions.length > 2 && <span style={{ fontSize: 11, color: "#aaa" }}>+{sessions.length - 2}건</span>}
+        </div>
+      )}
+      <button onClick={() => setOpen(!open)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid #ddd", cursor: "pointer", background: "#f9f9f9" }}>
+        {open ? "닫기" : sessions.length > 0 ? "수정" : "+ 추가"}
+      </button>
+
+      {open && (
+        <div style={{ position: "absolute", zIndex: 100, background: "#fff", border: "2px solid #2980b9", borderRadius: 10, padding: 12, minWidth: 260, boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
+          <p style={{ margin: "0 0 8px", fontWeight: 700, fontSize: 13 }}>{entry.name} — 수업 이력</p>
+
+          {sessions.map((s) => (
+            <div key={s.date} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: 12 }}>
+              <span style={{ color: statusColor[s.status], fontWeight: 700, minWidth: 28 }}>{statusLabel[s.status]}</span>
+              <span style={{ color: "#666" }}>{s.date}</span>
+              {s.makeupDate && (
+                <span style={{ color: "#888" }}>→ {s.makeupDate}</span>
+              )}
+              {s.makeupDate && (
+                <button onClick={() => toggleMakeupDone(s.date)} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, border: "1px solid #ddd", cursor: "pointer", background: s.makeupDone ? "#e8f8f5" : "#fef9e7" }}>
+                  {s.makeupDone ? "✅완료" : "미완"}
+                </button>
+              )}
+              <button onClick={() => deleteSession(s.date)} style={{ marginLeft: "auto", fontSize: 10, padding: "1px 5px", borderRadius: 3, border: "1px solid #e74c3c", color: "#e74c3c", cursor: "pointer", background: "#fff" }}>삭제</button>
+            </div>
+          ))}
+
+          {!adding ? (
+            <button onClick={() => setAdding(true)} style={{ width: "100%", padding: "6px", fontSize: 12, borderRadius: 6, border: "1px dashed #2980b9", cursor: "pointer", background: "#eaf4fb", color: "#2980b9", marginTop: 8 }}>
+              + 새 이력 추가
+            </button>
+          ) : (
+            <div style={{ marginTop: 8, borderTop: "1px solid #eee", paddingTop: 8 }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} style={{ flex: 1, fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }} />
+                <select value={newStatus} onChange={(e) => setNewStatus(e.target.value as any)} style={{ fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd" }}>
+                  <option value="cancelled">휴강</option>
+                  <option value="absent">결강</option>
+                  <option value="makeup">보충</option>
+                </select>
+              </div>
+              {newStatus === "cancelled" && (
+                <div style={{ marginBottom: 6 }}>
+                  <label style={{ fontSize: 11, color: "#888" }}>보충 날짜 (선택)</label>
+                  <input type="date" value={makeupDate} onChange={(e) => setMakeupDate(e.target.value)} style={{ width: "100%", fontSize: 12, padding: "3px 6px", borderRadius: 4, border: "1px solid #ddd", marginTop: 2 }} />
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={addSession} style={{ flex: 1, padding: "5px", fontSize: 12, borderRadius: 5, border: "none", background: "#2980b9", color: "#fff", cursor: "pointer" }}>저장</button>
+                <button onClick={() => setAdding(false)} style={{ flex: 1, padding: "5px", fontSize: 12, borderRadius: 5, border: "1px solid #ddd", cursor: "pointer" }}>취소</button>
+              </div>
+            </div>
+          )}
+          <button onClick={() => setOpen(false)} style={{ width: "100%", marginTop: 8, padding: "4px", fontSize: 11, borderRadius: 5, border: "1px solid #ddd", cursor: "pointer", color: "#888" }}>닫기</button>
+        </div>
+      )}
     </div>
   );
 }
