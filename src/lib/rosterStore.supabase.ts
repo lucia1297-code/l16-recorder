@@ -35,6 +35,9 @@ export class SupabaseRosterStore implements RosterStore {
       lesson_days: JSON.stringify(e.lessonDays ?? []),
       class_sessions: JSON.stringify(e.classSessions ?? []),
       last_assignment_saved_at: e.lastAssignmentSavedAt ?? null,
+      student_status: e.studentStatus ?? "active",
+      paused_at: e.pausedAt ?? null,
+      paused_reason: e.pausedReason ?? null,
     }));
     const { error } = await sb.from("students").upsert(rows, { onConflict: "student_code" });
     if (error) throw error;
@@ -60,6 +63,9 @@ export class SupabaseRosterStore implements RosterStore {
       lessonDays: (() => { try { return JSON.parse(r.lesson_days ?? "[]"); } catch { return []; } })(),
       classSessions: (() => { try { return JSON.parse(r.class_sessions ?? "[]"); } catch { return []; } })(),
       lastAssignmentSavedAt: r.last_assignment_saved_at ?? undefined,
+      studentStatus: (r.student_status ?? "active") as import("../../core/roster").StudentStatus,
+      pausedAt: r.paused_at ?? undefined,
+      pausedReason: r.paused_reason ?? undefined,
     }));
   }
 
