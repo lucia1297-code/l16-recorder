@@ -4,7 +4,7 @@ import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement, generateSessionsForMonth } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
@@ -116,7 +116,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "attendance"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -159,6 +159,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")} style={{ background: tab === "sms" ? "#e74c3c" : "", color: tab === "sms" ? "#fff" : "" }}>
           문자알림
         </button>
+        <button className={tab === "attendance" ? "on" : ""} onClick={() => setTab("attendance")} style={{ background: tab === "attendance" ? "#2980b9" : "", color: tab === "attendance" ? "#fff" : "" }}>
+          수강확인
+        </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
@@ -177,6 +180,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "submit" && <SubmissionStatus rows={rows} />}
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
+        {tab === "attendance" && <AttendanceBoard />}
       </div>
     </div>
   );
@@ -862,28 +866,6 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
     setTimeout(() => setNotice(""), 2000);
   }
 
-  // 이번 달 수업일 자동 생성 (수업 요일 기준, 기존 이력이 없는 날짜만 추가)
-  async function autoGenerateMonth() {
-    if (!student) return;
-    const [gy, gm] = calMonth.split("-").map(Number);
-    const existing = (student.classSessions ?? []).map((s) => s.date);
-    const generated = generateSessionsForMonth(student.lessonDays, gy, gm, existing);
-    if (generated.length === 0) {
-      setNotice("생성할 새 수업일이 없습니다.");
-      setTimeout(() => setNotice(""), 2000);
-      return;
-    }
-    const updated = roster.map((r) =>
-      r.studentCode === selectedStudent
-        ? { ...r, classSessions: [...(r.classSessions ?? []), ...generated] }
-        : r
-    );
-    setRoster(updated);
-    await rosterStore.saveRoster(updated);
-    setNotice(`${generated.length}개의 수업일 자동 생성 완료`);
-    setTimeout(() => setNotice(""), 2000);
-  }
-
   async function saveSession() {
     if (!addingSession || !student) return;
     const session: import("../../core/roster").ClassSession = {
@@ -1116,12 +1098,6 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                   setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
                 }} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer" }}>›</button>
               </div>
-              <button
-                onClick={autoGenerateMonth}
-                style={{ width: "100%", padding: "8px 0", marginBottom: 10, borderRadius: 6, fontSize: 13, border: "none", background: "#8e44ad", color: "#fff", cursor: "pointer", fontWeight: 700 }}
-              >
-                이번 달 수업일 자동 생성
-              </button>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
                 {["일","월","화","수","목","금","토"].map((d) => (
                   <div key={d} style={{ fontSize: 11, color: "#888", fontWeight: 600, padding: "2px 0" }}>{d}</div>
@@ -2469,15 +2445,6 @@ function AssignmentReviewManager() {
       reviewedAt: new Date().toISOString(),
       reviewNote: noteDrafts[submissionId] ?? "",
     });
-
-    // 과제 저장 시점으로 해당 학생의 lastAssignmentSavedAt 갱신 (승인/재제출 모두)
-    const stamped = roster.map((r) =>
-      r.studentCode === sub.studentCode
-        ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
-        : r,
-    );
-    setRoster(stamped);
-    await rosterStore.saveRoster(stamped);
 
     if (student) {
       const verdict = REVIEW_STATUS_LABELS[status];
@@ -3940,6 +3907,209 @@ function SmsCenterPanel() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 수강확인 현황판
+// ═══════════════════════════════════════════════════
+
+function getWeeksInMonth(year: number, month: number): { start: Date; end: Date; label: string }[] {
+  const weeks: { start: Date; end: Date; label: string }[] = [];
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  let cur = new Date(firstDay);
+  let weekNum = 1;
+  while (cur <= lastDay) {
+    const start = new Date(cur);
+    const end = new Date(cur);
+    end.setDate(end.getDate() + 6);
+    if (end > lastDay) end.setTime(lastDay.getTime());
+    weeks.push({
+      start,
+      end,
+      label: `${weekNum}주 (${month}/${start.getDate()}~${end.getDate()})`,
+    });
+    cur.setDate(cur.getDate() + 7);
+    weekNum++;
+  }
+  return weeks;
+}
+
+function AttendanceBoard() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  useEffect(() => {
+    rosterStore.listRoster().then(setRoster);
+  }, [rosterStore]);
+
+  const [year, month] = calMonth.split("-").map(Number);
+  const weeks = getWeeksInMonth(year, month);
+  const DAY_NAMES_KO: Record<string, string> = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금", sat:"토", sun:"일" };
+  const DOW_MAP: Record<number, DayOfWeek> = { 0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat" };
+  const STATUS_ICON: Record<string, string> = { normal:"○", cancelled:"△", absent:"✗", makeup:"보" };
+  const STATUS_COLOR: Record<string, string> = { normal:"#27ae60", cancelled:"#f39c12", absent:"#e74c3c", makeup:"#2980b9" };
+
+  // 활성 학생만 (퇴원 제외)
+  const activeRoster = roster.filter((r) => (r.studentStatus ?? "active") !== "withdrawn");
+
+  // 학생 × 주 × 날짜 집계
+  function getWeekCount(entry: RosterEntry, week: { start: Date; end: Date }) {
+    const lessonDays = entry.lessonDays ?? {};
+    const sessions = entry.classSessions ?? [];
+    let count = 0;
+    let cells: { dow: string; icon: string; color: string }[] = [];
+    const cur = new Date(week.start);
+    while (cur <= week.end) {
+      const dow = DOW_MAP[cur.getDay()];
+      const times = lessonDays[dow] ?? 0;
+      if (times > 0) {
+        const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`;
+        const session = sessions.find((s) => s.date === dateStr);
+        let icon = "?";
+        let color = "#aaa";
+        if (session) {
+          icon = STATUS_ICON[session.status] ?? "?";
+          color = STATUS_COLOR[session.status] ?? "#aaa";
+          if (session.status === "normal" && session.attended === false) { icon = "✗"; color = "#e74c3c"; }
+          if (session.status === "normal" && session.attended === true) { icon = "○"; color = "#27ae60"; }
+          if (session.status === "cancelled" && session.makeupDone) { icon = "보"; color = "#2980b9"; }
+          if (session.status === "normal" && session.attended !== false) count += times;
+        }
+        for (let i = 0; i < times; i++) cells.push({ dow: DAY_NAMES_KO[dow], icon, color });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    // 정상 수업 카운트
+    const actualCount = sessions.filter((s) => {
+      const d = new Date(s.date);
+      return d >= week.start && d <= week.end &&
+        ((s.status === "normal" && s.attended !== false) || (s.status === "makeup" && s.makeupDone));
+    }).length;
+    return { cells, count: actualCount };
+  }
+
+  // 학생별 월 소계
+  function getMonthTotal(entry: RosterEntry) {
+    const s = calcMonthlySettlement(entry, year, month);
+    return s.actualCount;
+  }
+
+  // 주별 전체 소계
+  function getWeekTotal(week: { start: Date; end: Date }) {
+    return activeRoster.reduce((sum, entry) => sum + getWeekCount(entry, week).count, 0);
+  }
+
+  const monthGrandTotal = activeRoster.reduce((sum, entry) => sum + getMonthTotal(entry), 0);
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h2 style={{ margin: 0 }}>📋 수강확인 현황판</h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => {
+            const d = new Date(year, month - 2, 1);
+            setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+          }} style={{ border: "1px solid #ddd", background: "#fff", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 16 }}>‹</button>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{year}년 {month}월</span>
+          <button onClick={() => {
+            const d = new Date(year, month, 1);
+            setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+          }} style={{ border: "1px solid #ddd", background: "#fff", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 16 }}>›</button>
+        </div>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 700, width: "100%" }}>
+          <thead>
+            <tr style={{ background: "#2c3e50", color: "#fff" }}>
+              <th style={{ padding: "8px 12px", textAlign: "left", minWidth: 80 }}>학생</th>
+              {weeks.map((w, i) => (
+                <th key={i} style={{ padding: "8px 10px", textAlign: "center", minWidth: 110, borderLeft: "1px solid #3d4f63" }}>
+                  {w.label}
+                </th>
+              ))}
+              <th style={{ padding: "8px 10px", textAlign: "center", minWidth: 60, borderLeft: "2px solid #fff", background: "#1a252f" }}>월소계</th>
+              <th style={{ padding: "8px 10px", textAlign: "center", minWidth: 50, borderLeft: "1px solid #3d4f63", background: "#1a252f" }}>연소계</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeRoster.map((entry, ri) => {
+              const isPaused = entry.studentStatus === "paused";
+              const monthTotal = getMonthTotal(entry);
+              return (
+                <tr key={entry.studentCode} style={{ background: isPaused ? "#fff8f0" : ri % 2 === 0 ? "#fff" : "#f9f9f9", borderBottom: "1px solid #eee" }}>
+                  <td style={{ padding: "8px 12px", fontWeight: 600, color: isPaused ? "#f39c12" : "#2c3e50", whiteSpace: "nowrap" }}>
+                    {entry.name}
+                    {isPaused && <span style={{ fontSize: 9, color: "#f39c12", marginLeft: 4 }}>중단</span>}
+                    <div style={{ fontSize: 10, color: "#aaa", fontWeight: 400 }}>
+                      {Object.keys(entry.lessonDays ?? {}).length > 0
+                        ? Object.entries(entry.lessonDays ?? {}).map(([d, n]) => `${DAY_NAMES_KO[d]}${n === 2 ? "×2" : ""}`).join(" ")
+                        : "요일미설정"}
+                    </div>
+                  </td>
+                  {weeks.map((w, wi) => {
+                    const { cells, count } = getWeekCount(entry, w);
+                    return (
+                      <td key={wi} style={{ padding: "6px 8px", textAlign: "center", borderLeft: "1px solid #eee", verticalAlign: "middle" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, justifyContent: "center", marginBottom: 4 }}>
+                          {cells.length > 0 ? cells.map((c, ci) => (
+                            <span key={ci} style={{ fontSize: 13, fontWeight: 700, color: c.color }}>
+                              {c.dow}{c.icon}
+                            </span>
+                          )) : <span style={{ color: "#ddd", fontSize: 11 }}>-</span>}
+                        </div>
+                        {cells.length > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#2980b9", background: "#eaf4fb", padding: "1px 6px", borderRadius: 8 }}>
+                            {count}회
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td style={{ padding: "8px 10px", textAlign: "center", borderLeft: "2px solid #ddd", fontWeight: 700, fontSize: 14, color: monthTotal > 0 ? "#27ae60" : "#ccc", background: "#f0f9f0" }}>
+                    {monthTotal}회
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "center", borderLeft: "1px solid #eee", color: "#ccc", fontSize: 12 }}>
+                    -
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: "#2c3e50", color: "#fff", fontWeight: 700 }}>
+              <td style={{ padding: "8px 12px" }}>주 소계</td>
+              {weeks.map((w, i) => (
+                <td key={i} style={{ padding: "8px 10px", textAlign: "center", borderLeft: "1px solid #3d4f63", fontSize: 14 }}>
+                  {getWeekTotal(w)}회
+                </td>
+              ))}
+              <td style={{ padding: "8px 10px", textAlign: "center", borderLeft: "2px solid #fff", fontSize: 16, background: "#1a252f" }}>
+                {monthGrandTotal}회
+              </td>
+              <td style={{ padding: "8px 10px", textAlign: "center", borderLeft: "1px solid #3d4f63", color: "#aaa" }}>
+                -
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* 범례 */}
+      <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: "#666" }}>
+        <span><span style={{ color: "#27ae60", fontWeight: 700 }}>○</span> 수업완료</span>
+        <span><span style={{ color: "#e74c3c", fontWeight: 700 }}>✗</span> 결강</span>
+        <span><span style={{ color: "#f39c12", fontWeight: 700 }}>△</span> 휴강</span>
+        <span><span style={{ color: "#2980b9", fontWeight: 700 }}>보</span> 보충완료</span>
+        <span><span style={{ color: "#aaa", fontWeight: 700 }}>?</span> 미확인</span>
+      </div>
     </div>
   );
 }
