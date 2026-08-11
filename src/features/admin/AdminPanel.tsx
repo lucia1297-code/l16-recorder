@@ -2823,6 +2823,16 @@ function TeacherLogManager() {
       classContent,
     };
     await logStore.saveLog(log);
+
+    // lastAssignmentSavedAt 갱신
+    const updatedRoster = roster.map((r) =>
+      r.studentCode === studentCode
+        ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
+        : r
+    );
+    setRoster(updatedRoster);
+    await rosterStore.saveRoster(updatedRoster);
+
     setSaving(false);
     setNotice("저장되었습니다.");
     const logs = await logStore.listLogsForStudent(studentCode);
