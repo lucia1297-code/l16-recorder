@@ -2812,31 +2812,40 @@ function TeacherLogManager() {
   async function save() {
     if (!studentCode) return setNotice("학생을 먼저 선택하세요.");
     setSaving(true);
-    const log = {
-      id: makeLogId(studentCode, date),
-      studentCode,
-      date,
-      rows,
-      examRecords,
-      notes,
-      nextPlan,
-      classContent,
-    };
-    await logStore.saveLog(log);
+    try {
+      const log = {
+        id: makeLogId(studentCode, date),
+        studentCode,
+        date,
+        rows,
+        examRecords,
+        notes,
+        nextPlan,
+        classContent,
+      };
+      await logStore.saveLog(log);
 
-    // lastAssignmentSavedAt 갱신
-    const updatedRoster = roster.map((r) =>
-      r.studentCode === studentCode
-        ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
-        : r
-    );
-    setRoster(updatedRoster);
-    await rosterStore.saveRoster(updatedRoster);
+      // lastAssignmentSavedAt 갱신 (실패해도 저장은 완료)
+      try {
+        const updatedRoster = roster.map((r) =>
+          r.studentCode === studentCode
+            ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
+            : r
+        );
+        setRoster(updatedRoster);
+        await rosterStore.saveRoster(updatedRoster);
+      } catch (e2) {
+        console.warn("lastAssignmentSavedAt 갱신 실패:", e2);
+      }
 
-    setSaving(false);
-    setNotice("저장되었습니다.");
-    const logs = await logStore.listLogsForStudent(studentCode);
-    setPastDates(logs.map((l) => l.date));
+      setNotice("저장되었습니다.");
+      const logs = await logStore.listLogsForStudent(studentCode);
+      setPastDates(logs.map((l) => l.date));
+    } catch (e) {
+      setNotice(`저장 실패: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const student = roster.find((r) => r.studentCode === studentCode);
