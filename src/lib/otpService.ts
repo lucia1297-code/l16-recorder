@@ -56,7 +56,7 @@ export class OtpService {
     try {
       await this.sms.send(
         session.phone,
-        `[ASX] 인증번호는 ${session.code} 입니다. 5분 이내에 입력하세요.`,
+        `인증번호: ${session.code} (5분 이내 입력)`,
       );
     } catch (e) {
       return { ok: false, error: (e as Error).message };
