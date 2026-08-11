@@ -19,6 +19,11 @@ export class SolapiSmsProvider implements SmsProvider {
   ) {}
 
   async send(phoneDigits: string, message: string): Promise<void> {
+    // 010으로 시작하는 국내 번호 형식 보장 (82-10-xxxx → 010-xxxx 변환)
+    let to = phoneDigits.replace(/[^0-9]/g, "");
+    if (to.startsWith("82")) to = "0" + to.slice(2);
+    if (!to.startsWith("0")) to = "0" + to;
+
     const date = new Date().toISOString();
     const salt = randomHex(32);
     const signature = await hmacSha256Hex(this.apiSecret, date + salt);
@@ -32,7 +37,7 @@ export class SolapiSmsProvider implements SmsProvider {
       },
       body: JSON.stringify({
         message: {
-          to: phoneDigits,
+          to: to,
           from: this.sender,
           text: message,
         },
