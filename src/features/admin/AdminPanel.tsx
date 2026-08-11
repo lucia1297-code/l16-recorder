@@ -2470,6 +2470,15 @@ function AssignmentReviewManager() {
       reviewNote: noteDrafts[submissionId] ?? "",
     });
 
+    // 과제 저장 시점으로 해당 학생의 lastAssignmentSavedAt 갱신 (승인/재제출 모두)
+    const stamped = roster.map((r) =>
+      r.studentCode === sub.studentCode
+        ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
+        : r,
+    );
+    setRoster(stamped);
+    await rosterStore.saveRoster(stamped);
+
     if (student) {
       const verdict = REVIEW_STATUS_LABELS[status];
       const note = noteDrafts[submissionId]?.trim();

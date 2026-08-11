@@ -219,6 +219,14 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
 
     await storage.saveResult(result);
 
+    // 관리자 SMS 알림 (실패해도 제출 자체는 완료)
+    const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
+    if (adminPhone) {
+      createSmsProvider()
+        .send(adminPhone, `[L16] ${result.student.name} 모의고사 제출 완료 (${result.score}점)`)
+        .catch(() => {});
+    }
+
     // Neon DB 저장 (비동기 - 실패해도 제출 완료)
     saveSubmissionToNeon({
       id: result.id,
