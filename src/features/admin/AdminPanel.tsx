@@ -4,7 +4,7 @@ import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement, generateSessionsForMonth } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
@@ -862,6 +862,28 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
     setTimeout(() => setNotice(""), 2000);
   }
 
+  // 이번 달 수업일 자동 생성 (수업 요일 기준, 기존 이력이 없는 날짜만 추가)
+  async function autoGenerateMonth() {
+    if (!student) return;
+    const [gy, gm] = calMonth.split("-").map(Number);
+    const existing = (student.classSessions ?? []).map((s) => s.date);
+    const generated = generateSessionsForMonth(student.lessonDays, gy, gm, existing);
+    if (generated.length === 0) {
+      setNotice("생성할 새 수업일이 없습니다.");
+      setTimeout(() => setNotice(""), 2000);
+      return;
+    }
+    const updated = roster.map((r) =>
+      r.studentCode === selectedStudent
+        ? { ...r, classSessions: [...(r.classSessions ?? []), ...generated] }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+    setNotice(`${generated.length}개의 수업일 자동 생성 완료`);
+    setTimeout(() => setNotice(""), 2000);
+  }
+
   async function saveSession() {
     if (!addingSession || !student) return;
     const session: import("../../core/roster").ClassSession = {
@@ -1094,6 +1116,12 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                   setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
                 }} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer" }}>›</button>
               </div>
+              <button
+                onClick={autoGenerateMonth}
+                style={{ width: "100%", padding: "8px 0", marginBottom: 10, borderRadius: 6, fontSize: 13, border: "none", background: "#8e44ad", color: "#fff", cursor: "pointer", fontWeight: 700 }}
+              >
+                이번 달 수업일 자동 생성
+              </button>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
                 {["일","월","화","수","목","금","토"].map((d) => (
                   <div key={d} style={{ fontSize: 11, color: "#888", fontWeight: 600, padding: "2px 0" }}>{d}</div>

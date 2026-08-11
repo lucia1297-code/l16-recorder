@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseRosterRows, type RosterEntry } from "../core/roster";
+import { parseRosterRows, generateSessionsForMonth, type RosterEntry } from "../core/roster";
 
 // 시트에서 읽은 2차원 배열 형태를 그대로 흉내낸다: 첫 행은 헤더, 이후 행은 데이터.
 const HEADER = ["학생코드", "이름", "학교", "학년", "휴대폰번호", "담당교사", "비고"];
@@ -128,5 +128,38 @@ describe("parseRosterRows", () => {
     const { valid, errors } = parseRosterRows([HEADER]);
     expect(valid.length).toBe(0);
     expect(errors.length).toBe(0);
+  });
+});
+
+describe("generateSessionsForMonth", () => {
+  it("요일별 수업일을 해당 월의 모든 날짜로 생성한다", () => {
+    const sessions = generateSessionsForMonth({ mon: 1, wed: 2 }, 2026, 8);
+    expect(sessions).toEqual([
+      { date: "2026-08-03", status: "normal", makeupDone: false },
+      { date: "2026-08-05", status: "normal", makeupDone: false },
+      { date: "2026-08-10", status: "normal", makeupDone: false },
+      { date: "2026-08-12", status: "normal", makeupDone: false },
+      { date: "2026-08-17", status: "normal", makeupDone: false },
+      { date: "2026-08-19", status: "normal", makeupDone: false },
+      { date: "2026-08-24", status: "normal", makeupDone: false },
+      { date: "2026-08-26", status: "normal", makeupDone: false },
+      { date: "2026-08-31", status: "normal", makeupDone: false },
+    ]);
+  });
+
+  it("이미 존재하는 날짜는 중복 생성하지 않는다", () => {
+    const sessions = generateSessionsForMonth(
+      { mon: 1, wed: 2 },
+      2026,
+      8,
+      ["2026-08-03", "2026-08-05"],
+    );
+    expect(sessions.map((s) => s.date)).not.toContain("2026-08-03");
+    expect(sessions.map((s) => s.date)).not.toContain("2026-08-05");
+    expect(sessions.length).toBe(7);
+  });
+
+  it("수업요일이 없으면 빈 배열을 반환한다", () => {
+    expect(generateSessionsForMonth(undefined, 2026, 8)).toEqual([]);
   });
 });

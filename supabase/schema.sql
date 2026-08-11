@@ -36,10 +36,37 @@ create table if not exists students (
   parent_phone text,
   teacher text,
   note text,
-  registered_at timestamptz default now()
+  registered_at timestamptz default now(),
+  student_type text default '',
+  exclude_from_reminder boolean default false,
+  weekly_session int,
+  lesson_days text default '{}',
+  class_sessions text default '[]',
+  last_assignment_saved_at timestamptz default null,
+  student_status text default 'active',
+  paused_at date,
+  paused_reason text
 );
 alter table students add column if not exists registered_at timestamptz default now();
+alter table students add column if not exists student_type text default '';
+alter table students add column if not exists exclude_from_reminder boolean default false;
+alter table students add column if not exists weekly_session int;
+alter table students add column if not exists lesson_days text default '{}';
+alter table students add column if not exists class_sessions text default '[]';
+alter table students add column if not exists last_assignment_saved_at timestamptz default null;
+alter table students add column if not exists student_status text default 'active';
+alter table students add column if not exists paused_at date;
+alter table students add column if not exists paused_reason text;
 create index if not exists idx_students_phone on students (phone);
+
+-- ── 레거시 마이그레이션: lesson_days 가 배열('["thu"]')로 저장된 행을 객체('{"thu":1}')로 변환 ──
+-- 앱 코드(rosterStore.supabase.ts)는 로드 시 배열을 자동 변환하므로 필수는 아니지만,
+-- DB를 깨끗하게 유지하고자 하면 Supabase SQL Editor 에서 아래 문을 한 번 실행하세요.
+update students set lesson_days = (
+  select coalesce(jsonb_object_agg(elem, to_jsonb(1)), '{}'::jsonb)::text
+  from jsonb_array_elements_text(lesson_days::jsonb) elem
+)
+where lesson_days is not null and lesson_days like '[%';
 
 alter table students enable row level security;
 -- 조회/등록/수정 모두 로그인한 관리자만 가능 (학생은 앱을 통해 간접적으로만 조회됨)

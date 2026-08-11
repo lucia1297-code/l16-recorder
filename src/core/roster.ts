@@ -12,6 +12,34 @@ export function calcWeeklyTotal(lessonDayMap: LessonDayMap | undefined): number 
   return Object.values(lessonDayMap).reduce((sum, n) => sum + (n ?? 0), 0);
 }
 
+// Date.getDay() 결과(0=일요일)와 순서가 일치한다
+const WEEKDAY_ORDER: DayOfWeek[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/**
+ * 수업 요일(lessonDays)을 기준으로 해당 월의 모든 수업일을
+ * status:"normal" ClassSession 으로 생성한다. 이미 existingDates 에 있는 날짜는 건너뛴다.
+ */
+export function generateSessionsForMonth(
+  lessonDayMap: LessonDayMap | undefined,
+  year: number,
+  month: number, // 1-12
+  existingDates: string[] = [],
+): ClassSession[] {
+  const days = lessonDayMap ?? {};
+  const lastDay = new Date(year, month, 0).getDate();
+  const sessions: ClassSession[] = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const dow = WEEKDAY_ORDER[new Date(year, month - 1, d).getDay()];
+    if ((days[dow] ?? 0) > 0) {
+      const date = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (!existingDates.includes(date)) {
+        sessions.push({ date, status: "normal", makeupDone: false });
+      }
+    }
+  }
+  return sessions;
+}
+
 export interface ClassSession {
   date: string;           // ISO date (YYYY-MM-DD)
   status: "normal" | "cancelled" | "absent" | "makeup"; // 정상/휴강/결강/보충

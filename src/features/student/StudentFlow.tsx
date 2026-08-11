@@ -849,8 +849,8 @@ function StepSolvingTime({ draft, set }: StepProps) {
   }
 
   const allEntered = asArr.every((t) => t != null && t > 0);
-  const totalActual = asArr.reduce((s, t) => s + (t ?? 0), 0);
-  const totalTarget = STEP_TARGETS.reduce((s, t) => s + t.target, 0);
+  const totalActual = asArr.reduce<number>((s, t) => s + (t ?? 0), 0);
+  const totalTarget = STEP_TARGETS.reduce<number>((s, t) => s + t.target, 0);
 
   // 가상 점수 계산
   const baseScore = draft.score ?? 0;

@@ -1,5 +1,5 @@
 import type { RosterStore } from "./rosterStore";
-import type { RosterEntry } from "../core/roster";
+import type { RosterEntry, LessonDayMap, StudentStatus } from "../core/roster";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let cachedClient: SupabaseClient | null = null;
@@ -60,10 +60,24 @@ export class SupabaseRosterStore implements RosterStore {
       studentType: (r.student_type ?? "") as "S" | "W2" | "W1" | "",
       excludeFromReminder: r.exclude_from_reminder ?? false,
       weeklySession: (r.weekly_session ?? null) as 1|2|3|4|5|6|null,
-      lessonDays: (() => { try { const v = JSON.parse(r.lesson_days ?? "{}"); return Array.isArray(v) ? {} : v; } catch { return {}; } })(),
+      lessonDays: (() => {
+        try {
+          const raw = r.lesson_days;
+          if (raw == null || raw === "") return undefined;
+          const v = JSON.parse(raw);
+          if (Array.isArray(v)) {
+            const map: Record<string, 1> = {};
+            for (const d of v) if (typeof d === "string" && d) map[d] = 1;
+            return map as LessonDayMap;
+          }
+          return v;
+        } catch {
+          return {};
+        }
+      })(),
       classSessions: (() => { try { return JSON.parse(r.class_sessions ?? "[]"); } catch { return []; } })(),
       lastAssignmentSavedAt: r.last_assignment_saved_at ?? undefined,
-      studentStatus: (r.student_status ?? "active") as import("../../core/roster").StudentStatus,
+      studentStatus: (r.student_status ?? "active") as StudentStatus,
       pausedAt: r.paused_at ?? undefined,
       pausedReason: r.paused_reason ?? undefined,
     }));
