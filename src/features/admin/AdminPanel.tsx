@@ -4015,7 +4015,7 @@ function AttendanceBoard() {
         const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
         const dow = ["sun","mon","tue","wed","thu","fri","sat"][new Date(year, month-1, d).getDay()] as DayOfWeek;
         if ((lessonDays[dow] ?? 0) > 0 && !sessions.find((s) => s.date === dateStr)) {
-          sessions.push({ date: dateStr, status: "normal", attended: true });
+          sessions.push({ date: dateStr, status: "normal", attended: true, attendedCount: 1 } as any);
         }
       }
       return { ...entry, classSessions: sessions.sort((a,b)=>b.date.localeCompare(a.date)) };
@@ -4046,12 +4046,14 @@ function AttendanceBoard() {
 
   // 주별 출석 수
   function getWeekAttended(entry: RosterEntry, week: { start: Date; end: Date }) {
-    const dates = getWeekDates(week, entry);
-    return dates.reduce((sum, { dateStr, times }) => {
-      const s = getSession(entry, dateStr);
-      if (!s) return sum;
-      if (s.status === "normal" && s.attended !== false) return sum + ((s as any).attendedCount ?? times);
-      if (s.status === "makeup" && s.makeupDone) return sum + ((s as any).attendedCount ?? times);
+    const sessions = (entry.classSessions ?? []).filter((s) => {
+      const d = new Date(s.date);
+      return d >= week.start && d <= week.end;
+    });
+    return sessions.reduce((sum, s) => {
+      const cnt = (s as any).attendedCount ?? 0;
+      if (s.status === "normal" && s.attended !== false && cnt > 0) return sum + cnt;
+      if (s.status === "makeup" && s.makeupDone) return sum + (cnt || 1);
       return sum;
     }, 0);
   }
@@ -4068,17 +4070,17 @@ function AttendanceBoard() {
     makeup: "#2980b9",
   };
 
-  function getCellInfo(entry: RosterEntry, dateStr: string, times: number) {
+  function getCellInfo(entry: RosterEntry, dateStr: string) {
     const s = getSession(entry, dateStr);
-    if (!s) return { icon: "?", color: "#ddd", bg: "transparent", count: 0 };
-    if (s.status === "normal" && s.attended !== false) {
-      const cnt = (s as any).attendedCount ?? times;
-      return { icon: `○${cnt > 1 ? `×${cnt}` : ""}`, color: STATUS_COLOR.normal_attended, bg: "#e8f8f5", count: cnt };
+    if (!s) return { icon: "?", color: "#ddd", bg: "#f9f9f9", count: 0 };
+    const cnt = (s as any).attendedCount ?? 0;
+    if (s.status === "normal" && s.attended !== false && cnt > 0) {
+      return { icon: cnt === 1 ? "○" : `○×${cnt}`, color: STATUS_COLOR.normal_attended, bg: "#e8f8f5", count: cnt };
     }
     if (s.status === "absent" || (s.status === "normal" && s.attended === false)) return { icon: "✗", color: STATUS_COLOR.absent, bg: "#fdecea", count: 0 };
     if (s.status === "cancelled") return { icon: "△", color: STATUS_COLOR.cancelled, bg: "#fef9e7", count: 0 };
-    if (s.status === "makeup") return { icon: "보", color: STATUS_COLOR.makeup, bg: "#eaf4fb", count: (s as any).attendedCount ?? times };
-    return { icon: "?", color: "#ddd", bg: "transparent", count: 0 };
+    if (s.status === "makeup") return { icon: "보", color: STATUS_COLOR.makeup, bg: "#eaf4fb", count: cnt };
+    return { icon: "?", color: "#ddd", bg: "#f9f9f9", count: 0 };
   }
 
   return (
@@ -4140,11 +4142,11 @@ function AttendanceBoard() {
                           <>
                             <div style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"center", marginBottom:4 }}>
                               {dates.map(({ dateStr, dow, times }) => {
-                                const { icon, color, bg } = getCellInfo(entry, dateStr, times);
+                                const { icon, color, bg, count } = getCellInfo(entry, dateStr);
                                 return Array.from({ length: times }).map((_, ti) => (
                                   <button key={`${dateStr}-${ti}`}
-                                    onClick={() => toggleAttendance(entry, dateStr, times)}
-                                    title={`${dateStr} 클릭: 출석↔결강↔삭제`}
+                                    onClick={() => toggleAttendance(entry, dateStr)}
+                                    title={`${dateStr} 클릭: 없음→1회→2회→결강→삭제`}
                                     style={{ fontSize:13, fontWeight:700, color, background:bg,
                                       border:`1px solid ${color}`, borderRadius:6,
                                       padding:"2px 6px", cursor:"pointer", minWidth:36 }}>
