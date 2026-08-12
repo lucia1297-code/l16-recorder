@@ -647,7 +647,13 @@ function RosterManager() {
                 return (
                   <tr key={e.studentCode} style={{ background: isEditing ? "#f8f9ff" : "transparent" }}>
                     <td style={{ fontSize: 12, color: "#666" }}>{e.studentCode}</td>
-                    <td style={{ fontWeight: 600 }}>{e.name}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {e.name}
+                      {e.registeredAt && (Date.now()-new Date(e.registeredAt).getTime())/86400000 <= 30 && (
+                        <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
+                          borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
+                      )}
+                    </td>
                     <td style={{ fontSize: 13 }}>{e.school}</td>
 
                     {/* 전화번호 - 수정 버튼 클릭 시만 편집 */}
@@ -948,7 +954,13 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                 const sc = statusConfig[status];
                 return (
                   <tr key={r.studentCode} style={{ background: status === "active" ? (i % 2 === 0 ? "#fff" : "#f5f5f5") : sc.bg, opacity: status === "withdrawn" ? 0.6 : 1 }}>
-                    <td style={{ padding: "6px 10px", fontWeight: 600, color: status !== "active" ? sc.color : "#333" }}>{r.name}</td>
+                    <td style={{ padding: "6px 10px", fontWeight: 600, color: status !== "active" ? sc.color : "#333" }}>
+                      {r.name}
+                      {r.registeredAt && (Date.now()-new Date(r.registeredAt).getTime())/86400000 <= 30 && (
+                        <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
+                          borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
+                      )}
+                    </td>
                     <td style={{ padding: "6px 10px", color: "#666" }}>{r.school}</td>
                     <td style={{ padding: "6px 10px", textAlign: "center" }}>
                       <span style={{ padding: "2px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: sc.bg, color: sc.color, border: `1px solid ${sc.color}` }}>
@@ -3980,12 +3992,23 @@ function AttendanceBoard() {
   const DOW_MAP: Record<number,DayOfWeek> = {0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat"};
   const activeRoster = roster.filter((r) => (r.studentStatus ?? "active") !== "withdrawn");
 
-  // 월 목표 수업수 계산
+  // 신규 학생 판정 (등록 후 30일 이내)
+  function isNewStudent(registeredAt?: string): boolean {
+    if (!registeredAt) return false;
+    const days = (Date.now() - new Date(registeredAt).getTime()) / 86400000;
+    return days <= 30;
+  }
+
+  // 월 목표 수업수 계산 (신규 학생은 등록일 이후부터 계산)
   function getMonthTarget(entry: RosterEntry): number {
     const lessonDays = entry.lessonDays ?? {};
     const daysInMonth = new Date(year, month, 0).getDate();
+    // 신규 학생: 등록일이 해당 월에 있으면 등록일부터 계산
+    const regDate = entry.registeredAt ? new Date(entry.registeredAt) : null;
+    const regInMonth = regDate && regDate.getFullYear() === year && regDate.getMonth()+1 === month;
+    const startDay = regInMonth ? regDate!.getDate() : 1;
     let total = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
+    for (let d = startDay; d <= daysInMonth; d++) {
       const dow = DOW_MAP[new Date(year, month-1, d).getDay()];
       total += lessonDays[dow] ?? 0;
     }
@@ -4185,9 +4208,18 @@ function AttendanceBoard() {
                   <td style={{ padding:"8px 10px", fontWeight:600, color: isPaused?"#f39c12":"#2c3e50", whiteSpace:"nowrap" }}>
                     {entry.name}
                     {isPaused && <span style={{ fontSize:9, color:"#f39c12", marginLeft:4 }}>중단</span>}
+                    {isNewStudent(entry.registeredAt) && (
+                      <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
+                        borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
+                    )}
                     <div style={{ fontSize:10, color:"#aaa", fontWeight:400 }}>
                       {Object.entries(entry.lessonDays ?? {}).map(([d,n])=>`${DAY_NAMES_KO[d]}${n===2?"×2":""}`).join(" ") || "요일미설정"}
                     </div>
+                    {isNewStudent(entry.registeredAt) && entry.registeredAt && (
+                      <div style={{ fontSize:10, color:"#e74c3c", fontWeight:600 }}>
+                        등록 D+{Math.floor((Date.now()-new Date(entry.registeredAt).getTime())/86400000)}일
+                      </div>
+                    )}
                   </td>
                   {/* 목표 */}
                   <td style={{ padding:"6px 4px", textAlign:"center", background:"#f0f4ff", fontWeight:700, color:"#2c3e50" }}>
