@@ -4050,8 +4050,8 @@ function AttendanceBoard() {
     return dates.reduce((sum, { dateStr, times }) => {
       const s = getSession(entry, dateStr);
       if (!s) return sum;
-      if (s.status === "normal" && s.attended !== false) return sum + times;
-      if (s.status === "makeup" && s.makeupDone) return sum + times;
+      if (s.status === "normal" && s.attended !== false) return sum + ((s as any).attendedCount ?? times);
+      if (s.status === "makeup" && s.makeupDone) return sum + ((s as any).attendedCount ?? times);
       return sum;
     }, 0);
   }
@@ -4068,14 +4068,17 @@ function AttendanceBoard() {
     makeup: "#2980b9",
   };
 
-  function getCellInfo(entry: RosterEntry, dateStr: string) {
+  function getCellInfo(entry: RosterEntry, dateStr: string, times: number) {
     const s = getSession(entry, dateStr);
-    if (!s) return { icon: "?", color: "#ddd", bg: "transparent" };
-    if (s.status === "normal" && s.attended !== false) return { icon: "○", color: STATUS_COLOR.normal_attended, bg: "#e8f8f5" };
-    if (s.status === "absent" || (s.status === "normal" && s.attended === false)) return { icon: "✗", color: STATUS_COLOR.absent, bg: "#fdecea" };
-    if (s.status === "cancelled") return { icon: "△", color: STATUS_COLOR.cancelled, bg: "#fef9e7" };
-    if (s.status === "makeup") return { icon: "보", color: STATUS_COLOR.makeup, bg: "#eaf4fb" };
-    return { icon: "?", color: "#ddd", bg: "transparent" };
+    if (!s) return { icon: "?", color: "#ddd", bg: "transparent", count: 0 };
+    if (s.status === "normal" && s.attended !== false) {
+      const cnt = (s as any).attendedCount ?? times;
+      return { icon: `○${cnt > 1 ? `×${cnt}` : ""}`, color: STATUS_COLOR.normal_attended, bg: "#e8f8f5", count: cnt };
+    }
+    if (s.status === "absent" || (s.status === "normal" && s.attended === false)) return { icon: "✗", color: STATUS_COLOR.absent, bg: "#fdecea", count: 0 };
+    if (s.status === "cancelled") return { icon: "△", color: STATUS_COLOR.cancelled, bg: "#fef9e7", count: 0 };
+    if (s.status === "makeup") return { icon: "보", color: STATUS_COLOR.makeup, bg: "#eaf4fb", count: (s as any).attendedCount ?? times };
+    return { icon: "?", color: "#ddd", bg: "transparent", count: 0 };
   }
 
   return (
@@ -4137,10 +4140,10 @@ function AttendanceBoard() {
                           <>
                             <div style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"center", marginBottom:4 }}>
                               {dates.map(({ dateStr, dow, times }) => {
-                                const { icon, color, bg } = getCellInfo(entry, dateStr);
+                                const { icon, color, bg } = getCellInfo(entry, dateStr, times);
                                 return Array.from({ length: times }).map((_, ti) => (
                                   <button key={`${dateStr}-${ti}`}
-                                    onClick={() => toggleAttendance(entry, dateStr)}
+                                    onClick={() => toggleAttendance(entry, dateStr, times)}
                                     title={`${dateStr} 클릭: 출석↔결강↔삭제`}
                                     style={{ fontSize:13, fontWeight:700, color, background:bg,
                                       border:`1px solid ${color}`, borderRadius:6,
