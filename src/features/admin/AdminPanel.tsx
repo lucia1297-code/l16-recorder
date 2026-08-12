@@ -3983,22 +3983,28 @@ function AttendanceBoard() {
   }
 
   // 출석 토글 (없으면 생성 → attended:true → attended:false → 삭제)
+  // 클릭 사이클: 없음 → 1회출석 → 2회출석 → 결강 → 없음
   async function toggleAttendance(entry: RosterEntry, dateStr: string) {
     const sessions = entry.classSessions ?? [];
     const existing = sessions.find((s) => s.date === dateStr);
+    const curCount = existing ? ((existing as any).attendedCount ?? (existing.status === "normal" && existing.attended !== false ? 1 : 0)) : 0;
+    const isAbsent = existing && (existing.status === "absent" || (existing.status === "normal" && existing.attended === false));
     let newSessions;
     if (!existing) {
-      // 새로 생성 → 출석
-      newSessions = [...sessions, { date: dateStr, status: "normal" as const, attended: true }];
-    } else if (existing.status === "normal" && existing.attended !== false) {
-      // 출석 → 결강
-      newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attended: false, status: "absent" as const } : s);
+      // 없음 → 1회 출석
+      newSessions = [...sessions, { date: dateStr, status: "normal" as const, attended: true, attendedCount: 1 } as any];
+    } else if (!isAbsent && curCount === 1) {
+      // 1회 → 2회
+      newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attendedCount: 2, attended: true, status: "normal" as const } : s);
+    } else if (!isAbsent && curCount >= 2) {
+      // 2회 → 결강
+      newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attended: false, status: "absent" as const, attendedCount: 0 } : s);
     } else {
       // 결강 → 삭제
       newSessions = sessions.filter((s) => s.date !== dateStr);
     }
     const updated = roster.map((r) =>
-      r.studentCode === entry.studentCode ? { ...r, classSessions: newSessions.sort((a,b)=>b.date.localeCompare(a.date)) } : r
+      r.studentCode === entry.studentCode ? { ...r, classSessions: (newSessions as any[]).sort((a,b)=>b.date.localeCompare(a.date)) } : r
     );
     setRoster(updated);
     await rosterStore.saveRoster(updated);
@@ -4190,7 +4196,7 @@ function AttendanceBoard() {
       </div>
 
       <div style={{ marginTop:12, display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:"#666" }}>
-        <span><span style={{ color:"#27ae60", fontWeight:700 }}>월○</span> 출석 (클릭→결강)</span>
+        <span><span style={{ color:"#27ae60", fontWeight:700 }}>월○</span> 1회출석 → 클릭→2회 → 클릭→결강 → 클릭→삭제</span>
         <span><span style={{ color:"#e74c3c", fontWeight:700 }}>월✗</span> 결강 (클릭→삭제)</span>
         <span><span style={{ color:"#aaa", fontWeight:700 }}>월?</span> 미확인 (클릭→출석)</span>
         <span><span style={{ color:"#f39c12", fontWeight:700 }}>월△</span> 휴강</span>
