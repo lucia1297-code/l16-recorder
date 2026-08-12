@@ -3961,29 +3961,42 @@ function AttendanceBoard() {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [makeupModal, setMakeupModal] = useState<{
+    studentCode: string; name: string; missingCount: number;
+  } | null>(null);
+  const [makeupDate, setMakeupDate] = useState("");
+  const [makeupTime, setMakeupTime] = useState("");
+  const [makeupNote, setMakeupNote] = useState("");
   const [calMonth, setCalMonth] = useState(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   });
 
-  useEffect(() => {
-    rosterStore.listRoster().then(setRoster);
-  }, [rosterStore]);
+  useEffect(() => { rosterStore.listRoster().then(setRoster); }, [rosterStore]);
 
   const [year, month] = calMonth.split("-").map(Number);
   const weeks = getWeeksInMonth(year, month);
-  const DAY_NAMES_KO: Record<string, string> = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금", sat:"토", sun:"일" };
-  const DOW_MAP: Record<number, DayOfWeek> = { 0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat" };
-
+  const DAY_NAMES_KO: Record<string,string> = {mon:"월",tue:"화",wed:"수",thu:"목",fri:"금",sat:"토",sun:"일"};
+  const DOW_MAP: Record<number,DayOfWeek> = {0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat"};
   const activeRoster = roster.filter((r) => (r.studentStatus ?? "active") !== "withdrawn");
 
-  // 날짜별 세션 정보 가져오기
+  // 월 목표 수업수 계산
+  function getMonthTarget(entry: RosterEntry): number {
+    const lessonDays = entry.lessonDays ?? {};
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let total = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dow = DOW_MAP[new Date(year, month-1, d).getDay()];
+      total += lessonDays[dow] ?? 0;
+    }
+    return total;
+  }
+
   function getSession(entry: RosterEntry, dateStr: string) {
     return (entry.classSessions ?? []).find((s) => s.date === dateStr);
   }
 
-  // 출석 토글 (없으면 생성 → attended:true → attended:false → 삭제)
-  // 클릭 사이클: 없음 → 1회출석 → 2회출석 → 결강 → 없음
+  // 클릭 사이클: 없음 → 1회 → 2회 → 결강 → 없음
   async function toggleAttendance(entry: RosterEntry, dateStr: string) {
     const sessions = entry.classSessions ?? [];
     const existing = sessions.find((s) => s.date === dateStr);
@@ -3991,20 +4004,51 @@ function AttendanceBoard() {
     const isAbsent = existing && (existing.status === "absent" || (existing.status === "normal" && existing.attended === false));
     let newSessions;
     if (!existing) {
-      // 없음 → 1회 출석
       newSessions = [...sessions, { date: dateStr, status: "normal" as const, attended: true, attendedCount: 1 } as any];
     } else if (!isAbsent && curCount === 1) {
-      // 1회 → 2회
       newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attendedCount: 2, attended: true, status: "normal" as const } : s);
     } else if (!isAbsent && curCount >= 2) {
-      // 2회 → 결강
       newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attended: false, status: "absent" as const, attendedCount: 0 } : s);
     } else {
-      // 결강 → 삭제
       newSessions = sessions.filter((s) => s.date !== dateStr);
     }
     const updated = roster.map((r) =>
-      r.studentCode === entry.studentCode ? { ...r, classSessions: (newSessions as any[]).sort((a,b)=>b.date.localeCompare(a.date)) } : r
+      r.studentCode === entry.studentCode
+        ? { ...r, classSessions: (newSessions as any[]).sort((a,b)=>b.date.localeCompare(a.date)) }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+  }
+
+  // 보충 수업 추가
+  async function addMakeup() {
+    if (!makeupModal || !makeupDate) return;
+    const entry = roster.find((r) => r.studentCode === makeupModal.studentCode);
+    if (!entry) return;
+    const sessions = entry.classSessions ?? [];
+    const note = [makeupTime, makeupNote].filter(Boolean).join(" | ");
+    const newSession = { date: makeupDate, status: "makeup" as const, makeupDone: false, attendedCount: 1, note } as any;
+    const newSessions = [...sessions.filter((s) => s.date !== makeupDate), newSession]
+      .sort((a,b) => b.date.localeCompare(a.date));
+    const updated = roster.map((r) =>
+      r.studentCode === makeupModal.studentCode ? { ...r, classSessions: newSessions } : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+    setMakeupModal(null);
+    setMakeupDate(""); setMakeupTime(""); setMakeupNote("");
+    setNotice(`${makeupModal.name} 보충 수업 등록 완료`);
+    setTimeout(() => setNotice(""), 3000);
+  }
+
+  // 보충 완료 토글
+  async function toggleMakeupDone(entry: RosterEntry, dateStr: string) {
+    const updated = roster.map((r) =>
+      r.studentCode === entry.studentCode
+        ? { ...r, classSessions: (r.classSessions ?? []).map((s) =>
+            s.date === dateStr ? { ...s, makeupDone: !s.makeupDone } : s) }
+        : r
     );
     setRoster(updated);
     await rosterStore.saveRoster(updated);
@@ -4019,9 +4063,10 @@ function AttendanceBoard() {
       const sessions = [...(entry.classSessions ?? [])];
       for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-        const dow = ["sun","mon","tue","wed","thu","fri","sat"][new Date(year, month-1, d).getDay()] as DayOfWeek;
-        if ((lessonDays[dow] ?? 0) > 0 && !sessions.find((s) => s.date === dateStr)) {
-          sessions.push({ date: dateStr, status: "normal", attended: true, attendedCount: 1 } as any);
+        const dow = DOW_MAP[new Date(year, month-1, d).getDay()];
+        const times = lessonDays[dow] ?? 0;
+        if (times > 0 && !sessions.find((s) => s.date === dateStr)) {
+          sessions.push({ date: dateStr, status: "normal" as const, attended: true, attendedCount: times } as any);
         }
       }
       return { ...entry, classSessions: sessions.sort((a,b)=>b.date.localeCompare(a.date)) };
@@ -4029,7 +4074,7 @@ function AttendanceBoard() {
     setRoster(updated);
     await rosterStore.saveRoster(updated);
     setSaving(false);
-    setNotice(`${month}월 전체 수업일 출석 처리 완료`);
+    setNotice(`${month}월 전체 출석 처리 완료`);
     setTimeout(() => setNotice(""), 3000);
   }
 
@@ -4039,7 +4084,7 @@ function AttendanceBoard() {
     const result: { dateStr: string; dow: string; times: number }[] = [];
     const cur = new Date(week.start);
     while (cur <= week.end) {
-      const dow = ["sun","mon","tue","wed","thu","fri","sat"][cur.getDay()] as DayOfWeek;
+      const dow = DOW_MAP[cur.getDay()];
       const times = lessonDays[dow] ?? 0;
       if (times > 0) {
         const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`;
@@ -4050,13 +4095,11 @@ function AttendanceBoard() {
     return result;
   }
 
-  // 주별 출석 수
   function getWeekAttended(entry: RosterEntry, week: { start: Date; end: Date }) {
-    const sessions = (entry.classSessions ?? []).filter((s) => {
+    return (entry.classSessions ?? []).filter((s) => {
       const d = new Date(s.date);
       return d >= week.start && d <= week.end;
-    });
-    return sessions.reduce((sum, s) => {
+    }).reduce((sum, s) => {
       const cnt = (s as any).attendedCount ?? 0;
       if (s.status === "normal" && s.attended !== false && cnt > 0) return sum + cnt;
       if (s.status === "makeup" && s.makeupDone) return sum + (cnt || 1);
@@ -4068,36 +4111,44 @@ function AttendanceBoard() {
     return weeks.reduce((sum, w) => sum + getWeekAttended(entry, w), 0);
   }
 
-  const STATUS_COLOR: Record<string, string> = {
-    normal_attended: "#27ae60",
-    normal_uncheck: "#aaa",
-    absent: "#e74c3c",
-    cancelled: "#f39c12",
-    makeup: "#2980b9",
-  };
+  // 보충 필요 횟수
+  function getMissingCount(entry: RosterEntry) {
+    const target = getMonthTarget(entry);
+    const attended = getMonthAttended(entry);
+    // 휴강/결강 횟수
+    const lostCount = (entry.classSessions ?? []).filter((s) => {
+      const d = new Date(s.date);
+      const inMonth = d.getFullYear() === year && d.getMonth()+1 === month;
+      return inMonth && (s.status === "absent" || s.status === "cancelled");
+    }).reduce((sum, s) => sum + ((s as any).attendedCount === 0 ? 1 : 0) + (s.status === "cancelled" && !s.makeupDone ? 1 : 0), 0);
+    return Math.max(0, target - attended);
+  }
 
   function getCellInfo(entry: RosterEntry, dateStr: string) {
     const s = getSession(entry, dateStr);
-    if (!s) return { icon: "?", color: "#ddd", bg: "#f9f9f9", count: 0 };
+    if (!s) return { icon: "?", color: "#ccc", bg: "#f9f9f9", count: 0 };
     const cnt = (s as any).attendedCount ?? 0;
-    if (s.status === "normal" && s.attended !== false && cnt > 0) {
-      return { icon: cnt === 1 ? "○" : `○×${cnt}`, color: STATUS_COLOR.normal_attended, bg: "#e8f8f5", count: cnt };
-    }
-    if (s.status === "absent" || (s.status === "normal" && s.attended === false)) return { icon: "✗", color: STATUS_COLOR.absent, bg: "#fdecea", count: 0 };
-    if (s.status === "cancelled") return { icon: "△", color: STATUS_COLOR.cancelled, bg: "#fef9e7", count: 0 };
-    if (s.status === "makeup") return { icon: "보", color: STATUS_COLOR.makeup, bg: "#eaf4fb", count: cnt };
-    return { icon: "?", color: "#ddd", bg: "#f9f9f9", count: 0 };
+    if (s.status === "normal" && s.attended !== false && cnt > 0)
+      return { icon: cnt === 1 ? "○" : `○×${cnt}`, color: "#27ae60", bg: "#e8f8f5", count: cnt };
+    if (s.status === "absent" || (s.status === "normal" && s.attended === false))
+      return { icon: "✗", color: "#e74c3c", bg: "#fdecea", count: 0 };
+    if (s.status === "cancelled")
+      return { icon: "△", color: "#f39c12", bg: "#fef9e7", count: 0 };
+    if (s.status === "makeup")
+      return { icon: s.makeupDone ? "보✅" : "보", color: "#2980b9", bg: "#eaf4fb", count: s.makeupDone ? (cnt||1) : 0 };
+    return { icon: "?", color: "#ccc", bg: "#f9f9f9", count: 0 };
   }
 
   return (
     <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <h2 style={{ margin: 0 }}>📋 수강확인 현황판</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button onClick={() => { const d = new Date(year, month-2, 1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
+      {/* 헤더 */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
+        <h2 style={{ margin:0 }}>📋 수강확인 현황판</h2>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          <button onClick={() => { const d=new Date(year,month-2,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
             style={{ border:"1px solid #ddd", background:"#fff", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:16 }}>‹</button>
           <span style={{ fontWeight:700, fontSize:15 }}>{year}년 {month}월</span>
-          <button onClick={() => { const d = new Date(year, month, 1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
+          <button onClick={() => { const d=new Date(year,month,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
             style={{ border:"1px solid #ddd", background:"#fff", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:16 }}>›</button>
           <button onClick={markAllAttended} disabled={saving}
             style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#27ae60", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
@@ -4108,58 +4159,82 @@ function AttendanceBoard() {
       {notice && <p style={{ color:"#27ae60", fontWeight:600, marginBottom:8 }}>{notice}</p>}
 
       <div style={{ overflowX:"auto" }}>
-        <table style={{ borderCollapse:"collapse", fontSize:12, minWidth:700, width:"100%" }}>
+        <table style={{ borderCollapse:"collapse", fontSize:12, minWidth:750, width:"100%" }}>
           <thead>
             <tr style={{ background:"#2c3e50", color:"#fff" }}>
-              <th style={{ padding:"8px 12px", textAlign:"left", minWidth:80 }}>학생</th>
-              {weeks.map((w, i) => (
-                <th key={i} style={{ padding:"8px 6px", textAlign:"center", minWidth:120, borderLeft:"1px solid #3d4f63" }}>
+              <th style={{ padding:"8px 10px", textAlign:"left", minWidth:90 }}>학생</th>
+              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:60, background:"#1a252f" }}>목표</th>
+              {weeks.map((w,i) => (
+                <th key={i} style={{ padding:"6px 4px", textAlign:"center", minWidth:100, borderLeft:"1px solid #3d4f63", fontSize:11 }}>
                   {w.label}
                 </th>
               ))}
-              <th style={{ padding:"8px 10px", textAlign:"center", minWidth:60, borderLeft:"2px solid #fff", background:"#1a252f" }}>월소계</th>
-              <th style={{ padding:"8px 8px", textAlign:"center", minWidth:50, borderLeft:"1px solid #3d4f63", background:"#1a252f", color:"#888" }}>연소계</th>
+              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:55, borderLeft:"2px solid #fff", background:"#1a252f" }}>실제</th>
+              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:55, borderLeft:"1px solid #3d4f63", background:"#c0392b" }}>미달</th>
+              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:55, borderLeft:"1px solid #3d4f63", background:"#1a252f", fontSize:11 }}>연소계</th>
             </tr>
           </thead>
           <tbody>
             {activeRoster.map((entry, ri) => {
               const isPaused = entry.studentStatus === "paused";
-              const monthTotal = getMonthAttended(entry);
-              const lessonDays = entry.lessonDays ?? {};
+              const target = getMonthTarget(entry);
+              const attended = getMonthAttended(entry);
+              const missing = Math.max(0, target - attended);
               return (
-                <tr key={entry.studentCode} style={{ background: isPaused ? "#fff8f0" : ri%2===0 ? "#fff" : "#f9f9f9", borderBottom:"1px solid #eee" }}>
-                  <td style={{ padding:"8px 12px", fontWeight:600, color: isPaused ? "#f39c12" : "#2c3e50", whiteSpace:"nowrap" }}>
+                <tr key={entry.studentCode} style={{ background: isPaused?"#fff8f0": ri%2===0?"#fff":"#f9f9f9", borderBottom:"1px solid #eee" }}>
+                  <td style={{ padding:"8px 10px", fontWeight:600, color: isPaused?"#f39c12":"#2c3e50", whiteSpace:"nowrap" }}>
                     {entry.name}
                     {isPaused && <span style={{ fontSize:9, color:"#f39c12", marginLeft:4 }}>중단</span>}
                     <div style={{ fontSize:10, color:"#aaa", fontWeight:400 }}>
-                      {Object.keys(lessonDays).length > 0
-                        ? Object.entries(lessonDays).map(([d,n]) => `${DAY_NAMES_KO[d]}${n===2?"×2":""}`).join(" ")
-                        : "요일미설정"}
+                      {Object.entries(entry.lessonDays ?? {}).map(([d,n])=>`${DAY_NAMES_KO[d]}${n===2?"×2":""}`).join(" ") || "요일미설정"}
                     </div>
                   </td>
+                  {/* 목표 */}
+                  <td style={{ padding:"6px 4px", textAlign:"center", background:"#f0f4ff", fontWeight:700, color:"#2c3e50" }}>
+                    {target > 0 ? `${target}회` : "-"}
+                  </td>
+                  {/* 주별 */}
                   {weeks.map((w, wi) => {
                     const dates = getWeekDates(w, entry);
                     const weekCount = getWeekAttended(entry, w);
+                    // 이 주의 보충 수업
+                    const makeupSessions = (entry.classSessions ?? []).filter((s) => {
+                      const d = new Date(s.date);
+                      return d >= w.start && d <= w.end && s.status === "makeup";
+                    });
                     return (
-                      <td key={wi} style={{ padding:"4px 6px", textAlign:"center", borderLeft:"1px solid #eee", verticalAlign:"middle" }}>
-                        {dates.length === 0 ? (
-                          <span style={{ color:"#eee" }}>-</span>
+                      <td key={wi} style={{ padding:"4px 4px", textAlign:"center", borderLeft:"1px solid #eee", verticalAlign:"middle" }}>
+                        {dates.length === 0 && makeupSessions.length === 0 ? (
+                          <span style={{ color:"#eee", fontSize:11 }}>-</span>
                         ) : (
                           <>
-                            <div style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"center", marginBottom:4 }}>
-                              {dates.map(({ dateStr, dow, times }) => {
-                                const { icon, color, bg, count } = getCellInfo(entry, dateStr);
-                                return Array.from({ length: times }).map((_, ti) => (
-                                  <button key={`${dateStr}-${ti}`}
+                            <div style={{ display:"flex", flexWrap:"wrap", gap:3, justifyContent:"center", marginBottom:3 }}>
+                              {dates.map(({ dateStr, dow }) => {
+                                const { icon, color, bg } = getCellInfo(entry, dateStr);
+                                return (
+                                  <button key={dateStr}
                                     onClick={() => toggleAttendance(entry, dateStr)}
-                                    title={`${dateStr} 클릭: 없음→1회→2회→결강→삭제`}
-                                    style={{ fontSize:13, fontWeight:700, color, background:bg,
-                                      border:`1px solid ${color}`, borderRadius:6,
-                                      padding:"2px 6px", cursor:"pointer", minWidth:36 }}>
+                                    title="클릭: 없음→1회→2회→결강→삭제"
+                                    style={{ fontSize:12, fontWeight:700, color, background:bg,
+                                      border:`1px solid ${color}33`, borderRadius:6,
+                                      padding:"2px 5px", cursor:"pointer", minWidth:34 }}>
                                     {DAY_NAMES_KO[dow]}{icon}
                                   </button>
-                                ));
+                                );
                               })}
+                              {/* 보충 수업 버튼 */}
+                              {makeupSessions.map((s) => (
+                                <button key={s.date}
+                                  onClick={() => toggleMakeupDone(entry, s.date)}
+                                  title={`보충 ${s.date}${s.note ? " | "+s.note : ""} — 클릭: 완료 토글`}
+                                  style={{ fontSize:11, fontWeight:700,
+                                    color: s.makeupDone ? "#fff" : "#2980b9",
+                                    background: s.makeupDone ? "#2980b9" : "#eaf4fb",
+                                    border:"1px solid #2980b9", borderRadius:6,
+                                    padding:"2px 5px", cursor:"pointer" }}>
+                                  보{s.makeupDone ? "✅" : "○"}
+                                </button>
+                              ))}
                             </div>
                             <span style={{ fontSize:11, fontWeight:700, color:"#2980b9", background:"#eaf4fb", padding:"1px 6px", borderRadius:8 }}>
                               {weekCount}회
@@ -4169,39 +4244,107 @@ function AttendanceBoard() {
                       </td>
                     );
                   })}
-                  <td style={{ padding:"8px 10px", textAlign:"center", borderLeft:"2px solid #ddd", fontWeight:700, fontSize:14,
-                    color: monthTotal > 0 ? "#27ae60" : "#ccc", background:"#f0f9f0" }}>
-                    {monthTotal}회
+                  {/* 실제 */}
+                  <td style={{ padding:"6px 4px", textAlign:"center", borderLeft:"2px solid #ddd", fontWeight:700, fontSize:14,
+                    color: target>0 && attended>=target ? "#27ae60" : "#2980b9", background:"#f0f9f0" }}>
+                    {attended}회
                   </td>
-                  <td style={{ padding:"8px 10px", textAlign:"center", borderLeft:"1px solid #eee", color:"#ccc", fontSize:12 }}>-</td>
+                  {/* 미달 */}
+                  <td style={{ padding:"6px 4px", textAlign:"center", borderLeft:"1px solid #ddd" }}>
+                    {missing > 0 ? (
+                      <button onClick={() => setMakeupModal({ studentCode: entry.studentCode, name: entry.name, missingCount: missing })}
+                        style={{ fontSize:12, fontWeight:700, color:"#fff", background:"#e74c3c",
+                          border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer" }}>
+                        -{missing}회<br/><span style={{ fontSize:10 }}>보충↑</span>
+                      </button>
+                    ) : (
+                      <span style={{ fontSize:13, color: target>0 ? "#27ae60" : "#ccc", fontWeight:700 }}>
+                        {target>0 ? "✅" : "-"}
+                      </span>
+                    )}
+                  </td>
+                  {/* 연소계 */}
+                  <td style={{ padding:"6px 4px", textAlign:"center", color:"#aaa", fontSize:12 }}>-</td>
                 </tr>
               );
             })}
           </tbody>
           <tfoot>
             <tr style={{ background:"#2c3e50", color:"#fff", fontWeight:700 }}>
-              <td style={{ padding:"8px 12px" }}>주 소계</td>
-              {weeks.map((w, i) => (
-                <td key={i} style={{ padding:"8px 6px", textAlign:"center", borderLeft:"1px solid #3d4f63", fontSize:14 }}>
-                  {activeRoster.reduce((sum, e) => sum + getWeekAttended(e, w), 0)}회
+              <td style={{ padding:"8px 10px" }}>주 소계</td>
+              <td style={{ padding:"6px 4px", textAlign:"center", background:"#1a252f" }}>
+                {activeRoster.reduce((s,e)=>s+getMonthTarget(e),0)}회
+              </td>
+              {weeks.map((w,i) => (
+                <td key={i} style={{ padding:"6px 4px", textAlign:"center", borderLeft:"1px solid #3d4f63", fontSize:13 }}>
+                  {activeRoster.reduce((s,e)=>s+getWeekAttended(e,w),0)}회
                 </td>
               ))}
-              <td style={{ padding:"8px 10px", textAlign:"center", borderLeft:"2px solid #fff", fontSize:16, background:"#1a252f" }}>
-                {activeRoster.reduce((sum, e) => sum + getMonthAttended(e), 0)}회
+              <td style={{ padding:"6px 4px", textAlign:"center", borderLeft:"2px solid #fff", fontSize:15, background:"#1a252f" }}>
+                {activeRoster.reduce((s,e)=>s+getMonthAttended(e),0)}회
               </td>
-              <td style={{ padding:"8px 8px", textAlign:"center", borderLeft:"1px solid #3d4f63", color:"#aaa" }}>-</td>
+              <td style={{ padding:"6px 4px", textAlign:"center", color:"#e74c3c", fontWeight:700 }}>
+                -{activeRoster.reduce((s,e)=>s+Math.max(0,getMonthTarget(e)-getMonthAttended(e)),0)}회
+              </td>
+              <td style={{ padding:"6px 4px", textAlign:"center", color:"#aaa" }}>-</td>
             </tr>
           </tfoot>
         </table>
       </div>
 
-      <div style={{ marginTop:12, display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:"#666" }}>
-        <span><span style={{ color:"#27ae60", fontWeight:700 }}>월○</span> 1회출석 → 클릭→2회 → 클릭→결강 → 클릭→삭제</span>
-        <span><span style={{ color:"#e74c3c", fontWeight:700 }}>월✗</span> 결강 (클릭→삭제)</span>
-        <span><span style={{ color:"#aaa", fontWeight:700 }}>월?</span> 미확인 (클릭→출석)</span>
-        <span><span style={{ color:"#f39c12", fontWeight:700 }}>월△</span> 휴강</span>
-        <span><span style={{ color:"#2980b9", fontWeight:700 }}>월보</span> 보충완료</span>
+      {/* 범례 */}
+      <div style={{ marginTop:10, display:"flex", gap:14, flexWrap:"wrap", fontSize:11, color:"#666" }}>
+        <span><b style={{ color:"#27ae60" }}>월○</b> 1회출석</span>
+        <span><b style={{ color:"#27ae60" }}>월○×2</b> 2회출석</span>
+        <span><b style={{ color:"#e74c3c" }}>월✗</b> 결강</span>
+        <span><b style={{ color:"#f39c12" }}>월△</b> 휴강</span>
+        <span><b style={{ color:"#2980b9" }}>보○</b> 보충예정</span>
+        <span><b style={{ color:"#2980b9" }}>보✅</b> 보충완료</span>
+        <span style={{ color:"#aaa" }}>클릭: 없음→1회→2회→결강→삭제</span>
       </div>
+
+      {/* 보충 수업 등록 모달 */}
+      {makeupModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:300,
+          display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ background:"#fff", borderRadius:14, padding:24, width:340, boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
+            <h3 style={{ margin:"0 0 4px" }}>📅 보충 수업 등록</h3>
+            <p style={{ margin:"0 0 16px", fontSize:13, color:"#e74c3c", fontWeight:600 }}>
+              {makeupModal.name} — {month}월 목표 미달 <b>{makeupModal.missingCount}회</b>
+            </p>
+
+            <label style={{ fontSize:13, fontWeight:600 }}>보충 날짜</label>
+            <input type="date" value={makeupDate}
+              min={`${year}-${String(month).padStart(2,"0")}-01`}
+              onChange={(e) => setMakeupDate(e.target.value)}
+              style={{ width:"100%", padding:"7px 10px", borderRadius:6, border:"1px solid #ddd", fontSize:14, marginBottom:10 }} />
+
+            <label style={{ fontSize:13, fontWeight:600 }}>보충 시간 (선택)</label>
+            <input type="time" value={makeupTime}
+              onChange={(e) => setMakeupTime(e.target.value)}
+              style={{ width:"100%", padding:"7px 10px", borderRadius:6, border:"1px solid #ddd", fontSize:14, marginBottom:10 }} />
+
+            <label style={{ fontSize:13, fontWeight:600 }}>메모 (선택)</label>
+            <textarea value={makeupNote} onChange={(e) => setMakeupNote(e.target.value)}
+              rows={2} placeholder="예) 화요일 저녁 보충"
+              style={{ width:"100%", padding:"7px 10px", borderRadius:6, border:"1px solid #ddd",
+                fontSize:13, resize:"none", boxSizing:"border-box", marginBottom:16 }} />
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={addMakeup}
+                style={{ flex:1, padding:10, borderRadius:8, border:"none", background:"#2980b9",
+                  color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                보충 등록
+              </button>
+              <button onClick={() => { setMakeupModal(null); setMakeupDate(""); setMakeupTime(""); setMakeupNote(""); }}
+                style={{ flex:1, padding:10, borderRadius:8, border:"1px solid #ddd",
+                  background:"#fff", fontSize:14, cursor:"pointer" }}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
