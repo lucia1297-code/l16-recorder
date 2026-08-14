@@ -255,3 +255,5 @@ supabase/schema.sql
 ## 미래 기능 (인터페이스만, 미구현)
 
 `src/core/future.ts` 에 자리만 확보: ASX_CSC, HELIX, AI 분석, PDF 리포트, 성장 그래프.
+
+<!-- rebuild: 2026-08-14 12:31 -->
