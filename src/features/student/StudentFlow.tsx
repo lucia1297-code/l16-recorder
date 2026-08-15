@@ -423,22 +423,25 @@ function validateStep(step: number, d: DraftResult): string[] {
       }).filter((e) => e.includes("학교") || e.includes("학년"));
     case 3:
       return validateExamInfo(d.exam);
-    case 4:
-      return d.score == null || d.score < 0 ? ["총점을 입력하세요."] : [];
-    case 5: {
+    case 4: {
+      // 풀이시간
       const times = d.solvingTime as unknown as (number | null)[] | null;
       const arr = Array.isArray(times) ? times : [];
       const allOk = arr.length === 3 && arr.every((t) => t != null && t > 0);
       return allOk ? [] : ["⚠️ Step 1·2·3 풀이 시간을 모두 입력해야 다음으로 진행할 수 있습니다."];
     }
+    case 5:
+      return []; // 오답번호 (만점 허용)
     case 6:
-      return []; // 오답 0개 허용 (만점)
+      return []; // 3점문항 (선택)
     case 7:
-      return [];
+      return []; // 오답원인
     case 8:
-      return []; // 상세분석은 선택 입력
+      return []; // 상세분석 (선택)
     case 9:
       return validateReflection(d.reflection);
+    case 10:
+      return d.score == null || d.score < 0 ? ["총점을 확인하세요."] : [];
     default:
       return [];
   }
