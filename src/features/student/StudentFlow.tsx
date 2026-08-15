@@ -61,7 +61,7 @@ const EMPTY_DRAFT: DraftResult = {
   step: 0,
 };
 
-const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "풀이시간", "오답번호", "오답원인", "상세분석", "회고", "제출"];
+const STEPS = ["전화인증", "학생", "학교·학년", "시험", "풀이시간", "오답번호", "3점문항", "오답원인", "상세분석", "회고", "총점확인", "제출"];
 
 export default function StudentFlow({ previewMode = false }: { previewMode?: boolean }) {
   const storage = useStorage();
@@ -377,13 +377,14 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
         {step === 1 && <StepStudent draft={draft} set={set} />}
         {step === 2 && <StepSchool draft={draft} set={set} />}
         {step === 3 && <StepExam draft={draft} set={set} />}
-        {step === 4 && <StepScore draft={draft} set={set} />}
-        {step === 5 && <StepSolvingTime draft={draft} set={set} />}
-        {step === 6 && <StepWrongNumbers draft={draft} set={set} />}
+        {step === 4 && <StepSolvingTime draft={draft} set={set} />}
+        {step === 5 && <StepWrongNumbers draft={draft} set={set} />}
+        {step === 6 && <StepThreePoint draft={draft} set={set} />}
         {step === 7 && <StepWrongReasons draft={draft} set={set} />}
         {step === 8 && <StepQuestionDetail draft={draft} set={set} />}
         {step === 9 && <StepReflection draft={draft} set={set} />}
-        {step === 10 && <StepReview draft={draft} />}
+        {step === 10 && <StepScoreConfirm draft={draft} set={set} />}
+        {step === 11 && <StepReview draft={draft} />}
       </div>
 
       {step > 0 && (
@@ -955,6 +956,70 @@ function StepSolvingTime({ draft, set }: StepProps) {
   );
 }
 
+
+// ── 3점 문항 체크 단계 ──────────────────────────────
+function StepThreePoint({ draft, set }: StepProps) {
+  const maxScore = draft.exam.maxScore ?? 100;
+  const wrongNums = draft.wrongAnswers.map((w) => w.questionNo);
+
+  function toggleThree(n: number) {
+    const newWrong = draft.wrongAnswers.map((w) =>
+      w.questionNo === n ? { ...w, isThreePoint: !w.isThreePoint } : w
+    );
+    // 3점 문항 변경 시 자동 점수 재계산 (인라인)
+    const deduction = newWrong.reduce((s, w) => s + (w.isThreePoint ? 3 : 2), 0);
+    const autoScore = Math.max(0, maxScore - deduction);
+    set({ wrongAnswers: newWrong, score: autoScore });
+  }
+
+  if (wrongNums.length === 0) {
+    return (
+      <>
+        <p style={{ color: "#27ae60", fontWeight: 600, fontSize: 15 }}>
+          ✅ 오답이 없습니다! 만점입니다.
+        </p>
+        <p className="muted">다음 단계로 진행하세요.</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className="muted" style={{ marginBottom: 12 }}>
+        오답 중 <strong>3점 문항</strong>에 체크하세요.<br />
+        체크하지 않은 문항은 2점으로 계산됩니다.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {wrongNums.map((n) => {
+          const isThree = draft.wrongAnswers.find((w) => w.questionNo === n)?.isThreePoint ?? false;
+          return (
+            <button
+              key={n}
+              onClick={() => toggleThree(n)}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: isThree ? "2px solid #e74c3c" : "2px solid #ddd",
+                background: isThree ? "#fdecea" : "#f8f9fa",
+                color: isThree ? "#e74c3c" : "#555",
+                fontWeight: 700,
+                fontSize: 15,
+                cursor: "pointer",
+                minWidth: 56,
+              }}
+            >
+              {n}번{isThree ? " 3점" : ""}
+            </button>
+          );
+        })}
+      </div>
+      <p style={{ marginTop: 16, fontSize: 14, color: "#2980b9", fontWeight: 600 }}>
+        예상 점수: <strong>{draft.score ?? "?"}점</strong>
+      </p>
+    </>
+  );
+}
+
 function StepWrongNumbers({ draft, set }: StepProps) {
   const total = draft.exam.totalQuestions ?? 45;
   const maxScore = draft.exam.maxScore ?? 100;
@@ -1308,6 +1373,52 @@ function StepReflection({ draft, set }: StepProps) {
           </span>
         ))}
       </div>
+    </>
+  );
+}
+
+
+// ── 총점 확인 단계 (자동계산 후 확인) ──────────────
+function StepScoreConfirm({ draft, set }: StepProps) {
+  const autoScore = draft.score;
+  const wrongCount = draft.wrongAnswers.length;
+  const threeCount = draft.wrongAnswers.filter((w) => w.isThreePoint).length;
+  const twoCount = wrongCount - threeCount;
+  const deduction = threeCount * 3 + twoCount * 2;
+  const maxScore = draft.exam.maxScore ?? 100;
+
+  return (
+    <>
+      <div style={{
+        background: "#e8f8f5", border: "2px solid #27ae60", borderRadius: 12,
+        padding: 16, marginBottom: 16
+      }}>
+        <p style={{ fontSize: 13, color: "#27ae60", fontWeight: 600, marginBottom: 8 }}>
+          ✅ 자동 계산 결과
+        </p>
+        <p style={{ fontSize: 13, color: "#555", marginBottom: 4 }}>
+          오답 {wrongCount}문항 (3점: {threeCount}개 × 3점 + 2점: {twoCount}개 × 2점 = -{deduction}점)
+        </p>
+        <p style={{ fontSize: 22, fontWeight: 700, color: "#27ae60" }}>
+          {maxScore}점 - {deduction}점 = <strong>{autoScore}점</strong>
+        </p>
+      </div>
+      <label style={{ fontSize: 14, color: "#555", marginBottom: 6, display: "block" }}>
+        점수가 다르면 직접 수정하세요
+      </label>
+      <input
+        type="number"
+        value={draft.score ?? ""}
+        placeholder="점수 직접 입력"
+        onChange={(e) => set({ score: e.target.value === "" ? null : Number(e.target.value) })}
+        style={{
+          width: "100%", padding: "12px 16px", borderRadius: 10,
+          border: "1.5px solid #ddd", fontSize: 18, fontWeight: 700, textAlign: "center"
+        }}
+      />
+      <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+        실제 채점 결과와 다를 경우 수정 후 다음으로 진행하세요.
+      </p>
     </>
   );
 }
