@@ -259,3 +259,5 @@ supabase/schema.sql
 <!-- rebuild: 2026-08-14 12:31 -->
 
 <!-- rebuild: 2026-08-15 01:55:02 -->
+
+<!-- solapi-secret-updated: 2026-08-15 02:09:44 -->
