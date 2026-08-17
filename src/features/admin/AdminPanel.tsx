@@ -4184,17 +4184,17 @@ function AttendanceBoard() {
       <div style={{ overflowX:"auto" }}>
         <table style={{ borderCollapse:"collapse", fontSize:12, minWidth:750, width:"100%" }}>
           <thead>
-            <tr style={{ background:"#2c3e50", color:"#fff" }}>
-              <th style={{ padding:"8px 10px", textAlign:"left", minWidth:90 }}>학생</th>
-              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:60, background:"#1a252f" }}>목표</th>
+            <tr style={{ background:"#f0f4ff", color:"#1e293b", borderBottom:"2px solid #2563eb" }}>
+              <th style={{ padding:"9px 12px", textAlign:"left", minWidth:90, fontWeight:700, fontSize:13 }}>학생</th>
+              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:60, background:"#e0e7ff", color:"#3730a3", fontWeight:700, fontSize:13 }}>목표</th>
               {weeks.map((w,i) => (
-                <th key={i} style={{ padding:"6px 4px", textAlign:"center", minWidth:100, borderLeft:"1px solid #3d4f63", fontSize:11 }}>
+                <th key={i} style={{ padding:"7px 6px", textAlign:"center", minWidth:100, borderLeft:"1px solid #cbd5e1", fontSize:11, fontWeight:600, color:"#475569" }}>
                   {w.label}
                 </th>
               ))}
-              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:55, borderLeft:"2px solid #fff", background:"#1a252f" }}>실제</th>
-              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:55, borderLeft:"1px solid #3d4f63", background:"#c0392b" }}>미달</th>
-              <th style={{ padding:"8px 6px", textAlign:"center", minWidth:55, borderLeft:"1px solid #3d4f63", background:"#1a252f", fontSize:11 }}>연소계</th>
+              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:55, borderLeft:"2px solid #2563eb", background:"#dcfce7", color:"#166534", fontWeight:700, fontSize:13 }}>실제</th>
+              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:55, borderLeft:"1px solid #cbd5e1", background:"#fee2e2", color:"#991b1b", fontWeight:700, fontSize:13 }}>미달</th>
+              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:55, borderLeft:"1px solid #cbd5e1", background:"#f1f5f9", color:"#64748b", fontSize:11, fontWeight:600 }}>연소계</th>
             </tr>
           </thead>
           <tbody>
@@ -4302,8 +4302,8 @@ function AttendanceBoard() {
             })}
           </tbody>
           <tfoot>
-            <tr style={{ background:"#2c3e50", color:"#fff", fontWeight:700 }}>
-              <td style={{ padding:"8px 10px" }}>주 소계</td>
+            <tr style={{ background:"#f0f4ff", color:"#1e293b", fontWeight:700, borderTop:"2px solid #2563eb" }}>
+              <td style={{ padding:"8px 12px", fontSize:12, color:"#475569", fontWeight:600 }}>주 소계</td>
               <td style={{ padding:"6px 4px", textAlign:"center", background:"#1a252f" }}>
                 {activeRoster.reduce((s,e)=>s+getMonthTarget(e),0)}회
               </td>
