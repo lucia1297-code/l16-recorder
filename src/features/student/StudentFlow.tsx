@@ -128,7 +128,8 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   useEffect(() => {
     storage.loadDraft().then((d) => {
       if (d) {
-        setDraft(d);
+        // 항상 인증 단계(step 0)부터 시작 - 저장된 step 무시
+        setDraft({ ...d, step: 0 });
         if (d.phone) setPhone(d.phone);
       }
       setLoaded(true);
@@ -137,7 +138,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
 
   // 자동 저장 (변경 시마다)
   useEffect(() => {
-    if (loaded) storage.saveDraft(draft);
+    if (loaded) storage.saveDraft({ ...draft, step: 0 }); // 항상 step 0으로 저장
   }, [draft, loaded, storage]);
 
   function canProceedStep0(): boolean {
