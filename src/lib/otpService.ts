@@ -52,6 +52,7 @@ export class OtpService {
     const session = createOtpSession(phone, new Date());
     this.saveSession(session);
     localStorage.removeItem(this.verifiedKey(phone));
+    sessionStorage.removeItem(this.verifiedKey(phone));
 
     try {
       await this.sms.send(
@@ -72,12 +73,19 @@ export class OtpService {
     const result = verifyOtpCode(session, code, new Date());
     this.saveSession(result.session);
     if (result.ok) {
-      localStorage.setItem(this.verifiedKey(phone), "1");
+      // sessionStorage: 탭/창 닫으면 자동 삭제 → 재접속 시 반드시 재인증
+      sessionStorage.setItem(this.verifiedKey(phone), "1");
+      // localStorage의 이전 인증 기록 제거
+      localStorage.removeItem(this.verifiedKey(phone));
+    sessionStorage.removeItem(this.verifiedKey(phone));
     }
     return { ok: result.ok, error: result.error };
   }
 
   isVerified(phone: string): boolean {
-    return localStorage.getItem(this.verifiedKey(phone)) === "1";
+    // localStorage 이전 기록도 제거 (마이그레이션)
+    localStorage.removeItem(this.verifiedKey(phone));
+    sessionStorage.removeItem(this.verifiedKey(phone));
+    return sessionStorage.getItem(this.verifiedKey(phone)) === "1";
   }
 }
