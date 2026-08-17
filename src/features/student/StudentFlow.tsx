@@ -75,6 +75,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   const [phone, setPhone] = useState("");
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
   const [matched, setMatched] = useState(false);
   const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment">("select");
 
@@ -140,6 +141,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
 
   function canProceedStep0(): boolean {
     if (!phoneVerified) return false;
+    if (!rosterLoaded) return false; // 명부 로딩 중에는 진행 불가
     if (roster.length === 0) return true; // 명부 미등록 상태 = 자유 진행 허용
     return matched;
   }
