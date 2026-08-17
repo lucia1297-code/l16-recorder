@@ -114,6 +114,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   function refreshRoster() {
     return rosterStore.listRoster().then((r) => {
       setRoster(r);
+      setRosterLoaded(true);
       return r;
     });
   }
