@@ -116,7 +116,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "attendance"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -159,8 +159,8 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")} style={{ background: tab === "sms" ? "#e74c3c" : "", color: tab === "sms" ? "#fff" : "" }}>
           문자알림
         </button>
-        <button className={tab === "attendance" ? "on" : ""} onClick={() => setTab("attendance")} style={{ background: tab === "attendance" ? "#2980b9" : "", color: tab === "attendance" ? "#fff" : "" }}>
-          수강확인
+        <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")} style={{ background: tab === "examprep" ? "#7c3aed" : "", color: tab === "examprep" ? "#fff" : "" }}>
+          시험준비
         </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
@@ -180,7 +180,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "submit" && <SubmissionStatus rows={rows} />}
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
-        {tab === "attendance" && <AttendanceBoard />}
+        {tab === "examprep" && <ExamPrepPanel />}
       </div>
     </div>
   );
@@ -3968,540 +3968,377 @@ function getWeeksInMonth(year: number, month: number): { start: Date; end: Date;
   return weeks;
 }
 
-function AttendanceBoard() {
+// ═══════════════════════════════════════════════════════
+// 시험 준비 패널
+// ═══════════════════════════════════════════════════════
+
+interface ExamSchedule {
+  id: string;
+  studentCode: string;
+  semester: "1" | "2";               // 1학기 / 2학기
+  examType: "midterm" | "final";     // 중간 / 기말
+  subject: string;                   // 과목명
+  examStart: string;                 // 시험 시작일
+  examEnd: string;                   // 시험 종료일
+  englishExamDate: string;           // 영어 시험일
+  examRange: string;                 // 시험 범위
+  reportDeadline: string;            // 직보일 (성적 보고 기한)
+  nextLessonDate: string;            // 시험 후 다음 수업 예정일
+  score: number | null;              // 시험 결과 점수
+  examPaperReceived: boolean;        // 시험지 수령 여부
+  completed: boolean;                // 시험 완료 여부
+  memo: string;
+}
+
+function examId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+const EMPTY_EXAM: Omit<ExamSchedule, "id" | "studentCode"> = {
+  semester: "1",
+  examType: "midterm",
+  subject: "영어",
+  examStart: "",
+  examEnd: "",
+  englishExamDate: "",
+  examRange: "",
+  reportDeadline: "",
+  nextLessonDate: "",
+  score: null,
+  examPaperReceived: false,
+  completed: false,
+  memo: "",
+};
+
+function ExamPrepPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [exams, setExams] = useState<ExamSchedule[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editingExam, setEditingExam] = useState<ExamSchedule | null>(null);
+  const [form, setForm] = useState<Omit<ExamSchedule, "id" | "studentCode">>(EMPTY_EXAM);
+  const [viewFilter, setViewFilter] = useState<"all" | "upcoming" | "completed">("upcoming");
   const [notice, setNotice] = useState("");
-  const [viewMode, setViewMode] = useState<"month" | "week">("month");
-  const [makeupModal, setMakeupModal] = useState<{
-    studentCode: string; name: string; missingCount: number;
-  } | null>(null);
-  const [makeupDate, setMakeupDate] = useState("");
-  const [makeupTime, setMakeupTime] = useState("");
-  const [makeupNote, setMakeupNote] = useState("");
-  const [calMonth, setCalMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-  });
 
-  useEffect(() => { rosterStore.listRoster().then(setRoster); }, [rosterStore]);
+  useEffect(() => {
+    rosterStore.listRoster().then(setRoster);
+    const saved = localStorage.getItem("l16.examSchedules");
+    if (saved) setExams(JSON.parse(saved));
+  }, [rosterStore]);
 
-  const [year, month] = calMonth.split("-").map(Number);
-  const weeks = getWeeksInMonth(year, month);
-
-  // 주간 뷰: 현재 날짜가 속한 주 계산
-  const today = new Date();
-  const currentWeekIdx = weeks.findIndex(w =>
-    today >= w.start && today <= w.end
-  );
-  const displayWeeks = viewMode === "week"
-    ? [weeks[currentWeekIdx >= 0 ? currentWeekIdx : 0]].filter(Boolean)
-    : weeks;
-
-  // 주간 뷰에서 이전/다음 주 이동
-  const [weekOffset, setWeekOffset] = useState(0);
-  const weekViewStart = new Date(today);
-  weekViewStart.setDate(weekViewStart.getDate() - weekViewStart.getDay() + 1 + weekOffset * 7); // 월요일
-  const weekViewEnd = new Date(weekViewStart);
-  weekViewEnd.setDate(weekViewStart.getDate() + 6);
-  const weekViewDays = Array.from({length: 7}, (_, i) => {
-    const d = new Date(weekViewStart);
-    d.setDate(d.getDate() + i);
-    return d;
-  });
-  const DAY_NAMES_KO: Record<string,string> = {mon:"월",tue:"화",wed:"수",thu:"목",fri:"금",sat:"토",sun:"일"};
-  const DOW_MAP: Record<number,DayOfWeek> = {0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat"};
-  const activeRoster = roster.filter((r) => (r.studentStatus ?? "active") !== "withdrawn");
-
-  // 신규 학생 판정 (등록 후 30일 이내)
-  function isNewStudent(registeredAt?: string): boolean {
-    if (!registeredAt) return false;
-    const days = (Date.now() - new Date(registeredAt).getTime()) / 86400000;
-    return days <= 30;
+  function saveExams(newExams: ExamSchedule[]) {
+    setExams(newExams);
+    localStorage.setItem("l16.examSchedules", JSON.stringify(newExams));
   }
 
-  // 월 목표 수업수 계산 (신규 학생은 등록일 이후부터 계산)
-  function getMonthTarget(entry: RosterEntry): number {
-    const lessonDays = entry.lessonDays ?? {};
-    const daysInMonth = new Date(year, month, 0).getDate();
-    // 신규 학생: 등록일이 해당 월에 있으면 등록일부터 계산
-    const regDate = entry.registeredAt ? new Date(entry.registeredAt) : null;
-    const regInMonth = regDate && regDate.getFullYear() === year && regDate.getMonth()+1 === month;
-    const startDay = regInMonth ? regDate!.getDate() : 1;
-    let total = 0;
-    for (let d = startDay; d <= daysInMonth; d++) {
-      const dow = DOW_MAP[new Date(year, month-1, d).getDay()];
-      total += lessonDays[dow] ?? 0;
-    }
-    return total;
+  function daysUntil(dateStr: string): number {
+    if (!dateStr) return 999;
+    return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000);
   }
 
-  function getSession(entry: RosterEntry, dateStr: string) {
-    return (entry.classSessions ?? []).find((s) => s.date === dateStr);
-  }
-
-  // 클릭 사이클: 없음 → 1회 → 2회 → 결강 → 없음
-  async function toggleAttendance(entry: RosterEntry, dateStr: string) {
-    const sessions = entry.classSessions ?? [];
-    const existing = sessions.find((s) => s.date === dateStr);
-    const curCount = existing ? ((existing as any).attendedCount ?? (existing.status === "normal" && existing.attended !== false ? 1 : 0)) : 0;
-    const isAbsent = existing && (existing.status === "absent" || (existing.status === "normal" && existing.attended === false));
-    let newSessions;
-    if (!existing) {
-      newSessions = [...sessions, { date: dateStr, status: "normal" as const, attended: true, attendedCount: 1 } as any];
-    } else if (!isAbsent && curCount === 1) {
-      newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attendedCount: 2, attended: true, status: "normal" as const } : s);
-    } else if (!isAbsent && curCount >= 2) {
-      newSessions = sessions.map((s) => s.date === dateStr ? { ...s, attended: false, status: "absent" as const, attendedCount: 0 } : s);
+  function addOrUpdateExam() {
+    if (!selectedStudent) return;
+    if (editingExam) {
+      const updated = exams.map(e => e.id === editingExam.id ? { ...editingExam, ...form } : e);
+      saveExams(updated);
     } else {
-      newSessions = sessions.filter((s) => s.date !== dateStr);
+      const newExam: ExamSchedule = { id: examId(), studentCode: selectedStudent, ...form };
+      saveExams([...exams, newExam]);
     }
-    const updated = roster.map((r) =>
-      r.studentCode === entry.studentCode
-        ? { ...r, classSessions: (newSessions as any[]).sort((a,b)=>b.date.localeCompare(a.date)) }
-        : r
-    );
-    setRoster(updated);
-    await rosterStore.saveRoster(updated);
+    setShowForm(false);
+    setEditingExam(null);
+    setForm(EMPTY_EXAM);
+    setNotice("저장됐습니다.");
+    setTimeout(() => setNotice(""), 2000);
   }
 
-  // 보충 수업 추가
-  async function addMakeup() {
-    if (!makeupModal || !makeupDate) return;
-    const entry = roster.find((r) => r.studentCode === makeupModal.studentCode);
-    if (!entry) return;
-    const sessions = entry.classSessions ?? [];
-    const note = [makeupTime, makeupNote].filter(Boolean).join(" | ");
-    const newSession = { date: makeupDate, status: "makeup" as const, makeupDone: false, attendedCount: 1, note } as any;
-    const newSessions = [...sessions.filter((s) => s.date !== makeupDate), newSession]
-      .sort((a,b) => b.date.localeCompare(a.date));
-    const updated = roster.map((r) =>
-      r.studentCode === makeupModal.studentCode ? { ...r, classSessions: newSessions } : r
-    );
-    setRoster(updated);
-    await rosterStore.saveRoster(updated);
-    setMakeupModal(null);
-    setMakeupDate(""); setMakeupTime(""); setMakeupNote("");
-    setNotice(`${makeupModal.name} 보충 수업 등록 완료`);
-    setTimeout(() => setNotice(""), 3000);
+  function deleteExam(id: string) {
+    if (!confirm("삭제하시겠습니까?")) return;
+    saveExams(exams.filter(e => e.id !== id));
   }
 
-  // 보충 완료 토글
-  async function toggleMakeupDone(entry: RosterEntry, dateStr: string) {
-    const updated = roster.map((r) =>
-      r.studentCode === entry.studentCode
-        ? { ...r, classSessions: (r.classSessions ?? []).map((s) =>
-            s.date === dateStr ? { ...s, makeupDone: !s.makeupDone } : s) }
-        : r
-    );
-    setRoster(updated);
-    await rosterStore.saveRoster(updated);
+  function updateResult(id: string, field: "score" | "examPaperReceived" | "completed", value: any) {
+    const updated = exams.map(e => e.id === id ? { ...e, [field]: value } : e);
+    saveExams(updated);
   }
 
-  // 전체 출석 처리
-  async function markAllAttended() {
-    setSaving(true);
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const updated = roster.map((entry) => {
-      const lessonDays = entry.lessonDays ?? {};
-      const sessions = [...(entry.classSessions ?? [])];
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-        const dow = DOW_MAP[new Date(year, month-1, d).getDay()];
-        const times = lessonDays[dow] ?? 0;
-        if (times > 0 && !sessions.find((s) => s.date === dateStr)) {
-          sessions.push({ date: dateStr, status: "normal" as const, attended: true, attendedCount: times } as any);
-        }
-      }
-      return { ...entry, classSessions: sessions.sort((a,b)=>b.date.localeCompare(a.date)) };
-    });
-    setRoster(updated);
-    await rosterStore.saveRoster(updated);
-    setSaving(false);
-    setNotice(`${month}월 전체 출석 처리 완료`);
-    setTimeout(() => setNotice(""), 3000);
-  }
+  // 필터된 시험 목록
+  const today = new Date().toISOString().slice(0, 10);
+  const filteredExams = exams.filter(ex => {
+    if (selectedStudent && ex.studentCode !== selectedStudent) return false;
+    if (viewFilter === "upcoming") return !ex.completed;
+    if (viewFilter === "completed") return ex.completed;
+    return true;
+  }).sort((a, b) => {
+    if (!a.englishExamDate) return 1;
+    if (!b.englishExamDate) return -1;
+    return a.englishExamDate.localeCompare(b.englishExamDate);
+  });
 
-  // 주별 날짜 목록
-  function getWeekDates(week: { start: Date; end: Date }, entry: RosterEntry) {
-    const lessonDays = entry.lessonDays ?? {};
-    const result: { dateStr: string; dow: string; times: number }[] = [];
-    const cur = new Date(week.start);
-    while (cur <= week.end) {
-      const dow = DOW_MAP[cur.getDay()];
-      const times = lessonDays[dow] ?? 0;
-      if (times > 0) {
-        const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`;
-        result.push({ dateStr, dow, times });
-      }
-      cur.setDate(cur.getDate() + 1);
-    }
-    return result;
-  }
-
-  function getWeekAttended(entry: RosterEntry, week: { start: Date; end: Date }) {
-    return (entry.classSessions ?? []).filter((s) => {
-      const d = new Date(s.date);
-      return d >= week.start && d <= week.end;
-    }).reduce((sum, s) => {
-      const cnt = (s as any).attendedCount ?? 0;
-      if (s.status === "normal" && s.attended !== false && cnt > 0) return sum + cnt;
-      if (s.status === "makeup" && s.makeupDone) return sum + (cnt || 1);
-      return sum;
-    }, 0);
-  }
-
-  function getMonthAttended(entry: RosterEntry) {
-    return weeks.reduce((sum, w) => sum + getWeekAttended(entry, w), 0);
-  }
-
-  // 보충 필요 횟수
-  function getMissingCount(entry: RosterEntry) {
-    const target = getMonthTarget(entry);
-    const attended = getMonthAttended(entry);
-    // 휴강/결강 횟수
-    const lostCount = (entry.classSessions ?? []).filter((s) => {
-      const d = new Date(s.date);
-      const inMonth = d.getFullYear() === year && d.getMonth()+1 === month;
-      return inMonth && (s.status === "absent" || s.status === "cancelled");
-    }).reduce((sum, s) => sum + ((s as any).attendedCount === 0 ? 1 : 0) + (s.status === "cancelled" && !s.makeupDone ? 1 : 0), 0);
-    return Math.max(0, target - attended);
-  }
-
-  function getCellInfo(entry: RosterEntry, dateStr: string) {
-    const s = getSession(entry, dateStr);
-    if (!s) return { icon: "?", color: "#ccc", bg: "#f9f9f9", count: 0 };
-    const cnt = (s as any).attendedCount ?? 0;
-    if (s.status === "normal" && s.attended !== false && cnt > 0)
-      return { icon: cnt === 1 ? "○" : `○×${cnt}`, color: "#27ae60", bg: "#e8f8f5", count: cnt };
-    if (s.status === "absent" || (s.status === "normal" && s.attended === false))
-      return { icon: "✗", color: "#e74c3c", bg: "#fdecea", count: 0 };
-    if (s.status === "cancelled")
-      return { icon: "△", color: "#f39c12", bg: "#fef9e7", count: 0 };
-    if (s.status === "makeup")
-      return { icon: s.makeupDone ? "보✅" : "보", color: "#2980b9", bg: "#eaf4fb", count: s.makeupDone ? (cnt||1) : 0 };
-    return { icon: "?", color: "#ccc", bg: "#f9f9f9", count: 0 };
-  }
+  const activeRoster = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
 
   return (
     <div className="card">
       {/* 헤더 */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
-        <h2 style={{ margin:0 }}>📋 수강확인 현황판</h2>
-        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-          <button onClick={() => { const d=new Date(year,month-2,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
-            style={{ border:"1px solid #ddd", background:"#fff", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:16 }}>‹</button>
-          <span style={{ fontWeight:700, fontSize:15 }}>{year}년 {month}월</span>
-          <button onClick={() => { const d=new Date(year,month,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
-            style={{ border:"1px solid #ddd", background:"#fff", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:16 }}>›</button>
-          {/* 월/주 전환 버튼 */}
-          <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
-            <button onClick={() => setViewMode("month")}
-              style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:13, fontWeight:700, cursor:"pointer",
-                background: viewMode === "month" ? "#2563eb" : "transparent",
-                color: viewMode === "month" ? "#fff" : "#64748b" }}>
-              월간
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <h2 style={{ margin:0, color:"#7c3aed" }}>📝 시험 준비 현황판</h2>
+        <button onClick={() => { setShowForm(true); setEditingExam(null); setForm(EMPTY_EXAM); }}
+          style={{ padding:"7px 16px", background:"#7c3aed", color:"#fff", border:"none", borderRadius:8, fontWeight:700, fontSize:13, cursor:"pointer" }}>
+          + 시험 일정 추가
+        </button>
+      </div>
+
+      {notice && <p style={{ color:"#7c3aed", fontWeight:600, marginBottom:10 }}>{notice}</p>}
+
+      {/* 필터 */}
+      <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
+        <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
+          style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }}>
+          <option value="">전체 학생</option>
+          {activeRoster.map(r => (
+            <option key={r.studentCode} value={r.studentCode}>{r.name} ({r.school})</option>
+          ))}
+        </select>
+        <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
+          {(["upcoming", "all", "completed"] as const).map(f => (
+            <button key={f} onClick={() => setViewFilter(f)}
+              style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
+                background: viewFilter === f ? "#7c3aed" : "transparent",
+                color: viewFilter === f ? "#fff" : "#64748b" }}>
+              {f === "upcoming" ? "진행중" : f === "completed" ? "완료" : "전체"}
             </button>
-            <button onClick={() => setViewMode("week")}
-              style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:13, fontWeight:700, cursor:"pointer",
-                background: viewMode === "week" ? "#2563eb" : "transparent",
-                color: viewMode === "week" ? "#fff" : "#64748b" }}>
-              주간
-            </button>
-          </div>
-          <button onClick={markAllAttended} disabled={saving}
-            style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#27ae60", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-            {saving ? "처리 중…" : "✅ 전체 출석 처리"}
-          </button>
+          ))}
         </div>
       </div>
-      {notice && <p style={{ color:"#27ae60", fontWeight:600, marginBottom:8 }}>{notice}</p>}
 
-      {/* ── 주간 뷰 ── */}
-      {viewMode === "week" && (
-        <div>
-          {/* 주간 네비게이션 */}
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-            <button onClick={() => setWeekOffset(w => w-1)}
-              style={{ border:"1px solid #e2e8f0", background:"#fff", borderRadius:7, width:30, height:30, cursor:"pointer", fontSize:14, color:"#64748b" }}>‹</button>
-            <span style={{ fontWeight:700, fontSize:14, color:"#1e293b" }}>
-              {weekViewStart.getMonth()+1}/{weekViewStart.getDate()} ~ {weekViewEnd.getMonth()+1}/{weekViewEnd.getDate()}
-              {weekOffset === 0 && <span style={{ marginLeft:8, fontSize:11, color:"#2563eb", fontWeight:600 }}>이번 주</span>}
-            </span>
-            <button onClick={() => setWeekOffset(w => w+1)}
-              style={{ border:"1px solid #e2e8f0", background:"#fff", borderRadius:7, width:30, height:30, cursor:"pointer", fontSize:14, color:"#64748b" }}>›</button>
-            <button onClick={() => setWeekOffset(0)}
-              style={{ border:"1px solid #2563eb", background:"#eff6ff", borderRadius:7, padding:"4px 10px", cursor:"pointer", fontSize:12, color:"#2563eb", fontWeight:600 }}>오늘</button>
-          </div>
+      {/* 시험 일정 카드 목록 */}
+      {filteredExams.length === 0 ? (
+        <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
+          <p style={{ fontSize:32, marginBottom:8 }}>📅</p>
+          <p>등록된 시험 일정이 없습니다.</p>
+          <p style={{ fontSize:12 }}>+ 시험 일정 추가 버튼을 눌러 등록하세요.</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {filteredExams.map(ex => {
+            const student = roster.find(r => r.studentCode === ex.studentCode);
+            const daysLeft = daysUntil(ex.englishExamDate);
+            const isUrgent = daysLeft <= 7 && daysLeft >= 0;
+            const isPast = daysLeft < 0;
+            return (
+              <div key={ex.id} style={{
+                border: `1.5px solid ${ex.completed ? "#d1fae5" : isUrgent ? "#fca5a5" : "#e2e8f0"}`,
+                borderRadius:12, overflow:"hidden",
+                background: ex.completed ? "#f0fdf4" : isUrgent ? "#fff5f5" : "#fff",
+                opacity: ex.completed ? 0.85 : 1,
+              }}>
+                {/* 카드 헤더 */}
+                <div style={{ padding:"10px 14px", background: ex.completed ? "#d1fae5" : isUrgent ? "#fee2e2" : "#f8fafc",
+                  borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                    <span style={{ fontWeight:700, fontSize:14, color:"#1e293b" }}>
+                      {student?.name ?? "?"}
+                    </span>
+                    <span style={{ fontSize:11, color:"#64748b" }}>{student?.school}</span>
+                    <span style={{ fontSize:11, background:"#ede9fe", color:"#7c3aed", padding:"1px 7px", borderRadius:10, fontWeight:600 }}>
+                      {ex.semester}학기 {ex.examType === "midterm" ? "중간" : "기말"}
+                    </span>
+                    <span style={{ fontSize:11, background:"#f1f5f9", color:"#475569", padding:"1px 7px", borderRadius:10 }}>
+                      {ex.subject}
+                    </span>
+                    {ex.completed
+                      ? <span style={{ fontSize:11, background:"#d1fae5", color:"#166534", padding:"1px 7px", borderRadius:10, fontWeight:700 }}>✅ 완료</span>
+                      : isUrgent
+                        ? <span style={{ fontSize:12, background:"#ef4444", color:"#fff", padding:"2px 8px", borderRadius:10, fontWeight:700 }}>D-{daysLeft}</span>
+                        : !isPast && daysLeft < 30
+                          ? <span style={{ fontSize:11, color:"#f97316", fontWeight:700 }}>D-{daysLeft}</span>
+                          : null}
+                  </div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={() => { setEditingExam(ex); setForm({...ex}); setShowForm(true); selectedStudent || setSelectedStudent(ex.studentCode); }}
+                      style={{ fontSize:11, padding:"3px 10px", border:"1px solid #e2e8f0", borderRadius:6, cursor:"pointer", background:"#fff" }}>수정</button>
+                    <button onClick={() => deleteExam(ex.id)}
+                      style={{ fontSize:11, padding:"3px 10px", border:"1px solid #fca5a5", borderRadius:6, cursor:"pointer", background:"#fff", color:"#ef4444" }}>삭제</button>
+                  </div>
+                </div>
 
-          {/* 날짜별 컬럼 */}
-          <div style={{ display:"flex", gap:8, overflowX:"auto" }}>
-            {weekViewDays.map((day, di) => {
-              const DAY_NAMES_KO: Record<string,string> = {mon:"월",tue:"화",wed:"수",thu:"목",fri:"금",sat:"토",sun:"일"};
-              const DOW_MAP: Record<number,DayOfWeek> = {0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat"};
-              const dow = DOW_MAP[day.getDay()];
-              const dateStr = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,"0")}-${String(day.getDate()).padStart(2,"0")}`;
-              const isToday = day.toDateString() === new Date().toDateString();
-              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-              const studentsOnDay = activeRoster.filter(e => (e.lessonDays??{})[dow]);
-              return (
-                <div key={di} style={{
-                  minWidth: 120, flex:1, borderRadius:10,
-                  border: isToday ? "2px solid #2563eb" : "1px solid #e2e8f0",
-                  background: isToday ? "#eff6ff" : isWeekend ? "#f8fafc" : "#fff",
-                  overflow:"hidden"
-                }}>
-                  {/* 날짜 헤더 */}
-                  <div style={{
-                    padding:"8px 10px", textAlign:"center",
-                    background: isToday ? "#2563eb" : isWeekend ? "#f1f5f9" : "#f8fafc",
-                    borderBottom:"1px solid #e2e8f0"
-                  }}>
-                    <div style={{ fontSize:11, fontWeight:600, color: isToday ? "#fff" : "#64748b" }}>
-                      {["일","월","화","수","목","금","토"][day.getDay()]}
+                {/* 카드 내용 */}
+                <div style={{ padding:"12px 14px", display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:"8px 16px" }}>
+                  {[
+                    { label:"시험기간", value: ex.examStart && ex.examEnd ? `${ex.examStart} ~ ${ex.examEnd}` : "-" },
+                    { label:"영어 시험일", value: ex.englishExamDate || "-", highlight: isUrgent },
+                    { label:"직보일", value: ex.reportDeadline || "-" },
+                    { label:"남은 날짜", value: ex.englishExamDate ? (daysLeft < 0 ? `D+${Math.abs(daysLeft)}` : `D-${daysLeft}`) : "-",
+                      color: daysLeft <= 3 ? "#ef4444" : daysLeft <= 7 ? "#f97316" : "#2563eb" },
+                    { label:"시험 범위", value: ex.examRange || "-" },
+                    { label:"다음 수업", value: ex.nextLessonDate || "-" },
+                  ].map(item => (
+                    <div key={item.label}>
+                      <div style={{ fontSize:10, color:"#94a3b8", fontWeight:600, marginBottom:2 }}>{item.label}</div>
+                      <div style={{ fontSize:13, fontWeight: item.highlight ? 700 : 500, color: item.color ?? "#1e293b" }}>{item.value}</div>
                     </div>
-                    <div style={{ fontSize:18, fontWeight:700, color: isToday ? "#fff" : "#1e293b" }}>
-                      {day.getDate()}
-                    </div>
+                  ))}
+                </div>
+
+                {/* 시험 결과 섹션 */}
+                <div style={{ padding:"10px 14px", borderTop:"1px solid #f1f5f9", background:"#fafafa",
+                  display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:"#475569" }}>시험 결과:</span>
+
+                  {/* 점수 입력 */}
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <span style={{ fontSize:12, color:"#64748b" }}>점수</span>
+                    <input type="number" placeholder="점수"
+                      value={ex.score ?? ""}
+                      onChange={e => updateResult(ex.id, "score", e.target.value ? Number(e.target.value) : null)}
+                      style={{ width:70, padding:"4px 8px", borderRadius:6, border:"1px solid #e2e8f0", fontSize:13, fontWeight:700, textAlign:"center" }} />
+                    {ex.score !== null && (
+                      <span style={{ fontSize:13, fontWeight:700, color: ex.score >= 90 ? "#166534" : ex.score >= 70 ? "#2563eb" : "#ef4444" }}>
+                        ({ex.score}점)
+                      </span>
+                    )}
                   </div>
-                  {/* 수업 학생 목록 */}
-                  <div style={{ padding:"6px 6px", display:"flex", flexDirection:"column", gap:4 }}>
-                    {studentsOnDay.length === 0 ? (
-                      <p style={{ fontSize:11, color:"#cbd5e1", textAlign:"center", margin:"8px 0" }}>수업 없음</p>
-                    ) : studentsOnDay.map(entry => {
-                      const times = (entry.lessonDays??{})[dow] ?? 1;
-                      const session = (entry.classSessions??[]).find(s => s.date === dateStr);
-                      const cnt = session ? ((session as any).attendedCount ?? 0) : 0;
-                      const isAbsent = session?.status === "absent";
-                      return (
-                        <button key={entry.studentCode}
-                          onClick={() => toggleAttendance(entry, dateStr)}
-                          title="클릭: 없음→1회→2회→결강→삭제"
-                          style={{
-                            padding:"5px 8px", borderRadius:7, fontSize:11, fontWeight:700,
-                            cursor:"pointer", textAlign:"left", border:"1px solid",
-                            background: isAbsent ? "#fee2e2" : cnt > 0 ? (cnt >= 2 ? "#2563eb" : "#dcfce7") : "#f8fafc",
-                            color: isAbsent ? "#991b1b" : cnt > 0 ? (cnt >= 2 ? "#fff" : "#166534") : "#94a3b8",
-                            borderColor: isAbsent ? "#fca5a5" : cnt > 0 ? (cnt >= 2 ? "#2563eb" : "#86efac") : "#e2e8f0",
-                          }}>
-                          {entry.name}
-                          <span style={{ marginLeft:4, fontSize:10 }}>
-                            {isAbsent ? "✗결강" : cnt === 0 ? "?" : cnt >= 2 ? `○×${cnt}` : "○"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* 주간 소계 */}
-                  {studentsOnDay.length > 0 && (
-                    <div style={{ padding:"4px 8px", borderTop:"1px solid #f1f5f9", fontSize:10, color:"#94a3b8", textAlign:"right" }}>
-                      {studentsOnDay.reduce((s, e) => {
-                        const sess = (e.classSessions??[]).find(ss => ss.date === dateStr);
-                        return s + ((sess as any)?.attendedCount ?? 0);
-                      }, 0)}회 출석
-                    </div>
+
+                  {/* 시험지 수령 */}
+                  <label style={{ display:"flex", alignItems:"center", gap:5, cursor:"pointer", fontSize:12 }}>
+                    <input type="checkbox" checked={ex.examPaperReceived}
+                      onChange={e => updateResult(ex.id, "examPaperReceived", e.target.checked)}
+                      style={{ width:16, height:16 }} />
+                    <span style={{ color: ex.examPaperReceived ? "#166534" : "#ef4444", fontWeight:600 }}>
+                      {ex.examPaperReceived ? "✅ 시험지 수령" : "❌ 시험지 미수령"}
+                    </span>
+                  </label>
+
+                  {/* 완료 처리 */}
+                  <label style={{ display:"flex", alignItems:"center", gap:5, cursor:"pointer", fontSize:12 }}>
+                    <input type="checkbox" checked={ex.completed}
+                      onChange={e => updateResult(ex.id, "completed", e.target.checked)}
+                      style={{ width:16, height:16 }} />
+                    <span style={{ color: ex.completed ? "#166534" : "#64748b", fontWeight:600 }}>시험 완료</span>
+                  </label>
+
+                  {/* 시험지 미수령 알림 */}
+                  {ex.completed && !ex.examPaperReceived && (
+                    <span style={{ fontSize:11, background:"#fef3c7", color:"#d97706", padding:"2px 8px", borderRadius:8, fontWeight:600, border:"1px solid #fde68a" }}>
+                      ⚠️ 시험지 등록 요청 필요
+                    </span>
                   )}
                 </div>
-              );
-            })}
-          </div>
+
+                {/* 메모 */}
+                {ex.memo && (
+                  <div style={{ padding:"6px 14px 10px", borderTop:"1px solid #f1f5f9" }}>
+                    <span style={{ fontSize:11, color:"#94a3b8" }}>메모: </span>
+                    <span style={{ fontSize:12, color:"#475569" }}>{ex.memo}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* ── 월간 뷰 ── */}
-      {viewMode === "month" && (
-      <div style={{ overflowX:"auto" }}>
-        <table style={{ borderCollapse:"collapse", fontSize:12, minWidth:750, width:"100%" }}>
-          <thead>
-            <tr style={{ background:"#f0f4ff", color:"#1e293b", borderBottom:"2px solid #2563eb" }}>
-              <th style={{ padding:"9px 12px", textAlign:"left", minWidth:90, fontWeight:700, fontSize:13 }}>학생</th>
-              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:60, background:"#e0e7ff", color:"#3730a3", fontWeight:700, fontSize:13 }}>목표</th>
-              {weeks.map((w,i) => (
-                <th key={i} style={{ padding:"7px 6px", textAlign:"center", minWidth:100, borderLeft:"1px solid #cbd5e1", fontSize:11, fontWeight:600, color:"#475569" }}>
-                  {w.label}
-                </th>
-              ))}
-              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:55, borderLeft:"2px solid #2563eb", background:"#dcfce7", color:"#166534", fontWeight:700, fontSize:13 }}>실제</th>
-              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:55, borderLeft:"1px solid #cbd5e1", background:"#fee2e2", color:"#991b1b", fontWeight:700, fontSize:13 }}>미달</th>
-              <th style={{ padding:"9px 8px", textAlign:"center", minWidth:55, borderLeft:"1px solid #cbd5e1", background:"#f1f5f9", color:"#64748b", fontSize:11, fontWeight:600 }}>연소계</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeRoster.map((entry, ri) => {
-              const isPaused = entry.studentStatus === "paused";
-              const target = getMonthTarget(entry);
-              const attended = getMonthAttended(entry);
-              const missing = Math.max(0, target - attended);
-              return (
-                <tr key={entry.studentCode} style={{ background: isPaused?"#fff8f0": ri%2===0?"#fff":"#f9f9f9", borderBottom:"1px solid #eee" }}>
-                  <td style={{ padding:"8px 10px", fontWeight:600, color: isPaused?"#f39c12":"#2c3e50", whiteSpace:"nowrap" }}>
-                    {entry.name}
-                    {isPaused && <span style={{ fontSize:9, color:"#f39c12", marginLeft:4 }}>중단</span>}
-                    {isNewStudent(entry.registeredAt) && (
-                      <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
-                        borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
-                    )}
-                    <div style={{ fontSize:10, color:"#aaa", fontWeight:400 }}>
-                      {Object.entries(entry.lessonDays ?? {}).map(([d,n])=>`${DAY_NAMES_KO[d]}${n===2?"×2":""}`).join(" ") || "요일미설정"}
-                    </div>
-                    {isNewStudent(entry.registeredAt) && entry.registeredAt && (
-                      <div style={{ fontSize:10, color:"#e74c3c", fontWeight:600 }}>
-                        등록 D+{Math.floor((Date.now()-new Date(entry.registeredAt).getTime())/86400000)}일
-                      </div>
-                    )}
-                  </td>
-                  {/* 목표 */}
-                  <td style={{ padding:"6px 4px", textAlign:"center", background:"#f0f4ff", fontWeight:700, color:"#2c3e50" }}>
-                    {target > 0 ? `${target}회` : "-"}
-                  </td>
-                  {/* 주별 */}
-                  {weeks.map((w, wi) => {
-                    const dates = getWeekDates(w, entry);
-                    const weekCount = getWeekAttended(entry, w);
-                    // 이 주의 보충 수업
-                    const makeupSessions = (entry.classSessions ?? []).filter((s) => {
-                      const d = new Date(s.date);
-                      return d >= w.start && d <= w.end && s.status === "makeup";
-                    });
-                    return (
-                      <td key={wi} style={{ padding:"4px 4px", textAlign:"center", borderLeft:"1px solid #eee", verticalAlign:"middle" }}>
-                        {dates.length === 0 && makeupSessions.length === 0 ? (
-                          <span style={{ color:"#eee", fontSize:11 }}>-</span>
-                        ) : (
-                          <>
-                            <div style={{ display:"flex", flexWrap:"wrap", gap:3, justifyContent:"center", marginBottom:3 }}>
-                              {dates.map(({ dateStr, dow }) => {
-                                const { icon, color, bg } = getCellInfo(entry, dateStr);
-                                return (
-                                  <button key={dateStr}
-                                    onClick={() => toggleAttendance(entry, dateStr)}
-                                    title="클릭: 없음→1회→2회→결강→삭제"
-                                    style={{ fontSize:12, fontWeight:700, color, background:bg,
-                                      border:`1px solid ${color}33`, borderRadius:6,
-                                      padding:"2px 5px", cursor:"pointer", minWidth:34 }}>
-                                    {DAY_NAMES_KO[dow]}{icon}
-                                  </button>
-                                );
-                              })}
-                              {/* 보충 수업 버튼 */}
-                              {makeupSessions.map((s) => (
-                                <button key={s.date}
-                                  onClick={() => toggleMakeupDone(entry, s.date)}
-                                  title={`보충 ${s.date}${s.note ? " | "+s.note : ""} — 클릭: 완료 토글`}
-                                  style={{ fontSize:11, fontWeight:700,
-                                    color: s.makeupDone ? "#fff" : "#2980b9",
-                                    background: s.makeupDone ? "#2980b9" : "#eaf4fb",
-                                    border:"1px solid #2980b9", borderRadius:6,
-                                    padding:"2px 5px", cursor:"pointer" }}>
-                                  보{s.makeupDone ? "✅" : "○"}
-                                </button>
-                              ))}
-                            </div>
-                            <span style={{ fontSize:11, fontWeight:700, color:"#2980b9", background:"#eaf4fb", padding:"1px 6px", borderRadius:8 }}>
-                              {weekCount}회
-                            </span>
-                          </>
-                        )}
-                      </td>
-                    );
-                  })}
-                  {/* 실제 */}
-                  <td style={{ padding:"6px 4px", textAlign:"center", borderLeft:"2px solid #ddd", fontWeight:700, fontSize:14,
-                    color: target>0 && attended>=target ? "#27ae60" : "#2980b9", background:"#f0f9f0" }}>
-                    {attended}회
-                  </td>
-                  {/* 미달 */}
-                  <td style={{ padding:"6px 4px", textAlign:"center", borderLeft:"1px solid #ddd" }}>
-                    {missing > 0 ? (
-                      <button onClick={() => setMakeupModal({ studentCode: entry.studentCode, name: entry.name, missingCount: missing })}
-                        style={{ fontSize:12, fontWeight:700, color:"#fff", background:"#e74c3c",
-                          border:"none", borderRadius:6, padding:"3px 8px", cursor:"pointer" }}>
-                        -{missing}회<br/><span style={{ fontSize:10 }}>보충↑</span>
-                      </button>
-                    ) : (
-                      <span style={{ fontSize:13, color: target>0 ? "#27ae60" : "#ccc", fontWeight:700 }}>
-                        {target>0 ? "✅" : "-"}
-                      </span>
-                    )}
-                  </td>
-                  {/* 연소계 */}
-                  <td style={{ padding:"6px 4px", textAlign:"center", color:"#aaa", fontSize:12 }}>-</td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr style={{ background:"#f0f4ff", color:"#1e293b", fontWeight:700, borderTop:"2px solid #2563eb" }}>
-              <td style={{ padding:"8px 12px", fontSize:12, color:"#475569", fontWeight:600 }}>주 소계</td>
-              <td style={{ padding:"6px 4px", textAlign:"center", background:"#1a252f" }}>
-                {activeRoster.reduce((s,e)=>s+getMonthTarget(e),0)}회
-              </td>
-              {weeks.map((w,i) => (
-                <td key={i} style={{ padding:"6px 4px", textAlign:"center", borderLeft:"1px solid #3d4f63", fontSize:13 }}>
-                  {activeRoster.reduce((s,e)=>s+getWeekAttended(e,w),0)}회
-                </td>
-              ))}
-              <td style={{ padding:"6px 4px", textAlign:"center", borderLeft:"2px solid #fff", fontSize:15, background:"#1a252f" }}>
-                {activeRoster.reduce((s,e)=>s+getMonthAttended(e),0)}회
-              </td>
-              <td style={{ padding:"6px 4px", textAlign:"center", color:"#e74c3c", fontWeight:700 }}>
-                -{activeRoster.reduce((s,e)=>s+Math.max(0,getMonthTarget(e)-getMonthAttended(e)),0)}회
-              </td>
-              <td style={{ padding:"6px 4px", textAlign:"center", color:"#aaa" }}>-</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      )} {/* end month view */}
-
-      {/* 범례 */}
-      <div style={{ marginTop:10, display:"flex", gap:14, flexWrap:"wrap", fontSize:11, color:"#666" }}>
-        <span><b style={{ color:"#27ae60" }}>월○</b> 1회출석</span>
-        <span><b style={{ color:"#27ae60" }}>월○×2</b> 2회출석</span>
-        <span><b style={{ color:"#e74c3c" }}>월✗</b> 결강</span>
-        <span><b style={{ color:"#f39c12" }}>월△</b> 휴강</span>
-        <span><b style={{ color:"#2980b9" }}>보○</b> 보충예정</span>
-        <span><b style={{ color:"#2980b9" }}>보✅</b> 보충완료</span>
-        <span style={{ color:"#aaa" }}>클릭: 없음→1회→2회→결강→삭제</span>
-      </div>
-
-      {/* 보충 수업 등록 모달 */}
-      {makeupModal && (
+      {/* 시험 일정 입력/수정 모달 */}
+      {showForm && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:300,
-          display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ background:"#fff", borderRadius:14, padding:24, width:340, boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
-            <h3 style={{ margin:"0 0 4px" }}>📅 보충 수업 등록</h3>
-            <p style={{ margin:"0 0 16px", fontSize:13, color:"#e74c3c", fontWeight:600 }}>
-              {makeupModal.name} — {month}월 목표 미달 <b>{makeupModal.missingCount}회</b>
-            </p>
+          display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div style={{ background:"#fff", borderRadius:14, padding:24, width:"100%", maxWidth:520,
+            maxHeight:"90vh", overflowY:"auto", boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
+            <h3 style={{ margin:"0 0 16px", color:"#7c3aed" }}>
+              {editingExam ? "✏️ 시험 일정 수정" : "📅 시험 일정 추가"}
+            </h3>
 
-            <label style={{ fontSize:13, fontWeight:600 }}>보충 날짜</label>
-            <input type="date" value={makeupDate}
-              min={`${year}-${String(month).padStart(2,"0")}-01`}
-              onChange={(e) => setMakeupDate(e.target.value)}
-              style={{ width:"100%", padding:"7px 10px", borderRadius:6, border:"1px solid #ddd", fontSize:14, marginBottom:10 }} />
+            {/* 학생 선택 */}
+            <label style={{ fontSize:13, fontWeight:600 }}>학생</label>
+            <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
+              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, marginBottom:10 }}>
+              <option value="">학생 선택</option>
+              {activeRoster.map(r => (
+                <option key={r.studentCode} value={r.studentCode}>{r.name} ({r.school})</option>
+              ))}
+            </select>
 
-            <label style={{ fontSize:13, fontWeight:600 }}>보충 시간 (선택)</label>
-            <input type="time" value={makeupTime}
-              onChange={(e) => setMakeupTime(e.target.value)}
-              style={{ width:"100%", padding:"7px 10px", borderRadius:6, border:"1px solid #ddd", fontSize:14, marginBottom:10 }} />
+            {/* 학기/종류 */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+              <div>
+                <label style={{ fontSize:13, fontWeight:600 }}>학기</label>
+                <select value={form.semester} onChange={e => setForm({...form, semester: e.target.value as "1"|"2"})}
+                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }}>
+                  <option value="1">1학기</option>
+                  <option value="2">2학기</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize:13, fontWeight:600 }}>시험 종류</label>
+                <select value={form.examType} onChange={e => setForm({...form, examType: e.target.value as "midterm"|"final"})}
+                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }}>
+                  <option value="midterm">중간고사</option>
+                  <option value="final">기말고사</option>
+                </select>
+              </div>
+            </div>
 
-            <label style={{ fontSize:13, fontWeight:600 }}>메모 (선택)</label>
-            <textarea value={makeupNote} onChange={(e) => setMakeupNote(e.target.value)}
-              rows={2} placeholder="예) 화요일 저녁 보충"
-              style={{ width:"100%", padding:"7px 10px", borderRadius:6, border:"1px solid #ddd",
-                fontSize:13, resize:"none", boxSizing:"border-box", marginBottom:16 }} />
+            {/* 과목 */}
+            <label style={{ fontSize:13, fontWeight:600 }}>과목명</label>
+            <input value={form.subject} onChange={e => setForm({...form, subject: e.target.value})}
+              placeholder="영어"
+              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, marginBottom:10, boxSizing:"border-box" }} />
+
+            {/* 시험 기간 */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+              <div>
+                <label style={{ fontSize:13, fontWeight:600 }}>시험 시작일</label>
+                <input type="date" value={form.examStart} onChange={e => setForm({...form, examStart: e.target.value})}
+                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }} />
+              </div>
+              <div>
+                <label style={{ fontSize:13, fontWeight:600 }}>시험 종료일</label>
+                <input type="date" value={form.examEnd} onChange={e => setForm({...form, examEnd: e.target.value})}
+                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }} />
+              </div>
+            </div>
+
+            {/* 영어 시험일 */}
+            <label style={{ fontSize:13, fontWeight:600 }}>영어 시험일 ★</label>
+            <input type="date" value={form.englishExamDate} onChange={e => setForm({...form, englishExamDate: e.target.value})}
+              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1.5px solid #7c3aed", fontSize:13, marginBottom:10, boxSizing:"border-box" }} />
+
+            {/* 시험 범위 */}
+            <label style={{ fontSize:13, fontWeight:600 }}>시험 범위</label>
+            <textarea value={form.examRange} onChange={e => setForm({...form, examRange: e.target.value})}
+              placeholder="예) 교과서 1~3과, 부교재 Unit 1-5"
+              rows={2}
+              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, resize:"none", marginBottom:10, boxSizing:"border-box" }} />
+
+            {/* 직보일 / 다음 수업 */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+              <div>
+                <label style={{ fontSize:13, fontWeight:600 }}>직보일</label>
+                <input type="date" value={form.reportDeadline} onChange={e => setForm({...form, reportDeadline: e.target.value})}
+                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }} />
+              </div>
+              <div>
+                <label style={{ fontSize:13, fontWeight:600 }}>다음 수업 예정일</label>
+                <input type="date" value={form.nextLessonDate} onChange={e => setForm({...form, nextLessonDate: e.target.value})}
+                  style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }} />
+              </div>
+            </div>
+
+            {/* 메모 */}
+            <label style={{ fontSize:13, fontWeight:600 }}>메모</label>
+            <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})}
+              placeholder="추가 메모"
+              rows={2}
+              style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, resize:"none", marginBottom:16, boxSizing:"border-box" }} />
 
             <div style={{ display:"flex", gap:8 }}>
-              <button onClick={addMakeup}
-                style={{ flex:1, padding:10, borderRadius:8, border:"none", background:"#2980b9",
-                  color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
-                보충 등록
+              <button onClick={addOrUpdateExam}
+                style={{ flex:1, padding:11, borderRadius:8, border:"none", background:"#7c3aed", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                {editingExam ? "수정 저장" : "추가"}
               </button>
-              <button onClick={() => { setMakeupModal(null); setMakeupDate(""); setMakeupTime(""); setMakeupNote(""); }}
-                style={{ flex:1, padding:10, borderRadius:8, border:"1px solid #ddd",
-                  background:"#fff", fontSize:14, cursor:"pointer" }}>
+              <button onClick={() => { setShowForm(false); setEditingExam(null); }}
+                style={{ flex:1, padding:11, borderRadius:8, border:"1px solid #e2e8f0", background:"#fff", fontSize:14, cursor:"pointer" }}>
                 취소
               </button>
             </div>
