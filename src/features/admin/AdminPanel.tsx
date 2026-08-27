@@ -3973,6 +3973,7 @@ function AttendanceBoard() {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [viewMode, setViewMode] = useState<"month" | "week">("month");
   const [makeupModal, setMakeupModal] = useState<{
     studentCode: string; name: string; missingCount: number;
   } | null>(null);
@@ -3988,6 +3989,27 @@ function AttendanceBoard() {
 
   const [year, month] = calMonth.split("-").map(Number);
   const weeks = getWeeksInMonth(year, month);
+
+  // 주간 뷰: 현재 날짜가 속한 주 계산
+  const today = new Date();
+  const currentWeekIdx = weeks.findIndex(w =>
+    today >= w.start && today <= w.end
+  );
+  const displayWeeks = viewMode === "week"
+    ? [weeks[currentWeekIdx >= 0 ? currentWeekIdx : 0]].filter(Boolean)
+    : weeks;
+
+  // 주간 뷰에서 이전/다음 주 이동
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekViewStart = new Date(today);
+  weekViewStart.setDate(weekViewStart.getDate() - weekViewStart.getDay() + 1 + weekOffset * 7); // 월요일
+  const weekViewEnd = new Date(weekViewStart);
+  weekViewEnd.setDate(weekViewStart.getDate() + 6);
+  const weekViewDays = Array.from({length: 7}, (_, i) => {
+    const d = new Date(weekViewStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
   const DAY_NAMES_KO: Record<string,string> = {mon:"월",tue:"화",wed:"수",thu:"목",fri:"금",sat:"토",sun:"일"};
   const DOW_MAP: Record<number,DayOfWeek> = {0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat"};
   const activeRoster = roster.filter((r) => (r.studentStatus ?? "active") !== "withdrawn");
@@ -4173,6 +4195,21 @@ function AttendanceBoard() {
           <span style={{ fontWeight:700, fontSize:15 }}>{year}년 {month}월</span>
           <button onClick={() => { const d=new Date(year,month,1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }}
             style={{ border:"1px solid #ddd", background:"#fff", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:16 }}>›</button>
+          {/* 월/주 전환 버튼 */}
+          <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
+            <button onClick={() => setViewMode("month")}
+              style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:13, fontWeight:700, cursor:"pointer",
+                background: viewMode === "month" ? "#2563eb" : "transparent",
+                color: viewMode === "month" ? "#fff" : "#64748b" }}>
+              월간
+            </button>
+            <button onClick={() => setViewMode("week")}
+              style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:13, fontWeight:700, cursor:"pointer",
+                background: viewMode === "week" ? "#2563eb" : "transparent",
+                color: viewMode === "week" ? "#fff" : "#64748b" }}>
+              주간
+            </button>
+          </div>
           <button onClick={markAllAttended} disabled={saving}
             style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#27ae60", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
             {saving ? "처리 중…" : "✅ 전체 출석 처리"}
@@ -4181,6 +4218,99 @@ function AttendanceBoard() {
       </div>
       {notice && <p style={{ color:"#27ae60", fontWeight:600, marginBottom:8 }}>{notice}</p>}
 
+      {/* ── 주간 뷰 ── */}
+      {viewMode === "week" && (
+        <div>
+          {/* 주간 네비게이션 */}
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+            <button onClick={() => setWeekOffset(w => w-1)}
+              style={{ border:"1px solid #e2e8f0", background:"#fff", borderRadius:7, width:30, height:30, cursor:"pointer", fontSize:14, color:"#64748b" }}>‹</button>
+            <span style={{ fontWeight:700, fontSize:14, color:"#1e293b" }}>
+              {weekViewStart.getMonth()+1}/{weekViewStart.getDate()} ~ {weekViewEnd.getMonth()+1}/{weekViewEnd.getDate()}
+              {weekOffset === 0 && <span style={{ marginLeft:8, fontSize:11, color:"#2563eb", fontWeight:600 }}>이번 주</span>}
+            </span>
+            <button onClick={() => setWeekOffset(w => w+1)}
+              style={{ border:"1px solid #e2e8f0", background:"#fff", borderRadius:7, width:30, height:30, cursor:"pointer", fontSize:14, color:"#64748b" }}>›</button>
+            <button onClick={() => setWeekOffset(0)}
+              style={{ border:"1px solid #2563eb", background:"#eff6ff", borderRadius:7, padding:"4px 10px", cursor:"pointer", fontSize:12, color:"#2563eb", fontWeight:600 }}>오늘</button>
+          </div>
+
+          {/* 날짜별 컬럼 */}
+          <div style={{ display:"flex", gap:8, overflowX:"auto" }}>
+            {weekViewDays.map((day, di) => {
+              const DAY_NAMES_KO: Record<string,string> = {mon:"월",tue:"화",wed:"수",thu:"목",fri:"금",sat:"토",sun:"일"};
+              const DOW_MAP: Record<number,DayOfWeek> = {0:"sun",1:"mon",2:"tue",3:"wed",4:"thu",5:"fri",6:"sat"};
+              const dow = DOW_MAP[day.getDay()];
+              const dateStr = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,"0")}-${String(day.getDate()).padStart(2,"0")}`;
+              const isToday = day.toDateString() === new Date().toDateString();
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+              const studentsOnDay = activeRoster.filter(e => (e.lessonDays??{})[dow]);
+              return (
+                <div key={di} style={{
+                  minWidth: 120, flex:1, borderRadius:10,
+                  border: isToday ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                  background: isToday ? "#eff6ff" : isWeekend ? "#f8fafc" : "#fff",
+                  overflow:"hidden"
+                }}>
+                  {/* 날짜 헤더 */}
+                  <div style={{
+                    padding:"8px 10px", textAlign:"center",
+                    background: isToday ? "#2563eb" : isWeekend ? "#f1f5f9" : "#f8fafc",
+                    borderBottom:"1px solid #e2e8f0"
+                  }}>
+                    <div style={{ fontSize:11, fontWeight:600, color: isToday ? "#fff" : "#64748b" }}>
+                      {["일","월","화","수","목","금","토"][day.getDay()]}
+                    </div>
+                    <div style={{ fontSize:18, fontWeight:700, color: isToday ? "#fff" : "#1e293b" }}>
+                      {day.getDate()}
+                    </div>
+                  </div>
+                  {/* 수업 학생 목록 */}
+                  <div style={{ padding:"6px 6px", display:"flex", flexDirection:"column", gap:4 }}>
+                    {studentsOnDay.length === 0 ? (
+                      <p style={{ fontSize:11, color:"#cbd5e1", textAlign:"center", margin:"8px 0" }}>수업 없음</p>
+                    ) : studentsOnDay.map(entry => {
+                      const times = (entry.lessonDays??{})[dow] ?? 1;
+                      const session = (entry.classSessions??[]).find(s => s.date === dateStr);
+                      const cnt = session ? ((session as any).attendedCount ?? 0) : 0;
+                      const isAbsent = session?.status === "absent";
+                      return (
+                        <button key={entry.studentCode}
+                          onClick={() => toggleAttendance(entry, dateStr)}
+                          title="클릭: 없음→1회→2회→결강→삭제"
+                          style={{
+                            padding:"5px 8px", borderRadius:7, fontSize:11, fontWeight:700,
+                            cursor:"pointer", textAlign:"left", border:"1px solid",
+                            background: isAbsent ? "#fee2e2" : cnt > 0 ? (cnt >= 2 ? "#2563eb" : "#dcfce7") : "#f8fafc",
+                            color: isAbsent ? "#991b1b" : cnt > 0 ? (cnt >= 2 ? "#fff" : "#166534") : "#94a3b8",
+                            borderColor: isAbsent ? "#fca5a5" : cnt > 0 ? (cnt >= 2 ? "#2563eb" : "#86efac") : "#e2e8f0",
+                          }}>
+                          {entry.name}
+                          <span style={{ marginLeft:4, fontSize:10 }}>
+                            {isAbsent ? "✗결강" : cnt === 0 ? "?" : cnt >= 2 ? `○×${cnt}` : "○"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* 주간 소계 */}
+                  {studentsOnDay.length > 0 && (
+                    <div style={{ padding:"4px 8px", borderTop:"1px solid #f1f5f9", fontSize:10, color:"#94a3b8", textAlign:"right" }}>
+                      {studentsOnDay.reduce((s, e) => {
+                        const sess = (e.classSessions??[]).find(ss => ss.date === dateStr);
+                        return s + ((sess as any)?.attendedCount ?? 0);
+                      }, 0)}회 출석
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 월간 뷰 ── */}
+      {viewMode === "month" && (
       <div style={{ overflowX:"auto" }}>
         <table style={{ borderCollapse:"collapse", fontSize:12, minWidth:750, width:"100%" }}>
           <thead>
@@ -4323,6 +4453,7 @@ function AttendanceBoard() {
           </tfoot>
         </table>
       </div>
+      )} {/* end month view */}
 
       {/* 범례 */}
       <div style={{ marginTop:10, display:"flex", gap:14, flexWrap:"wrap", fontSize:11, color:"#666" }}>
