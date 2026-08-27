@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import StudentFlow from "./features/student/StudentFlow";
+import ExamPaperUpload from "./features/student/ExamPaperUpload";
 import AdminPanel from "./features/admin/AdminPanel";
 import StudentReport from "./features/student/StudentReport";
 import { checkAdminAccessCode } from "./core/adminGate";
