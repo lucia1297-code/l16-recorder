@@ -130,16 +130,97 @@ export default function GrowthPanel() {
   function makeDiagnosis(code: string, name: string): string {
     const rows = byStudent.get(code) || [];
     if (!rows.length) return "";
-    const recent = rows.slice(-3);
-    const avg = Math.round(recent.reduce((s, r) => s + r.score, 0) / recent.length);
-    const trend = rows.length >= 2 ? rows[rows.length-1].score - rows[rows.length-2].score : 0;
-    const cnt: Record<string, number> = {};
-    recent.forEach(r => r.wrongAnswers.forEach((w: any) =>
-      (w.reasons || []).forEach((rs: string) => { cnt[rs] = (cnt[rs] || 0) + 1; })
+    const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+    const recent3 = sorted.slice(-3);
+    const latest = sorted[sorted.length - 1];
+    const prev = sorted[sorted.length - 2];
+    const avg = Math.round(recent3.reduce((s, r) => s + r.score, 0) / recent3.length);
+    const trend = prev ? latest.score - prev.score : 0;
+    const totalCnt: Record<string, number> = {};
+    sorted.forEach(r => (r.wrongAnswers ?? []).forEach((w: any) =>
+      (w.reasons || []).forEach((rs: string) => { totalCnt[rs] = (totalCnt[rs] || 0) + 1; })
     ));
-    const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([r]) => REASON_KO[r] ?? r);
-    const ref = (recent[recent.length-1].reflection as any) || {};
-    return `[${name} 학생 주간 처방]\n\n📊 최근 평균: ${avg}점 (${trend >= 0 ? "▲" : "▼"}${Math.abs(trend)}점)\n⚠️ 주요 오답: ${top.join(", ") || "없음"}\n\n📝 학생 회고:\n• 어려웠던 점: ${ref.hardestReason || "미작성"}\n• 다음 목표: ${ref.nextGoal || "미작성"}\n\n💊 처방:\n${top.includes("어휘") ? "• 어휘 암기 하루 30개 이상\n" : ""}${top.includes("독해") ? "• 지문 정독 — 핵심 문장 먼저 찾기\n" : ""}${top.includes("시간부족") ? "• Step별 목표 시간 엄수\n" : ""}${top.includes("실수") ? "• 마지막 5분 선지 재확인\n" : ""}${top.includes("추론") ? "• 근거 문장 찾기 훈련\n" : ""}\n수고했습니다! 다음 주도 화이팅 💪`;
+    const top3 = Object.entries(totalCnt).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const ref = (latest.reflection as any) || {};
+    const student = roster.find(r => r.studentCode === code);
+    const school = student?.school ?? "";
+    const grade = student?.grade ?? "";
+    const now = new Date();
+    const month = now.getMonth() + 1;
+
+    // 등급 판정
+    const grade_str = latest.score >= 90 ? "1등급권" : latest.score >= 80 ? "2등급권" :
+      latest.score >= 70 ? "3등급권" : latest.score >= 60 ? "4등급권" : "5등급권 이하";
+    const target_str = latest.score >= 90 ? "실전 완성도를 높이고 만점에 근접하는 것"
+      : latest.score >= 80 ? "안정적인 1등급 진입"
+      : latest.score >= 70 ? "2등급권 안착 및 고득점 기반 마련"
+      : latest.score >= 60 ? "3등급권 진입 및 기초 독해력 강화"
+      : "기초 어휘와 문장 구조 파악 능력 정비";
+
+    // 오답 원인 전문 해석
+    const diagMap: Record<string, string> = {
+      Vocabulary: "어휘력 기반 독해 능력 부족으로, 지문의 핵심 단어를 파악하지 못해 문맥 이해에 어려움을 겪고 있습니다",
+      Reading: "지문의 논리적 흐름과 핵심 주제 파악에 어려움이 있으며, 정보 처리 속도와 정확도 향상이 필요합니다",
+      Inference: "추론형 문항에서의 실점이 두드러지며, 지문에 명시되지 않은 함의를 도출하는 논리적 사고 훈련이 필요합니다",
+      Logic: "논리 전개 구조를 파악하는 능력이 아직 충분히 형성되지 않아, 글의 흐름을 놓치는 경향이 있습니다",
+      Grammar: "어법 문항에서의 실점은 영문법 핵심 규칙에 대한 체계적 정리가 이루어지지 않은 것에 기인합니다",
+      Time: "풀이 시간 배분 전략이 아직 확립되지 않아 후반부 문항에서 집중력이 저하되는 패턴이 나타납니다",
+      Careless: "정답을 알고도 놓치는 부주의 실점이 반복되고 있으며, 이는 실전 훈련을 통한 검토 습관으로 개선 가능합니다",
+      Guess: "자신감 부족으로 인한 무작위 선택이 빈번하여, 어휘와 독해 기반을 강화함으로써 확신도를 높여야 합니다",
+      DidntKnow: "기본 개념과 어휘가 충분히 갖추어지지 않은 상태이며, 단계적인 기초 학습이 선행되어야 합니다",
+    };
+
+    // 처방 전문화
+    const prescMap: Record<string, string> = {
+      Vocabulary: "어휘 학습은 단순 암기에서 벗어나 문맥 속 의미 파악 훈련을 병행하고, 수능 빈출 어휘를 주제별로 체계화하여 학습하도록 지도하고 있습니다",
+      Reading: "핵심어 중심의 단락별 요지 파악 훈련을 강화하고, 지문을 읽기 전 선지를 먼저 검토하는 전략적 독해 방식을 체화시키고 있습니다",
+      Inference: "추론 문항은 지문 내 근거 문장을 먼저 확정한 후 선지를 대입하는 방식으로 오답을 제거하는 훈련을 집중적으로 진행하고 있습니다",
+      Logic: "빈칸 및 순서 배열 문항에서 접속어와 지시어 중심으로 논리적 흐름을 추적하는 훈련을 강화하고 있습니다",
+      Grammar: "어법 핵심 규칙 5개 유형(동사, 준동사, 관계사, 병렬, 수일치)을 반복 정리하고 기출 패턴 분석을 병행하고 있습니다",
+      Time: "Step별 목표 시간을 설정하고 실전 모의 훈련을 통해 시간 내 풀이 패턴을 확립하도록 지도하고 있습니다",
+      Careless: "풀이 후 30초 검토 습관을 형성하고, 특히 선지 혼동이 잦은 유형에서는 근거 문장을 반드시 확인하도록 훈련하고 있습니다",
+      Guess: "어휘와 독해 기반을 강화하여 문항에 대한 확신도를 높이고, 소거법을 통한 전략적 접근을 훈련하고 있습니다",
+      DidntKnow: "기초 문법과 필수 어휘를 단계적으로 보완하며, 단기간에 성과를 낼 수 있는 우선순위 학습 계획을 수립하여 진행 중입니다",
+    };
+
+    const top1Key = top3[0]?.[0] ?? "";
+    const top2Key = top3[1]?.[0] ?? "";
+    const top3Key = top3[2]?.[0] ?? "";
+    const top1Diag = diagMap[top1Key] ?? "전반적인 영어 독해 능력 향상이 필요한 상황입니다";
+    const top1Presc = prescMap[top1Key] ?? "기초부터 체계적으로 보완하는 방향으로 지도하고 있습니다";
+    const top2Presc = top2Key ? prescMap[top2Key] ?? "" : "";
+
+    const trendComment = trend > 3 ? `직전 시험 대비 ${trend}점 향상되는 긍정적인 흐름을 보이고 있으며` :
+      trend < -3 ? `직전 시험 대비 ${Math.abs(trend)}점 하락하였으나, 이는 일시적인 편차로 판단되며` :
+      "점수가 안정적으로 유지되고 있으며";
+
+    const refComment = ref.hardestReason
+      ? `학생 스스로는 "${ref.hardestReason}"을 가장 어려운 부분으로 인식하고 있으며`
+      : "학생의 자가 진단 결과";
+    const goalComment = ref.nextGoal
+      ? `"${ref.nextGoal}"을 다음 목표로 설정하고 있습니다`
+      : "명확한 목표 설정이 이루어지고 있습니다";
+
+    return `${school} ${grade}학년 ${name} 학생 ${month}월 학습 상담 평가서
+
+안녕하십니까, ${name} 학생 학부모님. ${month}월 한 달간 ${name} 학생의 학습 현황을 정리하여 말씀드립니다.
+
+【현재 수준】
+${name} 학생은 현재 ${grade_str}(최근 ${avg}점 평균)에 해당하며, ${trendComment} 전반적인 학습 기반이 갖추어지고 있는 상황입니다. 총 ${sorted.length}회의 모의고사 데이터를 바탕으로 분석한 결과, 꾸준한 응시 노력이 실력 형성에 긍정적으로 작용하고 있습니다.
+
+【오답 원인 분석】
+누적 오답 분석 결과, 가장 두드러진 취약 원인은 ${REASON_KO[top1Key] ?? top1Key}(으)로, ${top1Diag}. ${top2Key ? `또한 ${REASON_KO[top2Key] ?? top2Key} 영역에서도 개선이 요구되며, ` : ""}${top3Key ? `${REASON_KO[top3Key] ?? top3Key} 관련 실점도 함께 관리가 필요합니다.` : "이 부분에 대한 집중 지도가 진행 중입니다."}
+
+【학생 자가 평가】
+${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 출발점이며, 강사로서 학생의 목표의식을 지속적으로 강화하는 방향으로 지도하고 있습니다.
+
+【강사 진단 및 처방】
+단기적으로는 ${top1Presc}. ${top2Presc ? `더불어, ${top2Presc}.` : ""} 이를 통해 오답 유형별 대응 전략을 체계화하고, 문항 유형에 따른 풀이 패턴을 확립하는 것이 이번 달의 핵심 목표입니다.
+
+【미래 목표 및 로드맵】
+중기적으로는 ${target_str}을 목표로 하고 있습니다. 수능까지 남은 기간을 고려할 때, 현재 취약 영역을 집중 보완하는 시기를 거쳐 실전 모의 훈련으로 전환하는 2단계 전략이 가장 효율적입니다. 현재 ${name} 학생의 학습 태도와 잠재력을 감안하면 목표 달성이 충분히 가능하다고 판단합니다.
+
+이달도 ${name} 학생이 최선을 다해 임해주었습니다. 학습에 있어 가정에서의 꾸준한 격려와 관심이 학생에게 큰 힘이 됩니다. 궁금하신 사항이 있으시면 언제든지 연락 주십시오. 감사합니다.`;
   }
 
   function createMsg(code: string) {
