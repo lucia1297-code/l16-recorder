@@ -116,7 +116,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "growth"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -159,6 +159,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")} style={{ background: tab === "sms" ? "#e74c3c" : "", color: tab === "sms" ? "#fff" : "" }}>
           문자알림
         </button>
+        <button className={tab === "growth" ? "on" : ""} onClick={() => setTab("growth")} style={{ background: tab === "growth" ? "#0f766e" : "", color: tab === "growth" ? "#fff" : "" }}>
+          발전기록
+        </button>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")} style={{ background: tab === "examprep" ? "#7c3aed" : "", color: tab === "examprep" ? "#fff" : "" }}>
           시험준비
         </button>
@@ -181,6 +184,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
         {tab === "examprep" && <ExamPrepPanel />}
+        {tab === "growth" && <GrowthPanel />}
       </div>
     </div>
   );
@@ -4435,6 +4439,363 @@ function ExamPrepPanel() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════
+// 발전 기록 탭 (Growth Panel)
+// ════════════════════════════════════════════════════════
+
+interface GrowthMessage {
+  id: string;
+  studentCode: string;
+  studentName: string;
+  content: string;
+  diagnosis: string;       // 처방 내용
+  createdAt: string;
+  sentAt: string | null;   // SMS 발송 시각
+  adminEdited: boolean;
+}
+
+const SUPABASE_URL_GP = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_KEY_GP = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+async function fetchResultsGP(): Promise<ExamResult[]> {
+  const res = await fetch(`${SUPABASE_URL_GP}/rest/v1/results?select=*&order=submitted_at.desc`, {
+    headers: { "apikey": SUPABASE_KEY_GP, "Authorization": `Bearer ${SUPABASE_KEY_GP}` }
+  });
+  if (!res.ok) return [];
+  const rows = await res.json();
+  return rows.map((r: any) => ({
+    id: r.id,
+    student: { studentCode: r.student_code, name: r.name, school: r.school, grade: r.grade },
+    exam: { examName: r.exam_name, year: 0, month: 0, round: 0, totalQuestions: 45, maxScore: 100 },
+    teacher: "",
+    date: r.date,
+    score: Number(r.score),
+    wrongAnswers: (() => { try { return JSON.parse(r.wrong_answers || "[]"); } catch { return []; } })(),
+    reflection: (() => { try { return JSON.parse(r.reflection || "{}"); } catch { return {}; } })(),
+    submittedAt: r.submitted_at,
+  }));
+}
+
+const REASON_KO_GP: Record<string, string> = {
+  Vocabulary:"어휘", Grammar:"어법", Reading:"독해", Inference:"추론",
+  Logic:"논리", Time:"시간부족", Careless:"실수", Guess:"찍음", DidntKnow:"모름", Other:"기타"
+};
+
+function GrowthPanel() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [results, setResults] = useState<ExamResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedStudent, setSelectedStudent] = useState("");
+  const [messages, setMessages] = useState<GrowthMessage[]>(() => {
+    try { return JSON.parse(localStorage.getItem("l16.growthMessages") || "[]"); } catch { return []; }
+  });
+  const [editingMsg, setEditingMsg] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [sending, setSending] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  // SMS는 직접 fetch 사용
+  async function sendSmsGP(phone: string, message: string): Promise<void> {
+    const { SolapiSmsProvider } = await import("../../lib/sms.solapi");
+    const sms = new SolapiSmsProvider(
+      import.meta.env.VITE_SOLAPI_API_KEY as string,
+      import.meta.env.VITE_SOLAPI_API_SECRET as string,
+      import.meta.env.VITE_SOLAPI_SENDER as string,
+    );
+    await sms.send(phone, message);
+  }
+
+  useEffect(() => {
+    rosterStore.listRoster().then(setRoster);
+    fetchResultsGP().then(r => { setResults(r); setLoading(false); });
+  }, [rosterStore]);
+
+  function saveMessages(msgs: GrowthMessage[]) {
+    setMessages(msgs);
+    localStorage.setItem("l16.growthMessages", JSON.stringify(msgs));
+  }
+
+  // 학생별 결과 집계
+  const studentResults = useMemo(() => {
+    const map = new Map<string, ExamResult[]>();
+    results.forEach(r => {
+      const key = r.student.studentCode;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
+    });
+    return map;
+  }, [results]);
+
+  // 자동 처방 생성
+  function generateDiagnosis(studentCode: string, studentName: string): string {
+    const rows = (studentResults.get(studentCode) || []).sort((a,b) => a.date.localeCompare(b.date));
+    if (rows.length === 0) return "";
+    const recent = rows.slice(-3);
+    const avgScore = Math.round(recent.reduce((s,r) => s+r.score, 0) / recent.length);
+    const trend = rows.length >= 2 ? rows[rows.length-1].score - rows[rows.length-2].score : 0;
+    const reasonCount: Record<string,number> = {};
+    recent.forEach(r => r.wrongAnswers.forEach(w =>
+      w.reasons.forEach(reason => { reasonCount[reason] = (reasonCount[reason]||0)+1; })
+    ));
+    const topReasons = Object.entries(reasonCount).sort((a,b)=>b[1]-a[1]).slice(0,3)
+      .map(([r]) => REASON_KO_GP[r] ?? r);
+    const reflections = recent.map(r => r.reflection as any).filter(r => r?.nextGoal || r?.hardestReason);
+    const lastGoal = reflections.length > 0 ? (reflections[reflections.length-1].nextGoal || "") : "";
+    const lastHard = reflections.length > 0 ? (reflections[reflections.length-1].hardestReason || "") : "";
+
+    return `[${studentName} 학생 주간 처방]
+
+📊 최근 평균: ${avgScore}점 (${trend >= 0 ? "▲" : "▼"}${Math.abs(trend)}점 변화)
+
+⚠️ 주요 오답 원인: ${topReasons.join(", ")}
+
+📝 학생 회고:
+• 어려웠던 점: ${lastHard || "미작성"}
+• 다음 목표: ${lastGoal || "미작성"}
+
+💊 처방:
+${topReasons.includes("어휘") ? "• 어휘 암기 하루 30개 이상 — 필수
+" : ""}${topReasons.includes("독해") ? "• 지문 정독 훈련 — 풀기 전 핵심 문장 찾기
+" : ""}${topReasons.includes("시간부족") ? "• 풀이 속도 훈련 — Step별 목표 시간 엄수
+" : ""}${topReasons.includes("실수") ? "• 선지 재확인 습관 — 마지막 5분 체크
+" : ""}${topReasons.includes("추론") ? "• 추론 문제 집중 — 근거 문장 먼저 찾기
+" : ""}
+수고했습니다. 다음 주도 화이팅! 💪`;
+  }
+
+  // 처방 메시지 생성
+  function createMessage(studentCode: string) {
+    const student = roster.find(r => r.studentCode === studentCode);
+    if (!student) return;
+    const diagnosis = generateDiagnosis(studentCode, student.name);
+    const msg: GrowthMessage = {
+      id: Math.random().toString(36).slice(2),
+      studentCode,
+      studentName: student.name,
+      content: diagnosis,
+      diagnosis,
+      createdAt: new Date().toISOString(),
+      sentAt: null,
+      adminEdited: false,
+    };
+    saveMessages([msg, ...messages]);
+    setEditingMsg(msg.id);
+    setEditContent(diagnosis);
+  }
+
+  // SMS 발송
+  async function sendMessage(msg: GrowthMessage) {
+    const student = roster.find(r => r.studentCode === msg.studentCode);
+    const phone = student?.parentPhone || student?.phone;
+    if (!phone) return alert("학생/학부모 번호가 없습니다.");
+    setSending(msg.id);
+    try {
+      await sendSmsGP(phone, msg.content);
+      const updated = messages.map(m => m.id === msg.id ? { ...m, sentAt: new Date().toISOString() } : m);
+      saveMessages(updated);
+      setNotice(`${msg.studentName} 학생 처방 발송 완료`);
+      setTimeout(() => setNotice(""), 3000);
+    } catch(e) { alert("발송 실패: " + (e as Error).message); }
+    finally { setSending(null); }
+  }
+
+  const activeRoster = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
+  const filteredResults = selectedStudent
+    ? results.filter(r => r.student.studentCode === selectedStudent)
+    : results;
+
+  return (
+    <div className="card">
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <h2 style={{ margin:0, color:"#0f766e" }}>📈 발전 기록</h2>
+        <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
+          style={{ padding:"6px 12px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }}>
+          <option value="">전체 학생</option>
+          {activeRoster.map(r => (
+            <option key={r.studentCode} value={r.studentCode}>{r.name}</option>
+          ))}
+        </select>
+      </div>
+      {notice && <p style={{ color:"#0f766e", fontWeight:600, marginBottom:10 }}>{notice}</p>}
+
+      {/* ── 학생별 성적 추이 + 회고 ── */}
+      <div style={{ marginBottom:24 }}>
+        <h3 style={{ color:"#0f766e", marginBottom:12, fontSize:15 }}>📊 모의고사 성적 추이 & 회고</h3>
+        {loading ? <p style={{ color:"#94a3b8" }}>로딩 중…</p> : (
+          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+            {Array.from(studentResults.entries())
+              .filter(([code]) => !selectedStudent || code === selectedStudent)
+              .sort((a,b) => {
+                const na = roster.find(r=>r.studentCode===a[0])?.name ?? "";
+                const nb = roster.find(r=>r.studentCode===b[0])?.name ?? "";
+                return na.localeCompare(nb);
+              })
+              .map(([code, rows]) => {
+                const student = roster.find(r => r.studentCode === code);
+                const sorted = [...rows].sort((a,b) => a.date.localeCompare(b.date));
+                const latest = sorted[sorted.length-1];
+                const prev = sorted[sorted.length-2];
+                const trend = prev ? latest.score - prev.score : 0;
+                const reasonCount: Record<string,number> = {};
+                sorted.slice(-3).forEach(r => r.wrongAnswers.forEach(w =>
+                  w.reasons.forEach(reason => { reasonCount[reason] = (reasonCount[reason]||0)+1; })
+                ));
+                const topReasons = Object.entries(reasonCount).sort((a,b)=>b[1]-a[1]).slice(0,3);
+                return (
+                  <div key={code} style={{ border:"1px solid #e2e8f0", borderRadius:12, overflow:"hidden" }}>
+                    {/* 학생 헤더 */}
+                    <div style={{ padding:"10px 14px", background:"#f0fdfa", borderBottom:"1px solid #e2e8f0",
+                      display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ fontWeight:700, fontSize:14, color:"#134e4a" }}>{student?.name ?? code}</span>
+                        <span style={{ fontSize:11, color:"#64748b" }}>{student?.school}</span>
+                        <span style={{ fontSize:13, fontWeight:700,
+                          color: trend > 0 ? "#059669" : trend < 0 ? "#ef4444" : "#64748b" }}>
+                          {latest.score}점 {trend !== 0 ? (trend > 0 ? `▲${trend}` : `▼${Math.abs(trend)}`) : "→"}
+                        </span>
+                      </div>
+                      <button onClick={() => createMessage(code)}
+                        style={{ padding:"5px 12px", borderRadius:7, border:"none", background:"#0f766e",
+                          color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                        💊 처방 생성
+                      </button>
+                    </div>
+
+                    {/* 점수 이력 */}
+                    <div style={{ padding:"10px 14px" }}>
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10 }}>
+                        {sorted.map((r, i) => (
+                          <div key={i} style={{ textAlign:"center", padding:"4px 10px", borderRadius:8,
+                            background: r === latest ? "#0f766e" : "#f1f5f9",
+                            color: r === latest ? "#fff" : "#475569" }}>
+                            <div style={{ fontSize:11, color: r === latest ? "#99f6e4" : "#94a3b8" }}>{r.date.slice(5)}</div>
+                            <div style={{ fontSize:14, fontWeight:700 }}>{r.score}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 오답 원인 */}
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10 }}>
+                        {topReasons.map(([reason, cnt]) => (
+                          <span key={reason} style={{ fontSize:11, padding:"2px 8px", borderRadius:10,
+                            background:"#fef3c7", color:"#92400e", fontWeight:600 }}>
+                            {REASON_KO_GP[reason] ?? reason} {cnt}회
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* 최근 회고 */}
+                      {(() => {
+                        const ref = latest.reflection as any;
+                        return ref?.hardestReason || ref?.nextGoal ? (
+                          <div style={{ background:"#f8fafc", borderRadius:8, padding:"8px 12px", fontSize:12 }}>
+                            <p style={{ margin:"0 0 4px", color:"#475569" }}>
+                              <span style={{ color:"#94a3b8", fontWeight:600 }}>어려웠던 점: </span>
+                              {ref.hardestReason || "-"}
+                            </p>
+                            <p style={{ margin:0, color:"#475569" }}>
+                              <span style={{ color:"#94a3b8", fontWeight:600 }}>다음 목표: </span>
+                              {ref.nextGoal || "-"}
+                            </p>
+                            {ref.satisfaction && (
+                              <p style={{ margin:"4px 0 0" }}>
+                                {"★".repeat(ref.satisfaction)}{"☆".repeat(5 - (ref.satisfaction || 0))}
+                              </p>
+                            )}
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
+
+      {/* ── 처방 메시지 목록 ── */}
+      <div>
+        <h3 style={{ color:"#0f766e", marginBottom:12, fontSize:15 }}>💌 처방 메시지</h3>
+        {messages.filter(m => !selectedStudent || m.studentCode === selectedStudent).length === 0 ? (
+          <p style={{ color:"#94a3b8", textAlign:"center", padding:"20px 0" }}>
+            학생 카드에서 "처방 생성" 버튼을 눌러 메시지를 만들어보세요.
+          </p>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {messages
+              .filter(m => !selectedStudent || m.studentCode === selectedStudent)
+              .map(msg => (
+                <div key={msg.id} style={{ border:`1.5px solid ${msg.sentAt ? "#d1fae5" : "#e2e8f0"}`,
+                  borderRadius:12, overflow:"hidden", background: msg.sentAt ? "#f0fdf4" : "#fff" }}>
+                  <div style={{ padding:"10px 14px", background: msg.sentAt ? "#d1fae5" : "#f8fafc",
+                    borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                    <div>
+                      <span style={{ fontWeight:700, fontSize:13, color:"#1e293b" }}>{msg.studentName}</span>
+                      <span style={{ fontSize:11, color:"#94a3b8", marginLeft:8 }}>
+                        {new Date(msg.createdAt).toLocaleDateString("ko-KR")}
+                      </span>
+                      {msg.sentAt && <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}>
+                        ✅ 발송 {new Date(msg.sentAt).toLocaleDateString("ko-KR")}
+                      </span>}
+                      {msg.adminEdited && <span style={{ fontSize:11, color:"#7c3aed", marginLeft:6 }}>✏️ 수정됨</span>}
+                    </div>
+                    <div style={{ display:"flex", gap:6 }}>
+                      {editingMsg === msg.id ? (
+                        <>
+                          <button onClick={() => {
+                            const updated = messages.map(m => m.id === msg.id
+                              ? { ...m, content: editContent, adminEdited: true } : m);
+                            saveMessages(updated);
+                            setEditingMsg(null);
+                          }} style={{ padding:"4px 10px", borderRadius:6, border:"none",
+                            background:"#0f766e", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:600 }}>
+                            저장
+                          </button>
+                          <button onClick={() => setEditingMsg(null)}
+                            style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #e2e8f0",
+                              background:"#fff", fontSize:12, cursor:"pointer" }}>취소</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => { setEditingMsg(msg.id); setEditContent(msg.content); }}
+                            style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #e2e8f0",
+                              background:"#fff", fontSize:12, cursor:"pointer" }}>✏️ 수정</button>
+                          <button onClick={() => sendMessage(msg)} disabled={sending === msg.id}
+                            style={{ padding:"4px 10px", borderRadius:6, border:"none",
+                              background: msg.sentAt ? "#f1f5f9" : "#0f766e",
+                              color: msg.sentAt ? "#64748b" : "#fff",
+                              fontSize:12, cursor:"pointer", fontWeight:600 }}>
+                            {sending === msg.id ? "발송 중…" : msg.sentAt ? "📱 재발송" : "📱 발송"}
+                          </button>
+                          <button onClick={() => {
+                            if (!confirm("삭제하시겠습니까?")) return;
+                            saveMessages(messages.filter(m => m.id !== msg.id));
+                          }} style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #fca5a5",
+                            background:"#fff", fontSize:12, cursor:"pointer", color:"#ef4444" }}>삭제</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ padding:"12px 14px" }}>
+                    {editingMsg === msg.id ? (
+                      <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                        rows={10}
+                        style={{ width:"100%", padding:"10px", borderRadius:8, border:"1px solid #7c3aed",
+                          fontSize:13, resize:"vertical", boxSizing:"border-box", fontFamily:"monospace" }} />
+                    ) : (
+                      <pre style={{ margin:0, fontSize:12, color:"#374151", whiteSpace:"pre-wrap",
+                        fontFamily:"inherit", lineHeight:1.6 }}>{msg.content}</pre>
+                    )}
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
