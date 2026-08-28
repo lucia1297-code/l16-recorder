@@ -4060,6 +4060,18 @@ async function sendExamPaperRequestSMS(phone: string, studentName: string, subje
   await sms.send(phone, `[L16] ${studentName} 학생, ${subject} 시험지 촬영 후 앱에서 제출해주세요. https://l16-academy.surge.sh`);
 }
 
+interface GrowthMessage {
+  id: string;
+  studentCode: string;
+  studentName: string;
+  content: string;
+  diagnosis: string;       // 처방 내용
+  createdAt: string;
+  sentAt: string | null;   // SMS 발송 시각
+  adminEdited: boolean;
+}
+
+
 function ExamPrepPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -4447,16 +4459,6 @@ function ExamPrepPanel() {
 // 발전 기록 탭 (Growth Panel)
 // ════════════════════════════════════════════════════════
 
-interface GrowthMessage {
-  id: string;
-  studentCode: string;
-  studentName: string;
-  content: string;
-  diagnosis: string;       // 처방 내용
-  createdAt: string;
-  sentAt: string | null;   // SMS 발송 시각
-  adminEdited: boolean;
-}
 
 
 
