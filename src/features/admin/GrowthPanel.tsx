@@ -435,14 +435,14 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
                           <thead>
                             <tr style={{ background:"#f8fafc" }}>
                               {[
-                                { label:"날짜", w:"70px" },
-                                { label:"점수", w:"46px" },
-                                { label:"어려웠던 점", w:"22%" },
-                                { label:"다음 목표", w:"22%" },
-                                { label:"만족도", w:"60px" },
-                                { label:"틀린 문항", w:"auto" },
+                                { label:"날짜",       w:"68px"  },
+                                { label:"점수",       w:"44px"  },
+                                { label:"어려웠던 점", w:"18%"   },
+                                { label:"다음 목표",   w:"18%"   },
+                                { label:"만족도",     w:"56px"  },
+                                { label:"틀린 문항",   w:"30%"   },
                               ].map(({ label: h, w }) => (
-                                <th key={h} style={{ padding:"7px 10px",
+                                <th key={h} style={{ padding:"7px 8px",
                                   textAlign: h === "점수" || h === "만족도" ? "center" : "left",
                                   borderBottom:"1.5px solid #e2e8f0", color:"#64748b", fontWeight:600,
                                   fontSize:11, width:w, whiteSpace:"nowrap" }}>{h}</th>
@@ -460,12 +460,12 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
                               return (
                                 <tr key={i} style={{ background: isLatest ? "#f0fdfa" : i % 2 === 0 ? "#fff" : "#f9f9f9",
                                   borderBottom:"1px solid #f1f5f9" }}>
-                                  <td style={{ padding:"8px 10px", color:"#475569", whiteSpace:"nowrap" }}>
+                                  <td style={{ padding:"6px 8px", color:"#475569", whiteSpace:"nowrap", verticalAlign:"top" }}>
                                     {r.date.slice(5)}
                                     {isLatest && <span style={{ marginLeft:4, fontSize:9, color:"#0f766e", fontWeight:700,
                                       background:"#d1fae5", padding:"1px 5px", borderRadius:4 }}>최근</span>}
                                   </td>
-                                  <td style={{ padding:"8px 10px", textAlign:"center", fontWeight:700,
+                                  <td style={{ padding:"6px 8px", textAlign:"center", fontWeight:700, verticalAlign:"top",
                                     color: r.score >= 90 ? "#059669" : r.score >= 70 ? "#2563eb" : "#ef4444" }}>
                                     {r.score}
                                   </td>
@@ -477,21 +477,22 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
                                     maxWidth:180, lineHeight:1.6, wordBreak:"break-all", whiteSpace:"normal", verticalAlign:"top" }}>
                                     {ref.nextGoal || "미작성"}
                                   </td>
-                                  <td style={{ padding:"8px 10px", textAlign:"center", fontSize:14 }}>
+                                  <td style={{ padding:"6px 8px", textAlign:"center", fontSize:12, whiteSpace:"nowrap" }}>
                                     {ref.satisfaction
                                       ? <span title={`${ref.satisfaction}점`}>{"★".repeat(Number(ref.satisfaction))}{"☆".repeat(5 - Number(ref.satisfaction))}</span>
                                       : <span style={{ color:"#cbd5e1" }}>-</span>}
                                   </td>
-                                  <td style={{ padding:"8px 10px" }}>
-                                    <div style={{ display:"flex", flexWrap:"wrap", gap:3 }}>
+                                  <td style={{ padding:"6px 8px", verticalAlign:"top" }}>
+                                    <div style={{ display:"flex", flexWrap:"wrap", gap:2, maxWidth:"100%" }}>
                                       {wrongNums.map((n: number) => {
                                         const rep = (wrongNumCount[n] || 0) >= 2;
                                         return (
-                                          <span key={n} style={{ fontSize:11, padding:"1px 5px", borderRadius:5,
+                                          <span key={n} style={{ fontSize:10, padding:"1px 4px", borderRadius:4,
                                             background: rep ? "#fef2f2" : "#f1f5f9",
                                             color: rep ? "#dc2626" : "#64748b",
                                             fontWeight: rep ? 700 : 400,
-                                            border: `1px solid ${rep ? "#fca5a5" : "#e2e8f0"}` }}>
+                                            border: `1px solid ${rep ? "#fca5a5" : "#e2e8f0"}`,
+                                            whiteSpace:"nowrap" }}>
                                             {n}
                                           </span>
                                         );
