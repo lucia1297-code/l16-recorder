@@ -4458,12 +4458,12 @@ interface GrowthMessage {
   adminEdited: boolean;
 }
 
-const SUPABASE_URL_GP = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_KEY_GP = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+
 
 async function fetchResultsGP(): Promise<ExamResult[]> {
-  const res = await fetch(`${SUPABASE_URL_GP}/rest/v1/results?select=*&order=submitted_at.desc`, {
-    headers: { "apikey": SUPABASE_KEY_GP, "Authorization": `Bearer ${SUPABASE_KEY_GP}` }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/results?select=*&order=submitted_at.desc`, {
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
   });
   if (!res.ok) return [];
   const rows = await res.json();
