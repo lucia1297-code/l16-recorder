@@ -4498,15 +4498,27 @@ function GrowthPanel() {
   const [editContent, setEditContent] = useState("");
   const [sending, setSending] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  // SMS는 직접 fetch 사용
+  // SMS 발송 (Web Crypto API 직접 사용)
   async function sendSmsGP(phone: string, message: string): Promise<void> {
-    const { SolapiSmsProvider } = await import("../../lib/sms.solapi");
-    const sms = new SolapiSmsProvider(
-      import.meta.env.VITE_SOLAPI_API_KEY as string,
-      import.meta.env.VITE_SOLAPI_API_SECRET as string,
-      import.meta.env.VITE_SOLAPI_SENDER as string,
-    );
-    await sms.send(phone, message);
+    const apiKey = import.meta.env.VITE_SOLAPI_API_KEY as string;
+    const apiSecret = import.meta.env.VITE_SOLAPI_API_SECRET as string;
+    const sender = import.meta.env.VITE_SOLAPI_SENDER as string;
+    const date = new Date().toISOString();
+    const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2,"0")).join("");
+    const msg = date + salt;
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(apiSecret),
+      { name:"HMAC", hash:"SHA-256" }, false, ["sign"]);
+    const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+    const signature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,"0")).join("");
+    const authHeader = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+    let to = phone.replace(/[^0-9]/g, "");
+    if (to.startsWith("82")) to = "0" + to.slice(2);
+    const res = await fetch("https://api.solapi.com/messages/v4/send", {
+      method: "POST",
+      headers: { "Content-Type":"application/json", "Authorization": authHeader },
+      body: JSON.stringify({ message: { to, from: sender, text: message } }),
+    });
+    if (!res.ok) throw new Error("SMS 발송 실패: " + await res.text());
   }
 
   useEffect(() => {
