@@ -14,6 +14,8 @@ interface GrowthMessage {
   createdAt: string;
   sentAt: string | null;
   adminEdited: boolean;
+  type: "prescription" | "monthly_report"; // 주간처방 | 월간상담평가서
+  reportMonth?: string; // "2026-08" 형식
 }
 
 const REASON_KO: Record<string, string> = {
@@ -106,6 +108,11 @@ export default function GrowthPanel() {
   const [editText, setEditText] = useState("");
   const [sending, setSending] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [reportModal, setReportModal] = useState<{code:string;name:string} | null>(null);
+  const [reportMonth, setReportMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
@@ -232,10 +239,47 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
       studentCode: code, studentName: student.name,
       content, createdAt: new Date().toISOString(),
       sentAt: null, adminEdited: false,
+      type: "prescription",
     };
     saveMsgs([msg, ...messages]);
     setEditingId(msg.id); setEditText(content);
     setViewTab("message");
+  }
+
+  function createMonthlyReport(code: string, month: string) {
+    const student = roster.find(r => r.studentCode === code);
+    if (!student) return;
+    // 이미 해당 월 보고서가 있으면 편집 모드로
+    const existing = messages.find(m => m.studentCode === code && m.reportMonth === month && m.type === "monthly_report");
+    if (existing) {
+      setEditingId(existing.id);
+      setEditText(existing.content);
+      setViewTab("message");
+      setReportModal(null);
+      return;
+    }
+    const content = makeDiagnosis(code, student.name);
+    const [y, mo] = month.split("-").map(Number);
+    const monthLabel = `${y}년 ${mo}월`;
+    const header = `━━━━━━━━━━━━━━━━━━━━━━━━━━
+${monthLabel} 학습 상담 평가서
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+`;
+    const msg: GrowthMessage = {
+      id: Math.random().toString(36).slice(2),
+      studentCode: code, studentName: student.name,
+      content: header + content,
+      createdAt: new Date().toISOString(),
+      sentAt: null, adminEdited: false,
+      type: "monthly_report",
+      reportMonth: month,
+    };
+    saveMsgs([msg, ...messages]);
+    setEditingId(msg.id);
+    setEditText(header + content);
+    setViewTab("message");
+    setReportModal(null);
   }
 
   async function sendMsg(msg: GrowthMessage) {
@@ -335,11 +379,18 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
                         </span>
                         <span style={{ fontSize:12, color:"#94a3b8" }}>총 {sorted.length}회</span>
                       </div>
-                      <button onClick={() => createMsg(code)}
-                        style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#0f766e",
-                          color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                        💊 처방 생성
-                      </button>
+                      <div style={{ display:"flex", gap:6 }}>
+                        <button onClick={() => createMsg(code)}
+                          style={{ padding:"6px 12px", borderRadius:8, border:"none", background:"#0f766e",
+                            color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                          💊 처방 생성
+                        </button>
+                        <button onClick={() => { setReportModal({code, name: roster.find(r=>r.studentCode===code)?.name ?? ""}); }}
+                          style={{ padding:"6px 12px", borderRadius:8, border:"1.5px solid #0f766e", background:"#fff",
+                            color:"#0f766e", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                          📋 상담평가서
+                        </button>
+                      </div>
                     </div>
 
                     <div style={{ padding:"14px 16px" }}>
@@ -586,6 +637,64 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
           )}
         </div>
       )}
+
+      {/* ── 상담평가서 작성 모달 ── */}
+      {reportModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:400,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div style={{ background:"#fff", borderRadius:14, padding:24, width:"100%", maxWidth:400,
+            boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
+            <h3 style={{ margin:"0 0 16px", color:"#0f766e" }}>📋 상담평가서 작성</h3>
+            <p style={{ fontSize:13, color:"#475569", marginBottom:16 }}>
+              <strong>{reportModal.name}</strong> 학생의 상담평가서를 작성합니다.
+            </p>
+
+            {/* 월 선택 */}
+            <label style={{ fontSize:13, fontWeight:600, display:"block", marginBottom:6 }}>대상 월</label>
+            <input type="month" value={reportMonth}
+              onChange={e => setReportMonth(e.target.value)}
+              style={{ width:"100%", padding:"9px 12px", borderRadius:8,
+                border:"1.5px solid #0f766e", fontSize:14, marginBottom:12, boxSizing:"border-box" as const }} />
+
+            {/* 이미 작성된 월 표시 */}
+            {messages.filter(m => m.studentCode === reportModal.code && m.type === "monthly_report").length > 0 && (
+              <div style={{ marginBottom:14, padding:"8px 12px", background:"#f0fdf4", borderRadius:8,
+                border:"1px solid #a7f3d0" }}>
+                <p style={{ fontSize:11, color:"#059669", fontWeight:600, marginBottom:4 }}>작성된 평가서</p>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                  {messages
+                    .filter(m => m.studentCode === reportModal.code && m.type === "monthly_report")
+                    .sort((a,b) => (b.reportMonth||"").localeCompare(a.reportMonth||""))
+                    .map(m => (
+                      <span key={m.id} style={{ fontSize:11, padding:"2px 8px", borderRadius:6,
+                        background: m.sentAt ? "#0f766e" : "#e2e8f0",
+                        color: m.sentAt ? "#fff" : "#475569", fontWeight:600 }}>
+                        {m.reportMonth?.replace("-","년 ")}월{m.sentAt?" ✅":""}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <p style={{ fontSize:12, color:"#94a3b8", marginBottom:16 }}>
+              ※ 매월 10일경 학부모님께 발송 권장
+            </p>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => createMonthlyReport(reportModal.code, reportMonth)}
+                style={{ flex:1, padding:11, borderRadius:8, border:"none", background:"#0f766e",
+                  color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                작성 시작
+              </button>
+              <button onClick={() => setReportModal(null)}
+                style={{ flex:1, padding:11, borderRadius:8, border:"1px solid #e2e8f0",
+                  background:"#fff", fontSize:14, cursor:"pointer" }}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
