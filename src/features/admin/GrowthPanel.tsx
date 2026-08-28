@@ -350,13 +350,21 @@ export default function GrowthPanel() {
                       {/* ④ 회고 이력 비교 테이블 */}
                       <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}>📝 회고 이력 비교</p>
                       <div style={{ overflowX:"auto" }}>
-                        <table style={{ borderCollapse:"collapse", width:"100%", fontSize:12, minWidth:600 }}>
+                        <table style={{ borderCollapse:"collapse", width:"100%", fontSize:12, minWidth:600, tableLayout:"fixed" }}>
                           <thead>
                             <tr style={{ background:"#f8fafc" }}>
-                              {["날짜", "점수", "어려웠던 점", "다음 목표", "만족도", "틀린 문항"].map(h => (
-                                <th key={h} style={{ padding:"7px 10px", textAlign: h === "점수" || h === "만족도" ? "center" : "left",
+                              {[
+                                { label:"날짜", w:"70px" },
+                                { label:"점수", w:"46px" },
+                                { label:"어려웠던 점", w:"22%" },
+                                { label:"다음 목표", w:"22%" },
+                                { label:"만족도", w:"60px" },
+                                { label:"틀린 문항", w:"auto" },
+                              ].map(({ label: h, w }) => (
+                                <th key={h} style={{ padding:"7px 10px",
+                                  textAlign: h === "점수" || h === "만족도" ? "center" : "left",
                                   borderBottom:"1.5px solid #e2e8f0", color:"#64748b", fontWeight:600,
-                                  fontSize:11, whiteSpace:"nowrap" }}>{h}</th>
+                                  fontSize:11, width:w, whiteSpace:"nowrap" }}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -381,11 +389,11 @@ export default function GrowthPanel() {
                                     {r.score}
                                   </td>
                                   <td style={{ padding:"8px 10px", color: ref.hardestReason ? "#374151" : "#cbd5e1",
-                                    maxWidth:180, lineHeight:1.4 }}>
+                                    maxWidth:180, lineHeight:1.6, wordBreak:"break-all", whiteSpace:"normal", verticalAlign:"top" }}>
                                     {ref.hardestReason || "미작성"}
                                   </td>
                                   <td style={{ padding:"8px 10px", color: ref.nextGoal ? "#374151" : "#cbd5e1",
-                                    maxWidth:180, lineHeight:1.4 }}>
+                                    maxWidth:180, lineHeight:1.6, wordBreak:"break-all", whiteSpace:"normal", verticalAlign:"top" }}>
                                     {ref.nextGoal || "미작성"}
                                   </td>
                                   <td style={{ padding:"8px 10px", textAlign:"center", fontSize:14 }}>
