@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { ExamResult } from "../../core/types";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
+import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
+import { ANALYSIS_QUESTIONS } from "../../core/assignment";
+import type { AssignmentSubmission } from "../../core/assignment";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -71,6 +74,14 @@ async function fetchResults(): Promise<ExamResult[]> {
   }));
 }
 
+async function fetchAssignmentsWithAnalysis(): Promise<AssignmentSubmission[]> {
+  try {
+    const store = createAssignmentStore();
+    const subs = await store.listSubmissions();
+    return subs.filter(s => s.analysisData != null);
+  } catch { return []; }
+}
+
 async function sendSMS(phone: string, message: string): Promise<void> {
   const apiKey = import.meta.env.VITE_SOLAPI_API_KEY as string;
   const apiSecret = import.meta.env.VITE_SOLAPI_API_SECRET as string;
@@ -100,6 +111,7 @@ export default function GrowthPanel() {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [results, setResults] = useState<ExamResult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
   const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message">("compare");
   const [messages, setMessages] = useState<GrowthMessage[]>(() => {
@@ -118,6 +130,7 @@ export default function GrowthPanel() {
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
     fetchResults().then(r => { setResults(r); setLoading(false); });
+    fetchAssignmentsWithAnalysis().then(setAssignmentSubs);
   }, [rosterStore]);
 
   function saveMsgs(msgs: GrowthMessage[]) {
@@ -665,6 +678,7 @@ ${monthLabel} 학습 상담 평가서
           roster={roster}
           byStudent={byStudent}
           selected={selected}
+          assignmentSubs={assignmentSubs.filter(s => !selected || s.studentCode === selected)}
         />
       )}
 
@@ -795,6 +809,92 @@ ${monthLabel} 학습 상담 평가서
         </div>
       )}
 
+      {/* ④ 과제 정밀 분석 섹션 */}
+      {assignmentSubs.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
+            📚 과제 정밀 분석 이력
+          </h3>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {(() => {
+              // 학생별로 그룹화
+              const byStudentMap = new Map<string, AssignmentSubmission[]>();
+              assignmentSubs.forEach(s => {
+                if (!byStudentMap.has(s.studentCode)) byStudentMap.set(s.studentCode, []);
+                byStudentMap.get(s.studentCode)!.push(s);
+              });
+              return Array.from(byStudentMap.entries()).map(([code, subs]) => {
+                const studentName = roster.find(r=>r.studentCode===code)?.name ?? code;
+                return (
+                  <div key={code} style={{ border:"1.5px solid #e2e8f0", borderRadius:12, overflow:"hidden" }}>
+                    <div style={{ padding:"10px 14px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" }}>
+                      <span style={{ fontWeight:700, fontSize:14 }}>{studentName}</span>
+                      <span style={{ fontSize:11, color:"#94a3b8", marginLeft:8 }}>과제 분석 {subs.length}건</span>
+                    </div>
+                    <div style={{ padding:"12px 14px", display:"flex", flexDirection:"column", gap:12 }}>
+                      {subs.sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt)).map((sub, si) => {
+                        const cat = sub.analysisData!.category;
+                        const catLabel = cat==="vocabulary"?"어휘":cat==="grammar"?"어법":
+                          cat==="essay"?"서술형":cat==="mockexam"?"모의고사":"독해";
+                        const catColor = cat==="vocabulary"?"#7c3aed":cat==="grammar"?"#2563eb":
+                          cat==="essay"?"#db2777":cat==="mockexam"?"#dc2626":"#0891b2";
+                        const catBg = cat==="vocabulary"?"#ede9fe":cat==="grammar"?"#dbeafe":
+                          cat==="essay"?"#fce7f3":cat==="mockexam"?"#fee2e2":"#cffafe";
+                        const questions = ANALYSIS_QUESTIONS[cat];
+                        return (
+                          <div key={si} style={{ border:"1px solid #f1f5f9", borderRadius:8, overflow:"hidden" }}>
+                            <div style={{ padding:"7px 12px", background:catBg,
+                              display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                              <span style={{ fontSize:12, fontWeight:700, color:catColor,
+                                background:"#fff", padding:"2px 8px", borderRadius:6 }}>
+                                {catLabel}
+                              </span>
+                              <span style={{ fontSize:11, color:"#64748b" }}>
+                                {sub.submittedAt.slice(0,10)}
+                              </span>
+                              {sub.score != null && (
+                                <span style={{ fontSize:11, fontWeight:700,
+                                  color: sub.score>=90?"#059669":sub.score>=70?"#2563eb":"#ef4444" }}>
+                                  {sub.score}점
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+                              {sub.analysisData!.answers.map((ans, ai) => {
+                                const q = questions.find(q=>q.id===ans.questionId);
+                                if (!q) return null;
+                                return (
+                                  <div key={ai} style={{ fontSize:12 }}>
+                                    <span style={{ color:"#94a3b8", fontWeight:600 }}>Q. {q.question} </span>
+                                    {ans.rating && (
+                                      <span style={{ color:ans.rating>=4?"#059669":ans.rating>=3?"#d97706":"#dc2626",
+                                        fontWeight:700 }}>
+                                        {"😟😕😐😊😄"[ans.rating-1]}
+                                        {" "+["많이 어려워요","조금 어려워요","보통이에요","잘 됐어요","완벽해요"][ans.rating-1]}
+                                      </span>
+                                    )}
+                                    {ans.text && <span style={{ color:"#374151" }}>→ {ans.text}</span>}
+                                    {ans.choice && (
+                                      <span style={{ background:catBg, color:catColor,
+                                        padding:"1px 7px", borderRadius:6, fontWeight:600, marginLeft:4 }}>
+                                        {ans.choice}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -842,9 +942,10 @@ interface AnalysisProps {
   roster: RosterEntry[];
   byStudent: Map<string, ExamResult[]>;
   selected: string;
+  assignmentSubs: AssignmentSubmission[];
 }
 
-function AnalysisView({ results, roster, byStudent, selected }: AnalysisProps) {
+function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: AnalysisProps) {
   const [detailStudent, setDetailStudent] = useState<string | null>(null);
 
   // 전체 정밀조사 데이터 수집
@@ -1151,6 +1252,92 @@ function AnalysisView({ results, roster, byStudent, selected }: AnalysisProps) {
           );
         })()}
       </div>
+      {/* ④ 과제 정밀 분석 섹션 */}
+      {assignmentSubs.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
+            📚 과제 정밀 분석 이력
+          </h3>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {(() => {
+              // 학생별로 그룹화
+              const byStudentMap = new Map<string, AssignmentSubmission[]>();
+              assignmentSubs.forEach(s => {
+                if (!byStudentMap.has(s.studentCode)) byStudentMap.set(s.studentCode, []);
+                byStudentMap.get(s.studentCode)!.push(s);
+              });
+              return Array.from(byStudentMap.entries()).map(([code, subs]) => {
+                const studentName = roster.find(r=>r.studentCode===code)?.name ?? code;
+                return (
+                  <div key={code} style={{ border:"1.5px solid #e2e8f0", borderRadius:12, overflow:"hidden" }}>
+                    <div style={{ padding:"10px 14px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" }}>
+                      <span style={{ fontWeight:700, fontSize:14 }}>{studentName}</span>
+                      <span style={{ fontSize:11, color:"#94a3b8", marginLeft:8 }}>과제 분석 {subs.length}건</span>
+                    </div>
+                    <div style={{ padding:"12px 14px", display:"flex", flexDirection:"column", gap:12 }}>
+                      {subs.sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt)).map((sub, si) => {
+                        const cat = sub.analysisData!.category;
+                        const catLabel = cat==="vocabulary"?"어휘":cat==="grammar"?"어법":
+                          cat==="essay"?"서술형":cat==="mockexam"?"모의고사":"독해";
+                        const catColor = cat==="vocabulary"?"#7c3aed":cat==="grammar"?"#2563eb":
+                          cat==="essay"?"#db2777":cat==="mockexam"?"#dc2626":"#0891b2";
+                        const catBg = cat==="vocabulary"?"#ede9fe":cat==="grammar"?"#dbeafe":
+                          cat==="essay"?"#fce7f3":cat==="mockexam"?"#fee2e2":"#cffafe";
+                        const questions = ANALYSIS_QUESTIONS[cat];
+                        return (
+                          <div key={si} style={{ border:"1px solid #f1f5f9", borderRadius:8, overflow:"hidden" }}>
+                            <div style={{ padding:"7px 12px", background:catBg,
+                              display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                              <span style={{ fontSize:12, fontWeight:700, color:catColor,
+                                background:"#fff", padding:"2px 8px", borderRadius:6 }}>
+                                {catLabel}
+                              </span>
+                              <span style={{ fontSize:11, color:"#64748b" }}>
+                                {sub.submittedAt.slice(0,10)}
+                              </span>
+                              {sub.score != null && (
+                                <span style={{ fontSize:11, fontWeight:700,
+                                  color: sub.score>=90?"#059669":sub.score>=70?"#2563eb":"#ef4444" }}>
+                                  {sub.score}점
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+                              {sub.analysisData!.answers.map((ans, ai) => {
+                                const q = questions.find(q=>q.id===ans.questionId);
+                                if (!q) return null;
+                                return (
+                                  <div key={ai} style={{ fontSize:12 }}>
+                                    <span style={{ color:"#94a3b8", fontWeight:600 }}>Q. {q.question} </span>
+                                    {ans.rating && (
+                                      <span style={{ color:ans.rating>=4?"#059669":ans.rating>=3?"#d97706":"#dc2626",
+                                        fontWeight:700 }}>
+                                        {"😟😕😐😊😄"[ans.rating-1]}
+                                        {" "+["많이 어려워요","조금 어려워요","보통이에요","잘 됐어요","완벽해요"][ans.rating-1]}
+                                      </span>
+                                    )}
+                                    {ans.text && <span style={{ color:"#374151" }}>→ {ans.text}</span>}
+                                    {ans.choice && (
+                                      <span style={{ background:catBg, color:catColor,
+                                        padding:"1px 7px", borderRadius:6, fontWeight:600, marginLeft:4 }}>
+                                        {ans.choice}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
