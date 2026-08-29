@@ -50,6 +50,7 @@ export class SupabaseStorage implements Storage {
       score: r.score,
       wrong_answers: r.wrongAnswers,
       reflection: r.reflection,
+      question_details: r.questionDetails ?? [],
       submitted_at: r.submittedAt,
     });
     if (error) throw error;
