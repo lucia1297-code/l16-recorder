@@ -1574,11 +1574,19 @@ function AssignmentSubmitForm({
     if (wasEditing) {
       await assignmentStore.updateSubmission(submissionId, finalPatch);
     } else {
-      await assignmentStore.submit({
+      const analysisCategory = selectedType ? detectAnalysisCategory(selectedType.name) : "reading";
+    const analysisDataToSave: AssignmentAnalysisData | undefined = analysisAnswers.length > 0 ? {
+      category: analysisCategory,
+      answers: analysisAnswers,
+      submittedAt: new Date().toISOString(),
+    } : undefined;
+
+    await assignmentStore.submit({
         id: submissionId,
         studentCode,
         typeId,
         submittedAt: new Date().toISOString(),
+        analysisData: analysisDataToSave,
         ...finalPatch,
       } as AssignmentSubmission);
     }
@@ -1861,6 +1869,79 @@ function AssignmentSubmitForm({
               </div>
             </>
           )}
+
+          {/* 정밀 분석 질문 */}
+          {selectedType && (() => {
+            const cat = detectAnalysisCategory(selectedType.name);
+            const questions = ANALYSIS_QUESTIONS[cat];
+            const catLabel = cat === "vocabulary" ? "어휘" : cat === "grammar" ? "어법" :
+              cat === "essay" ? "서술형" : cat === "mockexam" ? "모의고사" : "독해";
+            function getAns(qid: string) { return analysisAnswers.find(a => a.questionId === qid); }
+            function setAns(qid: string, patch: Partial<AssignmentAnalysisAnswer>) {
+              setAnalysisAnswers(prev => {
+                const others = prev.filter(a => a.questionId !== qid);
+                return [...others, { questionId: qid, ...getAns(qid), ...patch }];
+              });
+            }
+            return (
+              <div style={{ marginTop:16, padding:"14px", background:"#f0fdf4",
+                borderRadius:10, border:"1px solid #86efac" }}>
+                <p style={{ fontSize:13, fontWeight:700, color:"#166534", marginBottom:12 }}>
+                  🔬 정밀 분석 — {catLabel}
+                </p>
+                <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                  {questions.map(q => (
+                    <div key={q.id}>
+                      <p style={{ fontSize:12, fontWeight:600, color:"#374151", marginBottom:7 }}>{q.question}</p>
+                      {q.type === "rating" && (
+                        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                          {[1,2,3,4,5].map(n => (
+                            <button key={n} type="button"
+                              onClick={() => setAns(q.id, { rating: n })}
+                              style={{ width:38, height:38, borderRadius:8, border:"1.5px solid",
+                                borderColor: getAns(q.id)?.rating === n ? "#059669" : "#e2e8f0",
+                                background: getAns(q.id)?.rating === n ? "#059669" : "#fff",
+                                fontSize:18, cursor:"pointer" }}>
+                              {["😟","😕","😐","😊","😄"][n-1]}
+                            </button>
+                          ))}
+                          {getAns(q.id)?.rating && (
+                            <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}>
+                              {["많이 어려워요","조금 어려워요","보통이에요","잘 됐어요","완벽해요"][(getAns(q.id)?.rating??1)-1]}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {q.type === "text" && (
+                        <textarea value={getAns(q.id)?.text ?? ""}
+                          onChange={e => setAns(q.id, { text: e.target.value })}
+                          placeholder="자유롭게 작성해보세요"
+                          rows={2}
+                          style={{ width:"100%", padding:"8px 10px", borderRadius:8,
+                            border:"1px solid #e2e8f0", fontSize:12, resize:"none" as const,
+                            boxSizing:"border-box" as const }} />
+                      )}
+                      {q.type === "choice" && (
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                          {(q.choices ?? []).map(ch => (
+                            <button key={ch} type="button"
+                              onClick={() => setAns(q.id, { choice: ch })}
+                              style={{ padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:600,
+                                cursor:"pointer", border:"1.5px solid",
+                                borderColor: getAns(q.id)?.choice === ch ? "#059669" : "#e2e8f0",
+                                background: getAns(q.id)?.choice === ch ? "#059669" : "#fff",
+                                color: getAns(q.id)?.choice === ch ? "#fff" : "#64748b" }}>
+                              {ch}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{ height: 14 }} />
           <button className="btn" onClick={submit} disabled={submitting}>
