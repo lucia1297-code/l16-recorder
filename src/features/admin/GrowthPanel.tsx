@@ -66,6 +66,7 @@ async function fetchResults(): Promise<ExamResult[]> {
     // ← 핵심: parseJsonField 사용
     wrongAnswers: parseJsonField(r.wrong_answers) ?? [],
     reflection: parseJsonField(r.reflection) ?? {},
+    questionDetails: parseJsonField(r.question_details) ?? [],
     submittedAt: r.submitted_at ?? "",
   }));
 }
@@ -559,6 +560,90 @@ ${monthLabel} 학습 상담 평가서
                       <p style={{ fontSize:10, color:"#94a3b8", marginTop:4 }}>
                         * 빨간 문항 = 반복 오답(2회↑) &nbsp;|&nbsp; 초록 행 = 최근 제출
                       </p>
+
+                      {/* ⑤ 정밀조사 (3문항 상세) */}
+                      {sorted.some(r => (r.questionDetails ?? []).length > 0) && (
+                        <div style={{ marginTop:16 }}>
+                          <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:10 }}>
+                            🔬 3문항 정밀조사 이력
+                          </p>
+                          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                            {sorted.filter(r => (r.questionDetails ?? []).length > 0).map((r, ri) => (
+                              <div key={ri} style={{ border:"1px solid #e2e8f0", borderRadius:10, overflow:"hidden" }}>
+                                <div style={{ padding:"7px 12px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0",
+                                  display:"flex", gap:10, alignItems:"center" }}>
+                                  <span style={{ fontSize:12, fontWeight:700, color:"#1e293b" }}>{r.date.slice(5)}</span>
+                                  <span style={{ fontSize:12, fontWeight:700,
+                                    color: r.score >= 90 ? "#059669" : r.score >= 70 ? "#2563eb" : "#ef4444" }}>
+                                    {r.score}점
+                                  </span>
+                                  <span style={{ fontSize:11, color:"#64748b" }}>{r.exam.examName}</span>
+                                </div>
+                                <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+                                  {(r.questionDetails ?? []).map((d: any, di: number) => (
+                                    <div key={di} style={{ padding:"10px 12px", background:"#f9fafb",
+                                      borderRadius:8, border:"1px solid #f1f5f9" }}>
+                                      <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:8, flexWrap:"wrap" }}>
+                                        <span style={{ fontWeight:700, fontSize:14, color:"#7c3aed",
+                                          background:"#ede9fe", padding:"2px 10px", borderRadius:8 }}>
+                                          {d.questionNo}번
+                                        </span>
+                                        {d.chosenOption && (
+                                          <span style={{ fontSize:12, color:"#ef4444", fontWeight:600 }}>
+                                            선택: {d.chosenOption}번
+                                          </span>
+                                        )}
+                                        {d.confidenceBefore !== undefined && (
+                                          <span style={{ fontSize:12, color:"#64748b" }}>
+                                            확신도: {d.confidenceBefore}%
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px 12px", fontSize:12 }}>
+                                        {d.reasonStudent && (
+                                          <div>
+                                            <span style={{ color:"#94a3b8", fontWeight:600 }}>선택 이유: </span>
+                                            <span style={{ color:"#374151" }}>{d.reasonStudent}</span>
+                                          </div>
+                                        )}
+                                        {d.missedSignal && (
+                                          <div>
+                                            <span style={{ color:"#94a3b8", fontWeight:600 }}>놓친 신호: </span>
+                                            <span style={{ color:"#ef4444" }}>{d.missedSignal}</span>
+                                          </div>
+                                        )}
+                                        {d.evidenceSentence && (
+                                          <div style={{ gridColumn:"1/-1" }}>
+                                            <span style={{ color:"#94a3b8", fontWeight:600 }}>근거 문장: </span>
+                                            <span style={{ color:"#374151" }}>{d.evidenceSentence}</span>
+                                          </div>
+                                        )}
+                                        {d.studentNextAction && (
+                                          <div style={{ gridColumn:"1/-1" }}>
+                                            <span style={{ color:"#94a3b8", fontWeight:600 }}>다음 행동: </span>
+                                            <span style={{ color:"#059669", fontWeight:600 }}>{d.studentNextAction}</span>
+                                          </div>
+                                        )}
+                                        {d.optionElimination && Object.values(d.optionElimination).some((v: any) => v) && (
+                                          <div style={{ gridColumn:"1/-1" }}>
+                                            <span style={{ color:"#94a3b8", fontWeight:600 }}>선지 분석: </span>
+                                            {Object.entries(d.optionElimination).filter(([,v]) => v).map(([k,v]) => (
+                                              <span key={k} style={{ fontSize:11, marginLeft:6,
+                                                background:"#f1f5f9", padding:"1px 6px", borderRadius:4, color:"#475569" }}>
+                                                ①②③④⑤"[k]": {String(v)}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
