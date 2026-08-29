@@ -3722,9 +3722,27 @@ type SmsMode = "urgent" | "regular" | "individual" | "parent";
 
 function GrowthPanelLazy() {
   const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    import("./GrowthPanel").then(m => setComp(() => m.default));
+    import("./GrowthPanel")
+      .then(m => setComp(() => m.default))
+      .catch(e => {
+        console.error("GrowthPanel 로드 실패:", e);
+        setErr(String(e?.message ?? e));
+      });
   }, []);
+  if (err) return (
+    <div className="card">
+      <p style={{color:"#ef4444", fontWeight:600}}>발전기록 로드 실패</p>
+      <pre style={{fontSize:11, color:"#64748b", whiteSpace:"pre-wrap"}}>{err}</pre>
+      <button onClick={() => { setErr(null); setComp(null);
+        import("./GrowthPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e))); }}
+        style={{marginTop:8, padding:"6px 14px", borderRadius:8, border:"none",
+          background:"#0f766e", color:"#fff", cursor:"pointer", fontWeight:600}}>
+        다시 시도
+      </button>
+    </div>
+  );
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
