@@ -101,7 +101,7 @@ export default function GrowthPanel() {
   const [results, setResults] = useState<ExamResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState("");
-  const [viewTab, setViewTab] = useState<"compare" | "message">("compare");
+  const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message">("compare");
   const [messages, setMessages] = useState<GrowthMessage[]>(() => {
     try { return JSON.parse(localStorage.getItem("l16.growthMessages") || "[]"); } catch { return []; }
   });
@@ -318,12 +318,16 @@ ${monthLabel} 학습 상담 평가서
             {active.map(r => <option key={r.studentCode} value={r.studentCode}>{r.name}</option>)}
           </select>
           <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
-            {(["compare", "message"] as const).map(t => (
-              <button key={t} onClick={() => setViewTab(t)}
+            {([
+              { key:"compare",  label:"📊 비교 분석" },
+              { key:"analysis", label:"🔬 정밀 분석" },
+              { key:"message",  label:"💌 처방 메시지" },
+            ] as const).map(t => (
+              <button key={t.key} onClick={() => setViewTab(t.key)}
                 style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
-                  background: viewTab === t ? "#0f766e" : "transparent",
-                  color: viewTab === t ? "#fff" : "#64748b" }}>
-                {t === "compare" ? "📊 비교 분석" : "💌 처방 메시지"}
+                  background: viewTab === t.key ? "#0f766e" : "transparent",
+                  color: viewTab === t.key ? "#fff" : "#64748b" }}>
+                {t.label}
               </button>
             ))}
           </div>
@@ -653,6 +657,17 @@ ${monthLabel} 학습 상담 평가서
         </div>
       )}
 
+
+      {/* ══ 정밀 분석 탭 ══════════════════════════════ */}
+      {viewTab === "analysis" && (
+        <AnalysisView
+          results={results.filter(r => !selected || r.student.studentCode === selected)}
+          roster={roster}
+          byStudent={byStudent}
+          selected={selected}
+        />
+      )}
+
       {/* ══ 처방 메시지 ══ */}
       {viewTab === "message" && (
         <div>
@@ -780,6 +795,362 @@ ${monthLabel} 학습 상담 평가서
         </div>
       )}
 
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════
+// 정밀 분석 뷰 컴포넌트
+// ════════════════════════════════════════════════════════
+const QUESTION_TYPE_MAP: Record<number, { type: string; color: string; bg: string }> = {
+  18: { type:"글의 목적", color:"#7c3aed", bg:"#ede9fe" },
+  19: { type:"심경·분위기", color:"#db2777", bg:"#fce7f3" },
+  20: { type:"필자 주장", color:"#dc2626", bg:"#fee2e2" },
+  21: { type:"밑줄 함의", color:"#d97706", bg:"#fef3c7" },
+  22: { type:"요지", color:"#059669", bg:"#d1fae5" },
+  23: { type:"주제", color:"#0891b2", bg:"#cffafe" },
+  24: { type:"제목", color:"#2563eb", bg:"#dbeafe" },
+  25: { type:"도표 이해", color:"#64748b", bg:"#f1f5f9" },
+  26: { type:"내용 일치", color:"#374151", bg:"#f3f4f6" },
+  27: { type:"내용 일치(안내)", color:"#374151", bg:"#f3f4f6" },
+  28: { type:"어법 정확성", color:"#7c3aed", bg:"#ede9fe" },
+  29: { type:"어휘 적절성", color:"#db2777", bg:"#fce7f3" },
+  30: { type:"빈칸 추론", color:"#dc2626", bg:"#fee2e2" },
+  31: { type:"빈칸 추론", color:"#dc2626", bg:"#fee2e2" },
+  32: { type:"빈칸 추론", color:"#dc2626", bg:"#fee2e2" },
+  33: { type:"빈칸 추론", color:"#dc2626", bg:"#fee2e2" },
+  34: { type:"빈칸 추론(연결)", color:"#d97706", bg:"#fef3c7" },
+  35: { type:"무관한 문장", color:"#0891b2", bg:"#cffafe" },
+  36: { type:"글의 순서", color:"#059669", bg:"#d1fae5" },
+  37: { type:"글의 순서", color:"#059669", bg:"#d1fae5" },
+  38: { type:"문장 삽입", color:"#2563eb", bg:"#dbeafe" },
+  39: { type:"문장 삽입", color:"#2563eb", bg:"#dbeafe" },
+  40: { type:"요약문 완성", color:"#7c3aed", bg:"#ede9fe" },
+  41: { type:"장문 독해(목적)", color:"#64748b", bg:"#f1f5f9" },
+  42: { type:"장문 독해(어휘)", color:"#64748b", bg:"#f1f5f9" },
+  43: { type:"장문 독해(내용)", color:"#374151", bg:"#f3f4f6" },
+  44: { type:"장문 독해(순서)", color:"#374151", bg:"#f3f4f6" },
+  45: { type:"장문 독해(삽입)", color:"#374151", bg:"#f3f4f6" },
+};
+
+function getQType(n: number) {
+  return QUESTION_TYPE_MAP[n] ?? { type:`${n}번`, color:"#64748b", bg:"#f1f5f9" };
+}
+
+interface AnalysisProps {
+  results: ExamResult[];
+  roster: RosterEntry[];
+  byStudent: Map<string, ExamResult[]>;
+  selected: string;
+}
+
+function AnalysisView({ results, roster, byStudent, selected }: AnalysisProps) {
+  const [detailStudent, setDetailStudent] = useState<string | null>(null);
+
+  // 전체 정밀조사 데이터 수집
+  const allDetails = useMemo(() => {
+    const list: Array<{
+      studentCode: string; studentName: string; date: string;
+      examName: string; score: number;
+      detail: import("../../core/types").QuestionDetail;
+    }> = [];
+    results.forEach(r => {
+      (r.questionDetails ?? []).forEach(d => {
+        list.push({
+          studentCode: r.student.studentCode,
+          studentName: r.student.name,
+          date: r.date,
+          examName: r.exam.examName,
+          score: r.score,
+          detail: d,
+        });
+      });
+    });
+    return list;
+  }, [results]);
+
+  // 유형별 집계
+  const byType = useMemo(() => {
+    const map = new Map<string, typeof allDetails>();
+    allDetails.forEach(item => {
+      const t = getQType(item.detail.questionNo).type;
+      if (!map.has(t)) map.set(t, []);
+      map.get(t)!.push(item);
+    });
+    return map;
+  }, [allDetails]);
+
+  // 학생별 정밀조사 이력
+  const byStudentDetails = useMemo(() => {
+    const map = new Map<string, typeof allDetails>();
+    allDetails.forEach(item => {
+      if (!map.has(item.studentCode)) map.set(item.studentCode, []);
+      map.get(item.studentCode)!.push(item);
+    });
+    return map;
+  }, [allDetails]);
+
+  // 반복 오답 문항 (전체 오답 기준)
+  const repeatMap = useMemo(() => {
+    const cnt: Record<string, Record<number, number>> = {};
+    results.forEach(r => {
+      const code = r.student.studentCode;
+      if (!cnt[code]) cnt[code] = {};
+      (r.wrongAnswers ?? []).forEach((w: any) => {
+        cnt[code][w.questionNo] = (cnt[code][w.questionNo] || 0) + 1;
+      });
+    });
+    return cnt;
+  }, [results]);
+
+  const activeStudents = [...new Set(results.map(r => r.student.studentCode))];
+
+  if (allDetails.length === 0) {
+    return (
+      <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
+        <p style={{ fontSize:32, marginBottom:8 }}>🔬</p>
+        <p style={{ fontSize:14, fontWeight:600 }}>정밀조사 데이터가 없습니다.</p>
+        <p style={{ fontSize:12, marginTop:6 }}>
+          학생이 모의고사 제출 시 8단계(상세분석)에서 입력한 내용이 여기 표시됩니다.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* ① 유형별 취약점 분포 */}
+      <div style={{ marginBottom:24 }}>
+        <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
+          📐 유형별 취약점 분포
+        </h3>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          {Array.from(byType.entries())
+            .sort((a, b) => b[1].length - a[1].length)
+            .map(([type, items]) => {
+              const sample = getQType(items[0].detail.questionNo);
+              const lowConf = items.filter(i => i.detail.confidenceBefore < 50).length;
+              return (
+                <div key={type} style={{ border:`1.5px solid ${sample.color}30`,
+                  borderRadius:10, padding:"10px 14px", minWidth:140,
+                  background: sample.bg, cursor:"pointer" }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:sample.color, marginBottom:4 }}>{type}</div>
+                  <div style={{ fontSize:20, fontWeight:700, color:sample.color }}>{items.length}회</div>
+                  <div style={{ fontSize:10, color:"#94a3b8", marginTop:2 }}>
+                    저자신감 {lowConf}회 · {[...new Set(items.map(i=>i.studentName))].length}명
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+
+      {/* ② 학생별 정밀조사 이력 */}
+      <div style={{ marginBottom:24 }}>
+        <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
+          👤 학생별 정밀조사 이력
+        </h3>
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {activeStudents
+            .filter(code => !selected || code === selected)
+            .map(code => {
+              const studentName = roster.find(r => r.studentCode === code)?.name ?? code;
+              const items = byStudentDetails.get(code) ?? [];
+              const rmap = repeatMap[code] ?? {};
+              const isOpen = detailStudent === code;
+              if (items.length === 0) return null;
+
+              // 이 학생의 유형별 집계
+              const typeCnt: Record<string, number> = {};
+              items.forEach(i => {
+                const t = getQType(i.detail.questionNo).type;
+                typeCnt[t] = (typeCnt[t] || 0) + 1;
+              });
+              const topType = Object.entries(typeCnt).sort((a,b)=>b[1]-a[1])[0];
+
+              return (
+                <div key={code} style={{ border:"1.5px solid #e2e8f0", borderRadius:12, overflow:"hidden" }}>
+                  {/* 학생 헤더 */}
+                  <div style={{ padding:"10px 14px", background:"#f8fafc",
+                    borderBottom: isOpen ? "1px solid #e2e8f0" : "none",
+                    display:"flex", justifyContent:"space-between", alignItems:"center",
+                    cursor:"pointer" }}
+                    onClick={() => setDetailStudent(isOpen ? null : code)}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                      <span style={{ fontWeight:700, fontSize:14, color:"#1e293b" }}>{studentName}</span>
+                      <span style={{ fontSize:11, color:"#94a3b8" }}>정밀조사 {items.length}건</span>
+                      {topType && (
+                        <span style={{ fontSize:11, padding:"2px 8px", borderRadius:6,
+                          background: getQType(items.find(i=>getQType(i.detail.questionNo).type===topType[0])?.detail.questionNo??0).bg,
+                          color: getQType(items.find(i=>getQType(i.detail.questionNo).type===topType[0])?.detail.questionNo??0).color,
+                          fontWeight:600 }}>
+                          최다 취약: {topType[0]} ({topType[1]}회)
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize:14, color:"#94a3b8" }}>{isOpen ? "▲" : "▼"}</span>
+                  </div>
+
+                  {isOpen && (
+                    <div style={{ padding:"12px 14px" }}>
+                      {/* 이 학생의 유형별 칩 */}
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:12 }}>
+                        {Object.entries(typeCnt).sort((a,b)=>b[1]-a[1]).map(([type, cnt]) => {
+                          const qnum = items.find(i=>getQType(i.detail.questionNo).type===type)?.detail.questionNo ?? 0;
+                          const s = getQType(qnum);
+                          return (
+                            <span key={type} style={{ fontSize:11, padding:"3px 10px", borderRadius:8,
+                              background:s.bg, color:s.color, fontWeight:600,
+                              border:`1px solid ${s.color}40` }}>
+                              {type} {cnt}회
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {/* 정밀조사 상세 테이블 */}
+                      <div style={{ overflowX:"auto" }}>
+                        <table style={{ borderCollapse:"collapse", width:"100%", fontSize:11, minWidth:700, tableLayout:"fixed" }}>
+                          <thead>
+                            <tr style={{ background:"#f1f5f9" }}>
+                              {[
+                                { label:"날짜", w:"60px" }, { label:"시험", w:"80px" },
+                                { label:"문항·유형", w:"100px" }, { label:"선택", w:"40px" },
+                                { label:"자신감", w:"54px" }, { label:"선택 이유", w:"16%" },
+                                { label:"놓친 신호", w:"16%" }, { label:"다음 행동", w:"18%" },
+                              ].map(h => (
+                                <th key={h.label} style={{ padding:"6px 8px", textAlign:"left",
+                                  borderBottom:"1.5px solid #e2e8f0", color:"#64748b", fontWeight:600,
+                                  width:h.w, whiteSpace:"nowrap" }}>{h.label}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items
+                              .sort((a,b)=>b.date.localeCompare(a.date))
+                              .map((item, i) => {
+                                const qinfo = getQType(item.detail.questionNo);
+                                const isRepeat = (rmap[item.detail.questionNo] ?? 0) >= 2;
+                                return (
+                                  <tr key={i} style={{ background: isRepeat ? "#fff5f5" : i%2===0?"#fff":"#fafafa",
+                                    borderBottom:"1px solid #f1f5f9" }}>
+                                    <td style={{ padding:"7px 8px", color:"#64748b", whiteSpace:"nowrap" }}>{item.date.slice(5)}</td>
+                                    <td style={{ padding:"7px 8px", color:"#64748b", overflow:"hidden",
+                                      textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={item.examName}>
+                                      {item.examName.slice(0,6)}
+                                    </td>
+                                    <td style={{ padding:"7px 8px" }}>
+                                      <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                                        <span style={{ fontWeight:700,
+                                          color: isRepeat ? "#dc2626" : "#1e293b" }}>
+                                          {item.detail.questionNo}번 {isRepeat && "🔁"}
+                                        </span>
+                                        <span style={{ fontSize:10, padding:"1px 5px", borderRadius:4,
+                                          background:qinfo.bg, color:qinfo.color, fontWeight:600,
+                                          display:"inline-block", whiteSpace:"nowrap" }}>
+                                          {qinfo.type}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td style={{ padding:"7px 8px", textAlign:"center", fontWeight:700,
+                                      color:"#92400e" }}>{item.detail.chosenOption || "-"}</td>
+                                    <td style={{ padding:"7px 8px", textAlign:"center" }}>
+                                      <span style={{ fontSize:11, fontWeight:700,
+                                        color: (item.detail.confidenceBefore??50) >= 70 ? "#059669"
+                                          : (item.detail.confidenceBefore??50) >= 40 ? "#d97706" : "#dc2626" }}>
+                                        {item.detail.confidenceBefore ?? "-"}%
+                                      </span>
+                                    </td>
+                                    <td style={{ padding:"7px 8px", color:"#374151", wordBreak:"break-all",
+                                      lineHeight:1.5, whiteSpace:"normal" }}>
+                                      {item.detail.reasonStudent || <span style={{color:"#cbd5e1"}}>미입력</span>}
+                                    </td>
+                                    <td style={{ padding:"7px 8px", color:"#dc2626", wordBreak:"break-all",
+                                      lineHeight:1.5, whiteSpace:"normal" }}>
+                                      {item.detail.missedSignal || <span style={{color:"#cbd5e1"}}>미입력</span>}
+                                    </td>
+                                    <td style={{ padding:"7px 8px", color:"#059669", fontWeight:600,
+                                      wordBreak:"break-all", lineHeight:1.5, whiteSpace:"normal" }}>
+                                      {item.detail.studentNextAction || <span style={{color:"#cbd5e1", fontWeight:400}}>미입력</span>}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* 근거 문장 별도 표시 */}
+                      {items.some(i => i.detail.evidenceSentence) && (
+                        <div style={{ marginTop:10 }}>
+                          <p style={{ fontSize:11, fontWeight:600, color:"#64748b", marginBottom:6 }}>📌 근거 문장 이력</p>
+                          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                            {items.filter(i => i.detail.evidenceSentence).map((item, i) => (
+                              <div key={i} style={{ padding:"6px 10px", background:"#f0fdf4",
+                                borderRadius:6, border:"1px solid #bbf7d0", fontSize:11 }}>
+                                <span style={{ color:"#94a3b8", marginRight:6 }}>{item.date.slice(5)} {item.detail.questionNo}번</span>
+                                <span style={{ color:"#166534", fontStyle:"italic" }}>{item.detail.evidenceSentence}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      </div>
+
+      {/* ③ 지속 모니터링: 자신감 낮은 문항 경보 */}
+      <div style={{ marginBottom:16 }}>
+        <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
+          ⚠️ 모니터링 경보 — 자신감 40% 미만 반복 오답
+        </h3>
+        {(() => {
+          const alerts: Array<{studentName:string; qno:number; type:string; cnt:number; avgConf:number}> = [];
+          activeStudents.filter(code => !selected || code === selected).forEach(code => {
+            const studentName = roster.find(r=>r.studentCode===code)?.name ?? code;
+            const items = byStudentDetails.get(code) ?? [];
+            const qGroups: Record<number, number[]> = {};
+            items.forEach(i => {
+              const n = i.detail.questionNo;
+              if (!qGroups[n]) qGroups[n] = [];
+              qGroups[n].push(i.detail.confidenceBefore ?? 50);
+            });
+            Object.entries(qGroups).forEach(([qno, confs]) => {
+              const avg = Math.round(confs.reduce((s,c)=>s+c,0)/confs.length);
+              if (confs.length >= 2 && avg < 50) {
+                alerts.push({ studentName, qno:Number(qno), type:getQType(Number(qno)).type, cnt:confs.length, avgConf:avg });
+              }
+            });
+          });
+          if (alerts.length === 0) return (
+            <p style={{ fontSize:12, color:"#94a3b8", padding:"12px 0" }}>현재 경보 없음 ✅</p>
+          );
+          return (
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {alerts.sort((a,b)=>a.avgConf-b.avgConf).map((a, i) => (
+                <div key={i} style={{ padding:"10px 14px", borderRadius:10,
+                  background:"#fff5f5", border:"1.5px solid #fca5a5",
+                  display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+                  <span style={{ fontWeight:700, color:"#dc2626", fontSize:13 }}>{a.studentName}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:"#1e293b" }}>{a.qno}번</span>
+                  <span style={{ fontSize:11, padding:"2px 8px", borderRadius:6,
+                    background:getQType(a.qno).bg, color:getQType(a.qno).color, fontWeight:600 }}>
+                    {a.type}
+                  </span>
+                  <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>
+                    자신감 평균 {a.avgConf}% ({a.cnt}회 반복)
+                  </span>
+                  <span style={{ fontSize:11, color:"#64748b" }}>→ 집중 지도 필요</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 }
