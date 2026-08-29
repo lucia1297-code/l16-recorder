@@ -1481,6 +1481,7 @@ function AssignmentSubmitForm({
   const [step1Minutes, setStep1Minutes] = useState("");
   const [step2Minutes, setStep2Minutes] = useState("");
   const [step3Minutes, setStep3Minutes] = useState("");
+  const [analysisAnswers, setAnalysisAnswers] = useState<AssignmentAnalysisAnswer[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
