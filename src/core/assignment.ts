@@ -218,3 +218,83 @@ export function validateMockExamTimingInput(input: MockExamTimingInput): string[
   }
   return errors;
 }
+
+// ===== 과제 정밀 분석 질문 유형 =====
+export type AssignmentAnalysisCategory =
+  | "vocabulary"    // 어휘
+  | "grammar"       // 어법
+  | "reading"       // 독해 유형
+  | "essay"         // 서술형
+  | "mockexam";     // 모의고사
+
+export interface AssignmentAnalysisQuestion {
+  id: string;
+  category: AssignmentAnalysisCategory;
+  question: string;       // 질문 텍스트
+  type: "rating" | "text" | "choice"; // 입력 방식
+  choices?: string[];     // choice 타입일 때 선택지
+}
+
+export interface AssignmentAnalysisAnswer {
+  questionId: string;
+  rating?: number;        // 1~5 별점
+  text?: string;          // 텍스트 답변
+  choice?: string;        // 선택 답변
+}
+
+export interface AssignmentAnalysisData {
+  category: AssignmentAnalysisCategory;
+  answers: AssignmentAnalysisAnswer[];
+  submittedAt: string;
+}
+
+// 과제 유형별 정밀 분석 질문 정의
+export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAnalysisQuestion[]> = {
+  vocabulary: [
+    { id:"v1", category:"vocabulary", question:"오늘 암기한 어휘 중 가장 어려웠던 단어는?", type:"text" },
+    { id:"v2", category:"vocabulary", question:"암기 완성도는 어느 정도인가요?", type:"rating" },
+    { id:"v3", category:"vocabulary", question:"어떤 방법으로 암기했나요?", type:"choice",
+      choices:["소리 내어 읽기","손으로 쓰기","예문으로 외우기","어원 분석","반복 보기"] },
+    { id:"v4", category:"vocabulary", question:"다음에 다시 봐야 할 단어가 있나요?", type:"text" },
+  ],
+  grammar: [
+    { id:"g1", category:"grammar", question:"오늘 학습한 어법 포인트를 한 줄로 설명해보세요.", type:"text" },
+    { id:"g2", category:"grammar", question:"이해도는 어느 정도인가요?", type:"rating" },
+    { id:"g3", category:"grammar", question:"헷갈렸던 부분은 무엇인가요?", type:"text" },
+    { id:"g4", category:"grammar", question:"어떤 유형에서 주로 실수하나요?", type:"choice",
+      choices:["동사/준동사","관계사","접속사","수일치","병렬구조","시제","수동태"] },
+  ],
+  reading: [
+    { id:"r1", category:"reading", question:"오늘 푼 독해 유형 중 가장 어려웠던 것은?", type:"choice",
+      choices:["빈칸추론","글의순서","문장삽입","무관한문장","요약문","제목/주제","내용일치"] },
+    { id:"r2", category:"reading", question:"지문을 이해하는 데 걸린 시간이 충분했나요?", type:"rating" },
+    { id:"r3", category:"reading", question:"오답의 주요 원인은?", type:"choice",
+      choices:["지문 이해 부족","시간 부족","선지 혼동","어휘 모름","집중력 저하","논리 오류"] },
+    { id:"r4", category:"reading", question:"오늘 배운 독해 전략을 한 줄로 정리해보세요.", type:"text" },
+  ],
+  essay: [
+    { id:"e1", category:"essay", question:"서술형 문항에서 가장 어려웠던 부분은?", type:"choice",
+      choices:["문법 오류","어휘 선택","문장 구성","내용 이해","영작 표현","조건 충족"] },
+    { id:"e2", category:"essay", question:"영작 자신감은 어느 정도인가요?", type:"rating" },
+    { id:"e3", category:"essay", question:"틀린 이유를 직접 분석해보세요.", type:"text" },
+    { id:"e4", category:"essay", question:"다음에 같은 유형이 나오면 어떻게 접근할 건가요?", type:"text" },
+  ],
+  mockexam: [
+    { id:"m1", category:"mockexam", question:"오늘 풀이에서 가장 아쉬웠던 점은?", type:"text" },
+    { id:"m2", category:"mockexam", question:"전반적인 풀이 만족도는?", type:"rating" },
+    { id:"m3", category:"mockexam", question:"시간 배분이 적절했나요?", type:"choice",
+      choices:["충분했다","약간 부족했다","많이 부족했다","시간이 남았다"] },
+    { id:"m4", category:"mockexam", question:"다음 번에 개선할 한 가지는?", type:"text" },
+  ],
+};
+
+// 과제 이름으로 카테고리 자동 판별
+export function detectAnalysisCategory(typeName: string): AssignmentAnalysisCategory {
+  const name = typeName.toLowerCase();
+  if (name.includes("어휘") || name.includes("단어") || name.includes("voca")) return "vocabulary";
+  if (name.includes("어법") || name.includes("문법") || name.includes("grammar")) return "grammar";
+  if (name.includes("서술") || name.includes("영작") || name.includes("essay")) return "essay";
+  if (name.includes("모의") || name.includes("mock")) return "mockexam";
+  return "reading"; // 기본: 독해
+}
+
