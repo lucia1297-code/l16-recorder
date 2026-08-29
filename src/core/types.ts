@@ -68,6 +68,7 @@ export interface ExamResult {
   score: number; // 학생 총점
   wrongAnswers: WrongAnswerEntry[];
   reflection: Reflection;
+  questionDetails?: QuestionDetail[]; // 3문항 정밀조사
   submittedAt: string; // ISO
 }
 
