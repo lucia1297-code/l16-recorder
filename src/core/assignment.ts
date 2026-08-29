@@ -31,6 +31,9 @@ export interface AssignmentSubmission {
   scope?: string; // 범위, 예: "101~150번"
   completed?: boolean; // 완료여부
 
+  // 정밀 분석 답변 (선택 — 학생이 제출 시 입력)
+  analysisData?: AssignmentAnalysisData;
+
   // 강사 2차 점검 (선택 — 제출 직후에는 비어있고, 강사가 확인하면 채워짐)
   reviewStatus?: "pending" | "pass" | "fail";
   reviewedAt?: string; // ISO
