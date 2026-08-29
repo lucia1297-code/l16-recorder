@@ -212,6 +212,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
       score: draft.score ?? 0,
       wrongAnswers: draft.wrongAnswers,
       reflection: draft.reflection as Reflection,
+      questionDetails: draft.questionDetails ?? [],
       submittedAt: new Date().toISOString(),
     };
 
