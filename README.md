@@ -261,3 +261,5 @@ supabase/schema.sql
 <!-- rebuild: 2026-08-15 01:55:02 -->
 
 <!-- solapi-secret-updated: 2026-08-15 02:09:44 -->
+
+<!-- openai-key-added: 2026-08-31 13:04:43 -->
