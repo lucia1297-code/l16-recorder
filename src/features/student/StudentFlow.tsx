@@ -376,7 +376,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
               setMode("exam");
               next();
             }}
-            onChooseAssignment={() => setMode("examCheck")}
+            onChooseAssignment={() => setMode("assignment")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
