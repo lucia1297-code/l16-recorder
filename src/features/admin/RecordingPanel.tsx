@@ -362,7 +362,7 @@ export default function RecordingPanel() {
                 borderBottom:"1px solid #f1f5f9",
                 display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <span style={{ fontSize:20 }}><Mic size={20} color="#0891b2" /><//span>
+                  <span style={{ fontSize:20 }}><Mic size={20} color="#0891b2" /></span>
                   <div>
                     <div style={{ fontWeight:700, fontSize:14 }}>{rec.student_name}</div>
                     <div style={{ fontSize:11, color:"#94a3b8" }}>
