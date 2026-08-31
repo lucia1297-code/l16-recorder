@@ -368,6 +368,7 @@ function RosterManager() {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [preview, setPreview] = useState<RosterEntry[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [exportCols, setExportCols] = useState({ name:true, school:true, grade:true, phone:true, parentPhone:true, studentCode:true });
   const [fileName, setFileName] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -503,9 +504,63 @@ function RosterManager() {
     setAddTeacher("");
   }
 
+  function exportExcel() {
+    const cols = [
+      exportCols.name && "이름",
+      exportCols.school && "학교",
+      exportCols.grade && "학년",
+      exportCols.phone && "전화번호",
+      exportCols.parentPhone && "학부모번호",
+      exportCols.studentCode && "학생코드",
+    ].filter(Boolean) as string[];
+
+    const colKeys: (keyof RosterEntry)[] = [
+      exportCols.name && "name",
+      exportCols.school && "school",
+      exportCols.grade && "grade",
+      exportCols.phone && "phone",
+      exportCols.parentPhone && "parentPhone",
+      exportCols.studentCode && "studentCode",
+    ].filter(Boolean) as (keyof RosterEntry)[];
+
+    const active = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
+    const rows = [cols, ...active.map(r => colKeys.map(k => String(r[k] ?? "")))];
+    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g,'""')}"`).join(",")).join("
+");
+    const bom = "﻿";
+    const blob = new Blob([bom + csv], { type:"text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `학생명단_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="card">
-      <h2>명부 관리</h2>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8, flexWrap:"wrap", gap:10 }}>
+        <h2 style={{ margin:0 }}>명부 관리</h2>
+        <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 14px", background:"#f8fafc" }}>
+          <p style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:8 }}>📊 Excel(CSV) 내보내기</p>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:8 }}>
+            {([
+              { key:"name", label:"이름" }, { key:"school", label:"학교" },
+              { key:"grade", label:"학년" }, { key:"phone", label:"전화번호" },
+              { key:"parentPhone", label:"학부모번호" }, { key:"studentCode", label:"학생코드" },
+            ] as const).map(col => (
+              <label key={col.key} style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, cursor:"pointer" }}>
+                <input type="checkbox" checked={exportCols[col.key]}
+                  onChange={e => setExportCols(prev => ({...prev, [col.key]: e.target.checked}))} />
+                {col.label}
+              </label>
+            ))}
+          </div>
+          <button onClick={exportExcel}
+            style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#059669",
+              color:"#fff", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+            ⬇ CSV 다운로드
+          </button>
+        </div>
+      </div>
       <p className="sub">
         엑셀 명부를 업로드하면 학생코드·전화번호가 등록되어, 학생 전화인증 시 등록된 번호만
         허용됩니다.
