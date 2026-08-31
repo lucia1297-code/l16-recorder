@@ -4097,6 +4097,12 @@ function ExamPrepPanel() {
   const [editingExam, setEditingExam] = useState<ExamSchedule | null>(null);
   const [form, setForm] = useState<Omit<ExamSchedule, "id" | "studentCode">>(EMPTY_EXAM);
   const [viewFilter, setViewFilter] = useState<"all" | "upcoming" | "completed">("upcoming");
+  const [viewMode, setViewMode] = useState<"admin" | "student" | "consult">("admin");
+  const [studentExams, setStudentExams] = useState<any[]>([]);
+  const [consultMsgs, setConsultMsgs] = useState<any[]>([]);
+  const [replyId, setReplyId] = useState<string|null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replying, setReplying] = useState(false);
   const [notice, setNotice] = useState("");
   const [paperModal, setPaperModal] = useState<ExamSchedule | null>(null);
   const [papers, setPapers] = useState<{id:string;student_code:string;student_name:string;image_url:string;submitted_at:string}[]>([]);
