@@ -7,6 +7,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const SOLAPI_API_KEY = import.meta.env.VITE_SOLAPI_API_KEY as string;
 const SOLAPI_API_SECRET = import.meta.env.VITE_SOLAPI_API_SECRET as string;
 const SOLAPI_SENDER = import.meta.env.VITE_SOLAPI_SENDER as string;
+const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
 
 
 // ═══════════════════════════════════════════════════════
@@ -98,7 +99,7 @@ async function sendExamPaperRequestSMS(phone: string, studentName: string, subje
 }
 
 
-function ExamPrepPanel() {
+export default function ExamPrepPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [exams, setExams] = useState<ExamSchedule[]>([]);
