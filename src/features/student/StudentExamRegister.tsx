@@ -24,6 +24,7 @@ interface StudentExam {
   exam_paper_submitted: boolean;
   next_lesson_date: string;
   memo: string;
+  admin_confirmed?: boolean;
 }
 
 interface ConsultationMessage {
