@@ -116,7 +116,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "growth"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "growth" | "recording"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -162,6 +162,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "growth" ? "on" : ""} onClick={() => setTab("growth")} style={{ background: tab === "growth" ? "#0f766e" : "", color: tab === "growth" ? "#fff" : "" }}>
           발전기록
         </button>
+        <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")} style={{ background: tab === "recording" ? "#0891b2" : "", color: tab === "recording" ? "#fff" : "" }}>
+          🎙 녹음분석
+        </button>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")} style={{ background: tab === "examprep" ? "#7c3aed" : "", color: tab === "examprep" ? "#fff" : "" }}>
           시험준비
         </button>
@@ -185,6 +188,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "sms" && <SmsCenterPanel />}
         {tab === "examprep" && <ExamPrepPanelLazy />}
         {tab === "growth" && <GrowthPanelLazy />}
+        {tab === "recording" && <RecordingPanelLazy />}
       </div>
     </div>
   );
@@ -3719,6 +3723,17 @@ function ReportLinkButton({ studentCode, studentName }: { studentCode: string; s
 
 type SmsMode = "urgent" | "regular" | "individual" | "parent";
 
+
+function RecordingPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./RecordingPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>녹음분석 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
 
 function GrowthPanelLazy() {
   const [Comp, setComp] = useState<React.ComponentType | null>(null);
