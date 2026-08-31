@@ -4109,18 +4109,16 @@ function ExamPrepPanel() {
   const [papersLoading, setPapersLoading] = useState(false);
   const [smsSending, setSmsSending] = useState<string | null>(null);
 
-  const SUPABASE_URL_EP = import.meta.env.VITE_SUPABASE_URL as string;
-  const SUPABASE_KEY_EP = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-  const SB_H = { "apikey": SUPABASE_KEY_EP, "Authorization": `Bearer ${SUPABASE_KEY_EP}` };
+  const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
     const saved = localStorage.getItem("l16.examSchedules");
     if (saved) setExams(JSON.parse(saved));
     // 학생이 직접 등록한 시험 + 상담 메시지 로딩
-    fetch(`${SUPABASE_URL_EP}/rest/v1/student_exams?order=submitted_at.desc`, { headers: SB_H })
+    fetch(`${SUPABASE_URL}/rest/v1/student_exams?order=submitted_at.desc`, { headers: SB_H })
       .then(r => r.json()).then(d => setStudentExams(Array.isArray(d) ? d : [])).catch(() => {});
-    fetch(`${SUPABASE_URL_EP}/rest/v1/consultation_messages?order=created_at.desc`, { headers: SB_H })
+    fetch(`${SUPABASE_URL}/rest/v1/consultation_messages?order=created_at.desc`, { headers: SB_H })
       .then(r => r.json()).then(d => setConsultMsgs(Array.isArray(d) ? d : [])).catch(() => {});
   }, [rosterStore]);
 
@@ -4133,7 +4131,7 @@ function ExamPrepPanel() {
     if (!replyText.trim()) return;
     setReplying(true);
     try {
-      await fetch(`${SUPABASE_URL_EP}/rest/v1/consultation_messages?id=eq.${msgId}`, {
+      await fetch(`${SUPABASE_URL}/rest/v1/consultation_messages?id=eq.${msgId}`, {
         method: "PATCH",
         headers: { ...SB_H, "Content-Type": "application/json" },
         body: JSON.stringify({ admin_reply: replyText, replied_at: new Date().toISOString(), is_read: true }),
@@ -4147,7 +4145,7 @@ function ExamPrepPanel() {
   }
 
   async function confirmStudentExam(id: string) {
-    await fetch(`${SUPABASE_URL_EP}/rest/v1/student_exams?id=eq.${id}`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/student_exams?id=eq.${id}`, {
       method: "PATCH",
       headers: { ...SB_H, "Content-Type": "application/json" },
       body: JSON.stringify({ admin_confirmed: true }),
