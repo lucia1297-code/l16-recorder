@@ -525,8 +525,7 @@ function RosterManager() {
 
     const active = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
     const rows = [cols, ...active.map(r => colKeys.map(k => String(r[k] ?? "")))];
-    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g,'""')}"`).join(",")).join("
-");
+    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g,'""')}"`).join(",")).join("\n");
     const bom = "﻿";
     const blob = new Blob([bom + csv], { type:"text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
