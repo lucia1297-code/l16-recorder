@@ -3751,7 +3751,7 @@ function ExamPrepPanelLazy() {
   const [Comp, setComp] = useState<React.ComponentType | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    import("./ExamPrepPanel").then(m => setComp(() => m.default ?? m.ExamPrepPanel)).catch(e => setErr(String(e?.message ?? e)));
+    import("./ExamPrepPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
   }, []);
   if (err) return <div className="card"><p style={{color:"#ef4444"}}>시험준비 로드 실패: {err}</p></div>;
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
