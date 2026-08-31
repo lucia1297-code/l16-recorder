@@ -4103,15 +4103,51 @@ function ExamPrepPanel() {
   const [papersLoading, setPapersLoading] = useState(false);
   const [smsSending, setSmsSending] = useState<string | null>(null);
 
+  const SUPABASE_URL_EP = import.meta.env.VITE_SUPABASE_URL as string;
+  const SUPABASE_KEY_EP = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const SB_H = { "apikey": SUPABASE_KEY_EP, "Authorization": `Bearer ${SUPABASE_KEY_EP}` };
+
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
     const saved = localStorage.getItem("l16.examSchedules");
     if (saved) setExams(JSON.parse(saved));
+    // 학생이 직접 등록한 시험 + 상담 메시지 로딩
+    fetch(`${SUPABASE_URL_EP}/rest/v1/student_exams?order=submitted_at.desc`, { headers: SB_H })
+      .then(r => r.json()).then(d => setStudentExams(Array.isArray(d) ? d : [])).catch(() => {});
+    fetch(`${SUPABASE_URL_EP}/rest/v1/consultation_messages?order=created_at.desc`, { headers: SB_H })
+      .then(r => r.json()).then(d => setConsultMsgs(Array.isArray(d) ? d : [])).catch(() => {});
   }, [rosterStore]);
 
   function saveExams(newExams: ExamSchedule[]) {
     setExams(newExams);
     localStorage.setItem("l16.examSchedules", JSON.stringify(newExams));
+  }
+
+  async function sendReply(msgId: string) {
+    if (!replyText.trim()) return;
+    setReplying(true);
+    try {
+      await fetch(`${SUPABASE_URL_EP}/rest/v1/consultation_messages?id=eq.${msgId}`, {
+        method: "PATCH",
+        headers: { ...SB_H, "Content-Type": "application/json" },
+        body: JSON.stringify({ admin_reply: replyText, replied_at: new Date().toISOString(), is_read: true }),
+      });
+      setConsultMsgs(prev => prev.map(m => m.id === msgId
+        ? { ...m, admin_reply: replyText, replied_at: new Date().toISOString() } : m));
+      setReplyId(null); setReplyText("");
+      setNotice("답변을 전송했습니다."); setTimeout(() => setNotice(""), 3000);
+    } catch { setNotice("답변 전송 실패"); }
+    setReplying(false);
+  }
+
+  async function confirmStudentExam(id: string) {
+    await fetch(`${SUPABASE_URL_EP}/rest/v1/student_exams?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { ...SB_H, "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_confirmed: true }),
+    });
+    setStudentExams(prev => prev.map(e => e.id === id ? { ...e, admin_confirmed: true } : e));
+    setNotice("확인 처리됐습니다."); setTimeout(() => setNotice(""), 3000);
   }
 
   function daysUntil(dateStr: string): number {
@@ -4177,14 +4213,160 @@ function ExamPrepPanel() {
       {/* 헤더 */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <h2 style={{ margin:0, color:"#7c3aed" }}>📝 시험 준비 현황판</h2>
-        <button onClick={() => { setShowForm(true); setEditingExam(null); setForm(EMPTY_EXAM); }}
-          style={{ padding:"7px 16px", background:"#7c3aed", color:"#fff", border:"none", borderRadius:8, fontWeight:700, fontSize:13, cursor:"pointer" }}>
-          + 시험 일정 추가
-        </button>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
+            {([
+              {key:"admin", label:"📋 내 관리"},
+              {key:"student", label:`📩 학생등록 ${studentExams.length > 0 ? `(${studentExams.length})` : ""}`},
+              {key:"consult", label:`💬 상담 ${consultMsgs.filter(m=>!m.admin_reply).length > 0 ? `(${consultMsgs.filter(m=>!m.admin_reply).length})` : ""}`},
+            ] as const).map(t => (
+              <button key={t.key} onClick={() => setViewMode(t.key)}
+                style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
+                  background: viewMode===t.key ? "#7c3aed" : "transparent",
+                  color: viewMode===t.key ? "#fff" : "#64748b" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {viewMode === "admin" && (
+            <button onClick={() => { setShowForm(true); setEditingExam(null); setForm(EMPTY_EXAM); }}
+              style={{ padding:"7px 16px", background:"#7c3aed", color:"#fff", border:"none", borderRadius:8, fontWeight:700, fontSize:13, cursor:"pointer" }}>
+              + 시험 일정 추가
+            </button>
+          )}
+        </div>
       </div>
 
       {notice && <p style={{ color:"#7c3aed", fontWeight:600, marginBottom:10 }}>{notice}</p>}
 
+      {/* ── 학생 직접 등록 시험 ── */}
+      {viewMode === "student" && (
+        <div>
+          <p style={{ fontSize:13, color:"#64748b", marginBottom:12 }}>학생이 직접 등록한 시험 일정입니다. 확인 후 처리해주세요.</p>
+          {studentExams.length === 0 ? (
+            <p style={{ color:"#94a3b8", textAlign:"center", padding:"30px 0" }}>학생이 등록한 시험이 없습니다.</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {studentExams
+                .filter(e => !selectedStudent || e.student_code === selectedStudent)
+                .map((ex, i) => {
+                  const dl = ex.english_exam_date
+                    ? Math.ceil((new Date(ex.english_exam_date).getTime() - Date.now()) / 86400000) : null;
+                  return (
+                    <div key={i} style={{ border:`1.5px solid ${ex.admin_confirmed?"#86efac":"#fbbf24"}`,
+                      borderRadius:12, overflow:"hidden", background: ex.admin_confirmed?"#f0fdf4":"#fffbeb" }}>
+                      <div style={{ padding:"10px 14px", background: ex.admin_confirmed?"#d1fae5":"#fef3c7",
+                        borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between",
+                        alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                          <span style={{ fontWeight:700, fontSize:14, color:"#1e293b" }}>{ex.student_name}</span>
+                          <span style={{ fontSize:11, background:"#ede9fe", color:"#7c3aed", padding:"1px 7px", borderRadius:8, fontWeight:600 }}>
+                            {ex.semester}학기 {ex.exam_type==="midterm"?"중간":"기말"}
+                          </span>
+                          <span style={{ fontSize:11, background:"#f1f5f9", color:"#475569", padding:"1px 7px", borderRadius:8 }}>{ex.subject}</span>
+                          {dl !== null && dl >= 0 && <span style={{ fontSize:12, fontWeight:700, color: dl<=7?"#dc2626":"#f97316" }}>D-{dl}</span>}
+                          {ex.admin_confirmed
+                            ? <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}>✅ 확인완료</span>
+                            : <span style={{ fontSize:11, color:"#d97706", fontWeight:600 }}>⏳ 미확인</span>}
+                        </div>
+                        {!ex.admin_confirmed && (
+                          <button onClick={() => confirmStudentExam(ex.id)}
+                            style={{ padding:"4px 12px", borderRadius:7, border:"none", background:"#7c3aed",
+                              color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                            ✅ 확인 처리
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ padding:"10px 14px", display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:"6px 12px", fontSize:12 }}>
+                        {[
+                          { label:"시험 기간", value: ex.exam_start && ex.exam_end ? `${ex.exam_start.slice(5)} ~ ${ex.exam_end.slice(5)}` : "-" },
+                          { label:"영어 시험일", value: ex.english_exam_date?.slice(5) ?? "-" },
+                          { label:"직보일", value: ex.report_deadline?.slice(5) ?? "-" },
+                          { label:"다음 수업", value: ex.next_lesson_date?.slice(5) ?? "-" },
+                          { label:"시험 범위", value: ex.exam_range || "-" },
+                          { label:"시험지 제출", value: ex.exam_paper_submitted ? "✅ 완료" : "❌ 미제출" },
+                        ].map(it => (
+                          <div key={it.label}>
+                            <div style={{ fontSize:10, color:"#94a3b8", fontWeight:600 }}>{it.label}</div>
+                            <div style={{ color:"#374151" }}>{it.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {ex.memo && <div style={{ padding:"6px 14px 10px", fontSize:12, color:"#64748b" }}>메모: {ex.memo}</div>}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 상담 메시지 ── */}
+      {viewMode === "consult" && (
+        <div>
+          <p style={{ fontSize:13, color:"#64748b", marginBottom:12 }}>학생들이 보낸 상담 메시지입니다. 답변 후 학생 앱에 표시됩니다.</p>
+          {consultMsgs.length === 0 ? (
+            <p style={{ color:"#94a3b8", textAlign:"center", padding:"30px 0" }}>상담 메시지가 없습니다.</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {consultMsgs
+                .filter(m => !selectedStudent || m.student_code === selectedStudent)
+                .map((m, i) => (
+                  <div key={i} style={{ border:`1.5px solid ${m.admin_reply?"#d1fae5":"#fbbf24"}`,
+                    borderRadius:12, overflow:"hidden", background: m.admin_reply?"#f0fdf4":"#fff" }}>
+                    <div style={{ padding:"10px 14px", background: m.admin_reply?"#d1fae5":"#fef3c7",
+                      borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between",
+                      alignItems:"center" }}>
+                      <div>
+                        <span style={{ fontWeight:700, fontSize:13 }}>{m.student_name}</span>
+                        <span style={{ fontSize:11, color:"#94a3b8", marginLeft:8 }}>{m.created_at?.slice(0,10)}</span>
+                        {m.admin_reply
+                          ? <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}>✅ 답변완료</span>
+                          : <span style={{ fontSize:11, color:"#d97706", marginLeft:8, fontWeight:600 }}>⏳ 답변 필요</span>}
+                      </div>
+                    </div>
+                    <div style={{ padding:"12px 14px" }}>
+                      <p style={{ fontSize:13, color:"#374151", margin:"0 0 10px", whiteSpace:"pre-wrap" }}>{m.message}</p>
+                      {m.admin_reply ? (
+                        <div style={{ background:"#f0fdf4", borderRadius:8, padding:"10px 12px", border:"1px solid #86efac" }}>
+                          <p style={{ fontSize:11, color:"#059669", fontWeight:600, marginBottom:4 }}>내 답변</p>
+                          <p style={{ fontSize:13, color:"#166534", margin:0, whiteSpace:"pre-wrap" }}>{m.admin_reply}</p>
+                        </div>
+                      ) : replyId === m.id ? (
+                        <div>
+                          <textarea value={replyText} onChange={e => setReplyText(e.target.value)}
+                            placeholder="답변을 입력하세요" rows={3}
+                            style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #7c3aed",
+                              fontSize:13, resize:"none" as const, boxSizing:"border-box" as const, marginBottom:8 }} />
+                          <div style={{ display:"flex", gap:6 }}>
+                            <button onClick={() => sendReply(m.id)} disabled={replying}
+                              style={{ flex:1, padding:"8px", borderRadius:7, border:"none",
+                                background:"#7c3aed", color:"#fff", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                              {replying ? "전송 중…" : "📨 답변 전송"}
+                            </button>
+                            <button onClick={() => { setReplyId(null); setReplyText(""); }}
+                              style={{ padding:"8px 14px", borderRadius:7, border:"1px solid #e2e8f0",
+                                background:"#fff", fontSize:13, cursor:"pointer" }}>취소</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setReplyId(m.id); setReplyText(""); }}
+                          style={{ padding:"7px 16px", borderRadius:8, border:"1.5px solid #7c3aed",
+                            background:"#fff", color:"#7c3aed", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                          ✏️ 답변하기
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 기존 관리자 등록 탭 ── */}
+      {viewMode === "admin" && (
+      <div>
       {/* 필터 */}
       <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
         <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
