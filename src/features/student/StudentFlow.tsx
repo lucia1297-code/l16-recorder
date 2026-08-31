@@ -36,8 +36,12 @@ import {
   computeNextRound,
   isMockExamKind,
   getGeneralFieldLabels,
+  detectAnalysisCategory,
+  ANALYSIS_QUESTIONS,
   type AssignmentType,
   type AssignmentSubmission,
+  type AssignmentAnalysisAnswer,
+  type AssignmentAnalysisData,
 } from "../../core/assignment";
 import {
   evaluateStepTiming,
@@ -78,7 +82,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [matched, setMatched] = useState(false);
-  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment">("select");
+  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment" | "examregister">("select");
 
   // 미리보기 모드 - 감아랑 학생으로 자동 설정
   useEffect(() => {
@@ -315,6 +319,28 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
     );
   }
 
+  if (mode === "examregister") {
+    const matchedEntry = roster.find(r => r.studentCode === draft.student.studentCode);
+    return (
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"0 16px" }}>
+          <button onClick={() => setMode("select")}
+            style={{ padding:"6px 12px", borderRadius:8, border:"1px solid #e2e8f0",
+              background:"#fff", fontSize:13, cursor:"pointer" }}>
+            ← 뒤로
+          </button>
+          <h2 style={{ margin:0, fontSize:16, color:"#7c3aed" }}>📅 시험 등록 / 상담</h2>
+        </div>
+        <div style={{ padding:"0 16px" }}>
+          <StudentExamRegister
+            studentCode={matchedEntry?.studentCode ?? draft.student.studentCode ?? ""}
+            studentName={matchedEntry?.name ?? draft.student.name ?? ""}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "assignment") {
     const rosterEntry = roster.find((r) => r.studentCode === draft.student.studentCode);
     return (
@@ -378,7 +404,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
               next();
             }}
             onChooseAssignment={() => setMode("assignment")}
-            onExamRegister={() => setShowExamRegister(true)}
+            onExamRegister={() => setMode("examregister")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
