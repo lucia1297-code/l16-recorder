@@ -660,6 +660,8 @@ export default function ExamPrepPanel() {
           </div>
         </div>
       )}
+      </div>
+      )} {/* end admin view */}
     </div>
   );
 }
