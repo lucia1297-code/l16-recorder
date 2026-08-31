@@ -21,6 +21,7 @@ import type { PendingStore } from "../../lib/pendingStore";
 import { useStorage } from "../../lib/useStorage";
 import { OtpService } from "../../lib/otpService";
 import StudentExamRegister from "./StudentExamRegister";
+import LessonRecorder from "./LessonRecorder";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
@@ -82,7 +83,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [matched, setMatched] = useState(false);
-  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment" | "examregister">("select");
+  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment" | "examregister" | "recording">("select");
 
   // 미리보기 모드 - 감아랑 학생으로 자동 설정
   useEffect(() => {
@@ -341,6 +342,28 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
     );
   }
 
+  if (mode === "recording") {
+    const matchedEntry = roster.find(r => r.studentCode === draft.student.studentCode);
+    return (
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"0 16px" }}>
+          <button onClick={() => setMode("select")}
+            style={{ padding:"6px 12px", borderRadius:8, border:"1px solid #e2e8f0",
+              background:"#fff", fontSize:13, cursor:"pointer" }}>
+            ← 뒤로
+          </button>
+          <h2 style={{ margin:0, fontSize:16, color:"#0891b2" }}>🎙 수업 녹음</h2>
+        </div>
+        <div style={{ padding:"0 16px" }}>
+          <LessonRecorder
+            studentCode={matchedEntry?.studentCode ?? draft.student.studentCode ?? ""}
+            studentName={matchedEntry?.name ?? draft.student.name ?? ""}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "assignment") {
     const rosterEntry = roster.find((r) => r.studentCode === draft.student.studentCode);
     return (
@@ -405,6 +428,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
             }}
             onChooseAssignment={() => setMode("assignment")}
             onExamRegister={() => setMode("examregister")}
+            onStartRecording={() => setMode("recording")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
@@ -498,6 +522,7 @@ function StepPhoneVerify({
   onChooseExam,
   onChooseAssignment,
   onExamRegister,
+  onStartRecording,
 }: {
   otp: OtpService;
   pendingStore: PendingStore;
@@ -513,6 +538,7 @@ function StepPhoneVerify({
   onChooseExam: () => void;
   onChooseAssignment: () => void;
   onExamRegister: () => void;
+  onStartRecording: () => void;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -620,6 +646,9 @@ function StepPhoneVerify({
         </button>
         <button className="btn secondary" onClick={onExamRegister}>
           📅 시험 등록 / 상담
+        </button>
+        <button className="btn secondary" onClick={onStartRecording}>
+          🎙 수업 녹음
         </button>
       </div>
     );
