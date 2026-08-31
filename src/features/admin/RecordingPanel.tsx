@@ -339,7 +339,7 @@ export default function RecordingPanel() {
           </select>
           <button onClick={loadRecordings}
             style={{ padding:"5px 10px", borderRadius:8, border:"1px solid #e2e8f0",
-              background:"#fff", fontSize:12, cursor:"pointer" }}><RefreshCw size={13} /><//button>
+              background:"#fff", fontSize:12, cursor:"pointer" }}><RefreshCw size={13} /></button>
         </div>
       </div>
 
