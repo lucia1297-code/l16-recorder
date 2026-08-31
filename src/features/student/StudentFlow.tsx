@@ -20,6 +20,7 @@ import { validatePendingRegistration } from "../../core/pendingRegistration";
 import type { PendingStore } from "../../lib/pendingStore";
 import { useStorage } from "../../lib/useStorage";
 import { OtpService } from "../../lib/otpService";
+import StudentExamRegister from "./StudentExamRegister";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
@@ -483,6 +484,7 @@ function StepPhoneVerify({
   onCheckApproval: () => Promise<RosterEntry[]>;
   onChooseExam: () => void;
   onChooseAssignment: () => void;
+  onExamRegister: () => void;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -587,6 +589,9 @@ function StepPhoneVerify({
         </button>
         <button className="btn secondary" onClick={onChooseAssignment}>
           과제 제출하기
+        </button>
+        <button className="btn secondary" onClick={onExamRegister}>
+          📅 시험 등록 / 상담
         </button>
       </div>
     );
