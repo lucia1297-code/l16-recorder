@@ -497,6 +497,7 @@ function StepPhoneVerify({
   onCheckApproval,
   onChooseExam,
   onChooseAssignment,
+  onExamRegister,
 }: {
   otp: OtpService;
   pendingStore: PendingStore;
