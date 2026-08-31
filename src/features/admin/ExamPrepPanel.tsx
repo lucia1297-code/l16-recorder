@@ -377,8 +377,8 @@ export default function ExamPrepPanel() {
 
       {/* ── 기존 관리자 등록 탭 ── */}
       {viewMode === "admin" && (
-      <div>
-      {/* 필터 */}
+        <div>
+        {/* 필터 */}
       <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
         <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
           style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }}>
