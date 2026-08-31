@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Printer, Send, MessageSquare, Mail } from "lucide-react";
 import type { ExamResult } from "../../core/types";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
@@ -244,6 +245,100 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
 이달도 ${name} 학생이 최선을 다해 임해주었습니다. 학습에 있어 가정에서의 꾸준한 격려와 관심이 학생에게 큰 힘이 됩니다. 궁금하신 사항이 있으시면 언제든지 연락 주십시오. 감사합니다.`;
   }
 
+  function printReport(code: string) {
+    const student = roster.find(r => r.studentCode === code);
+    const rows = byStudent.get(code) ?? [];
+    const sorted = [...rows].sort((a,b) => a.date.localeCompare(b.date));
+    const latest = sorted[sorted.length-1];
+    const ref = (latest?.reflection as any) || {};
+    const cnt: Record<string,number> = {};
+    sorted.forEach(r => (r.wrongAnswers??[]).forEach((w:any) =>
+      (w.reasons||[]).forEach((rs:string) => { cnt[rs]=(cnt[rs]||0)+1; })));
+    const top3 = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([r])=>REASON_KO[r]??r);
+    const avg = sorted.length ? Math.round(sorted.reduce((s,r)=>s+r.score,0)/sorted.length) : 0;
+    const trend = sorted.length >= 2 ? sorted[sorted.length-1].score - sorted[sorted.length-2].score : 0;
+    const month = new Date().getMonth()+1;
+
+    const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>${student?.name} 발전기록</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Malgun Gothic", sans-serif; }
+  body { padding: 0; color: #1e293b; }
+  h1 { font-size: 22px; color: #0f766e; border-bottom: 3px solid #0f766e; padding-bottom: 8px; margin-bottom: 18px; }
+  h2 { font-size: 14px; color: #0f766e; margin: 16px 0 8px; border-left: 4px solid #0f766e; padding-left: 8px; }
+  .info { display: flex; gap: 20px; font-size: 12px; color: #64748b; margin-bottom: 18px; }
+  .scores { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .score-chip { background: #f1f5f9; border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+  .score-chip.latest { background: #0f766e; color: #fff; font-weight: 700; }
+  .reasons { display: flex; gap: 6px; flex-wrap: wrap; }
+  .reason-chip { background: #fef3c7; color: #92400e; border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600; }
+  .reflection { background: #f8fafc; border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.8; border: 1px solid #e2e8f0; }
+  .section { margin-bottom: 16px; }
+  .stat { font-size: 28px; font-weight: 700; color: #0f766e; }
+  .trend { font-size: 14px; font-weight: 600; color: ${trend>=0?"#059669":"#ef4444"}; }
+  .footer { margin-top: 24px; font-size: 11px; color: #94a3b8; text-align: right; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+  @media print { button { display: none; } }
+</style>
+</head>
+<body>
+<h1>L16 개인 영어 지도 — ${month}월 발전기록</h1>
+<div class="info">
+  <span>학생: <strong>${student?.name}</strong></span>
+  <span>학교: ${student?.school} ${student?.grade}학년</span>
+  <span>제출 횟수: ${sorted.length}회</span>
+  <span>출력일: ${new Date().toLocaleDateString("ko-KR")}</span>
+</div>
+
+<div class="section">
+  <h2>📊 점수 추이</h2>
+  <div style="margin-bottom:8px">
+    <span class="stat">${latest?.score ?? "-"}점</span>
+    <span class="trend" style="margin-left:10px">${trend>=0?"▲":"▼"}${Math.abs(trend)}점 변화 | 평균 ${avg}점</span>
+  </div>
+  <div class="scores">
+    ${sorted.map((r,i)=>`<div class="score-chip ${i===sorted.length-1?"latest":""}">${r.date.slice(5)} ${r.score}점</div>`).join("")}
+  </div>
+</div>
+
+<div class="section">
+  <h2>⚠️ 주요 오답 원인</h2>
+  <div class="reasons">
+    ${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([r,n])=>`<div class="reason-chip">${REASON_KO[r]??r} ${n}회</div>`).join("")}
+  </div>
+</div>
+
+<div class="section">
+  <h2>📝 최근 회고</h2>
+  <div class="reflection">
+    <div><strong>어려웠던 점:</strong> ${ref.hardestReason || "미작성"}</div>
+    <div><strong>다음 목표:</strong> ${ref.nextGoal || "미작성"}</div>
+    <div><strong>만족도:</strong> ${"★".repeat(ref.satisfaction||0)}${"☆".repeat(5-(ref.satisfaction||0))}</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>💊 강사 처방</h2>
+  <div class="reflection">
+    ${top3.map(r=>`<div>• ${r} 집중 보완 필요</div>`).join("")}
+    <div style="margin-top:8px;color:#0f766e;font-weight:600">목표: 다음 시험 ${(latest?.score??0)+5}점 이상</div>
+  </div>
+</div>
+
+<div class="footer">L16 개인 영어 지도 | 담당강사 민수쌤</div>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => w.print();
+  }
+
   function createMsg(code: string) {
     const student = roster.find(r => r.studentCode === code);
     if (!student) return;
@@ -308,6 +403,28 @@ ${monthLabel} 학습 상담 평가서
       setTimeout(() => setNotice(""), 3000);
     } catch(e) { alert("발송 실패: " + (e as Error).message); }
     finally { setSending(null); }
+  }
+
+  function sendKakao(msg: GrowthMessage) {
+    const s = roster.find(r => r.studentCode === msg.studentCode);
+    const phone = s?.parentPhone || s?.phone;
+    const text = encodeURIComponent(msg.content);
+    // 카카오톡 공유 - 모바일에서 카카오 앱으로 이동
+    const kakaoUrl = `kakaotalk://msg?type=text&text=${text}`;
+    const fallback = `https://story.kakao.com/share?url=${encodeURIComponent(location.href)}&text=${text}`;
+    if (!window.open(kakaoUrl, "_blank")) {
+      // 데스크톱: 클립보드 복사 후 안내
+      navigator.clipboard.writeText(msg.content).then(() => {
+        alert(`카카오톡 메시지가 클립보드에 복사됐습니다.\n카카오톡을 열어 ${s?.name ?? ""} 학생 학부모님께 붙여넣기 하세요.`);
+      });
+    }
+  }
+
+  function sendEmail(msg: GrowthMessage) {
+    const s = roster.find(r => r.studentCode === msg.studentCode);
+    const subject = encodeURIComponent(`[L16] ${msg.studentName} 학생 ${new Date().getMonth()+1}월 학습 상담 평가서`);
+    const body = encodeURIComponent(msg.content);
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   }
 
   const active = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
