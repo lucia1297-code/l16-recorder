@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
+import { Mic, MicOff, Square, RotateCcw, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 
@@ -245,7 +246,7 @@ export default function RecordingPanel() {
 
   return (
     <div className="card">
-      <h2 style={{ margin:"0 0 16px", color:"#0891b2" }}>🎙 수업 녹음 & AI 분석</h2>
+      <h2 style={{ margin:"0 0 16px", color:"#0891b2" }}><Mic size={20} style={{verticalAlign:"middle",marginRight:6}} />수업 녹음 & AI 분석</h2>
 
       {notice && (
         <div style={{ padding:"10px 14px", borderRadius:8, marginBottom:14, fontWeight:600, fontSize:13,
@@ -292,7 +293,7 @@ export default function RecordingPanel() {
                 color: !selectedStudent || uploading ? "#94a3b8" : "#fff",
                 fontWeight:700, fontSize:15, cursor: !selectedStudent||uploading?"not-allowed":"pointer",
                 boxShadow: selectedStudent&&!uploading ? "0 4px 20px rgba(8,145,178,0.4)" : "none" }}>
-              🎙 녹음 시작
+              <Mic size={18} /> 녹음 시작
             </button>
           ) : (
             <button onClick={stopRecording}
@@ -301,7 +302,7 @@ export default function RecordingPanel() {
                 background:"#ef4444", color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer",
                 boxShadow:"0 4px 20px rgba(239,68,68,0.5)",
                 animation:"pulse 1.2s infinite" }}>
-              ⏹ 녹음 중지
+              <Square size={18} fill="#fff" /> 녹음 중지
             </button>
           )}
           {recording && (
@@ -338,7 +339,7 @@ export default function RecordingPanel() {
           </select>
           <button onClick={loadRecordings}
             style={{ padding:"5px 10px", borderRadius:8, border:"1px solid #e2e8f0",
-              background:"#fff", fontSize:12, cursor:"pointer" }}>🔄</button>
+              background:"#fff", fontSize:12, cursor:"pointer" }}><RefreshCw size={13} /><//button>
         </div>
       </div>
 
@@ -361,7 +362,7 @@ export default function RecordingPanel() {
                 borderBottom:"1px solid #f1f5f9",
                 display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <span style={{ fontSize:20 }}>🎙</span>
+                  <span style={{ fontSize:20 }}><Mic size={20} color="#0891b2" /><//span>
                   <div>
                     <div style={{ fontWeight:700, fontSize:14 }}>{rec.student_name}</div>
                     <div style={{ fontSize:11, color:"#94a3b8" }}>
@@ -387,7 +388,7 @@ export default function RecordingPanel() {
                   <button onClick={() => setExpandId(expandId===rec.id?null:rec.id)}
                     style={{ padding:"4px 10px", borderRadius:7, border:"1px solid #e2e8f0",
                       background:"#fff", fontSize:12, cursor:"pointer" }}>
-                    {expandId===rec.id?"▲":"▼"}
+                    {expandId===rec.id ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                   </button>
                 </div>
               </div>
