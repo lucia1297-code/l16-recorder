@@ -53,8 +53,6 @@ const EMPTY_EXAM: Omit<ExamSchedule, "id" | "studentCode"> = {
 };
 
 // ── Supabase 시험지 업로드 헬퍼 ─────────────────────
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 async function uploadExamPaper(file: File, examId: string, studentCode: string): Promise<string> {
   const ext = file.name.split(".").pop() ?? "jpg";
@@ -119,8 +117,6 @@ export default function ExamPrepPanel() {
   const [papers, setPapers] = useState<{id:string;student_code:string;student_name:string;image_url:string;submitted_at:string}[]>([]);
   const [papersLoading, setPapersLoading] = useState(false);
   const [smsSending, setSmsSending] = useState<string | null>(null);
-
-  const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
