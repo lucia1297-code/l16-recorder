@@ -1,3 +1,4 @@
+import { Calendar } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   DraftResult,
@@ -329,7 +330,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
               background:"#fff", fontSize:13, cursor:"pointer" }}>
             ← 뒤로
           </button>
-          <h2 style={{ margin:0, fontSize:16, color:"#7c3aed" }}>📅 시험 등록 / 상담</h2>
+          <h2 style={{ margin:0, fontSize:16, color:"#7c3aed" }}><Calendar size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록 / 상담</h2>
         </div>
         <div style={{ padding:"0 16px" }}>
           <StudentExamRegister
@@ -461,7 +462,7 @@ function validateStep(step: number, d: DraftResult): string[] {
       const times = d.solvingTime as unknown as (number | null)[] | null;
       const arr = Array.isArray(times) ? times : [];
       const allOk = arr.length === 3 && arr.every((t) => t != null && t > 0);
-      return allOk ? [] : ["⚠️ Step 1·2·3 풀이 시간을 모두 입력해야 다음으로 진행할 수 있습니다."];
+      return allOk ? [] : [" Step 1·2·3 풀이 시간을 모두 입력해야 다음으로 진행할 수 있습니다."];
     }
     case 5:
       return []; // 오답번호 (만점 허용)
@@ -607,7 +608,7 @@ function StepPhoneVerify({
     return (
       <div>
         <p className="muted">
-          ✅ <b>{phone}</b> 인증 완료
+          <b>{phone}</b> 인증 완료
         </p>
         <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
           무엇을 하시겠어요?
@@ -619,7 +620,7 @@ function StepPhoneVerify({
           과제 제출하기
         </button>
         <button className="btn secondary" onClick={onExamRegister}>
-          📅 시험 등록 / 상담
+          <Calendar size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록 / 상담
         </button>
 
       </div>
@@ -631,7 +632,7 @@ function StepPhoneVerify({
     return (
       <div>
         <p className="muted">
-          ✅ <b>{phone}</b> 인증 완료
+          <b>{phone}</b> 인증 완료
         </p>
         <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
           시험 결과 제출을 진행하세요. (과제 제출은 명부 등록 후 이용 가능합니다.)
@@ -649,7 +650,7 @@ function StepPhoneVerify({
       return (
         <div>
           <p className="muted">
-            ⏳ <b>{phone}</b> 등록 신청이 접수되었습니다.
+             <b>{phone}</b> 등록 신청이 접수되었습니다.
           </p>
           <p className="muted" style={{ fontSize: 13 }}>
             선생님(관리자)의 승인 후 다음 단계로 진행할 수 있습니다. 시간이 걸릴 수 있으니
@@ -670,7 +671,7 @@ function StepPhoneVerify({
     return (
       <div>
         <p className="muted">
-          ✅ <b>{phone}</b> 전화번호 인증 완료 — 아직 등록된 학생이 아닙니다.
+          <b>{phone}</b> 전화번호 인증 완료 — 아직 등록된 학생이 아닙니다.
         </p>
         <p className="muted" style={{ fontSize: 13 }}>
           아래 정보를 입력해 등록을 신청하면 선생님(관리자) 승인 후 이용할 수 있습니다.
@@ -862,7 +863,7 @@ function StepScore({ draft, set }: StepProps) {
       <label>내 총점</label>
       {autoCalculated && (
         <p className="muted" style={{ fontSize: 13, color: "#27ae60", marginBottom: 6 }}>
-          ✅ 오답 체크에서 자동 계산됨 — 직접 수정할 수 있습니다.
+          오답 체크에서 자동 계산됨 — 직접 수정할 수 있습니다.
         </p>
       )}
       <input
@@ -955,7 +956,7 @@ function StepSolvingTime({ draft, set }: StepProps) {
       {!allEntered && (
         <div style={{ padding: "14px 16px", borderRadius: 10, background: "#fdecea", border: "2px solid #e74c3c", marginBottom: 12 }}>
           <p style={{ margin: 0, fontWeight: 700, color: "#e74c3c", fontSize: 15 }}>
-            ⛔ 3개 Step 시간을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
+             3개 Step 시간을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
           </p>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "#888" }}>
             기억이 정확하지 않으면 대략적인 시간을 입력하세요.
@@ -1018,7 +1019,7 @@ function StepThreePoint({ draft, set }: StepProps) {
     return (
       <>
         <p style={{ color: "#27ae60", fontWeight: 600, fontSize: 15 }}>
-          ✅ 오답이 없습니다! 만점입니다.
+          오답이 없습니다! 만점입니다.
         </p>
         <p className="muted">다음 단계로 진행하세요.</p>
       </>
@@ -1436,7 +1437,7 @@ function StepScoreConfirm({ draft, set }: StepProps) {
         padding: 16, marginBottom: 16
       }}>
         <p style={{ fontSize: 13, color: "#27ae60", fontWeight: 600, marginBottom: 8 }}>
-          ✅ 자동 계산 결과
+          자동 계산 결과
         </p>
         <p style={{ fontSize: 13, color: "#555", marginBottom: 4 }}>
           오답 {wrongCount}문항 (3점: {threeCount}개 × 3점 + 2점: {twoCount}개 × 2점 = -{deduction}점)
