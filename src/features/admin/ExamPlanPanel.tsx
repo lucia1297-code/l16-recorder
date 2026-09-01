@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
+import { loadLocalExams, supabaseToUnified, mergeExams } from "../../lib/examUtils";
+import type { UnifiedExam } from "../../lib/examUtils";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 import { CheckCircle, Circle, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Calendar, BookOpen, FileText, ClipboardList, Layers, Zap, SkipForward } from "lucide-react";
@@ -12,20 +14,7 @@ const SB_H = {
 };
 
 // ── 타입 ──────────────────────────────────────────────
-interface StudentExam {
-  id: string;
-  student_code: string;
-  student_name: string;
-  school: string;
-  grade: string;
-  semester: string;
-  exam_type: string;
-  english_exam_date: string;
-  exam_range: string;
-  admin_confirmed: boolean;
-  completed?: boolean;
-  source?: "local" | "supabase";
-}
+// StudentExam → UnifiedExam (examUtils.ts)
 
 interface ExamPlan {
   id: string;
@@ -116,7 +105,7 @@ function currentWeek(dateStr: string): number {
 export default function ExamPlanPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
-  const [exams, setExams] = useState<StudentExam[]>([]);
+  const [exams, setExams] = useState<UnifiedExam[]>([]);
   const [plans, setPlans] = useState<ExamPlan[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -142,45 +131,16 @@ export default function ExamPlanPanel() {
     });
   }, []);
 
-  // roster가 로드된 후 시험 목록 구성
+  // roster가 로드된 후 시험 목록 구성 (examUtils.ts 사용)
   async function loadAll(currentRoster?: RosterEntry[]) {
     setLoading(true);
     const rosterToUse = currentRoster ?? roster;
-
     try {
-      // 1. localStorage: 관리자가 시험일정조사에서 등록한 시험
-      let localExams: StudentExam[] = [];
-      try {
-        const raw = localStorage.getItem("l16.examSchedules");
-        if (raw) {
-          const parsed: any[] = JSON.parse(raw);
-          // studentCode만 있으면 포함 (englishExamDate 없어도)
-          localExams = parsed
-            .filter(ex => ex.studentCode)
-            .map(ex => {
-              const rv = rosterToUse.find(r => r.studentCode === ex.studentCode);
-              // 영어시험일: englishExamDate → examStart → examEnd 순으로 대체
-              const engDate = ex.englishExamDate || ex.examStart || ex.examEnd || "";
-              return {
-                id: ex.id ?? `local_${ex.studentCode}_${engDate || Date.now()}`,
-                student_code: ex.studentCode,
-                student_name: rv?.name ?? ex.studentName ?? ex.studentCode,
-                school: rv?.school ?? ex.school ?? "",
-                grade: rv?.grade ?? ex.grade ?? "",
-                semester: ex.semester ?? "2",
-                exam_type: ex.examType ?? "final",
-                english_exam_date: engDate,
-                exam_range: ex.examRange ?? ex.range ?? "",
-                admin_confirmed: true,
-                completed: ex.completed ?? false,
-                source: "local" as const,
-              };
-            });
-        }
-      } catch(e) { console.error("localStorage 파싱 오류:", e); }
+      // 1. localStorage → examUtils.loadLocalExams (필드명 변환 통합 관리)
+      const localExams = loadLocalExams(rosterToUse);
 
-      // 2. Supabase: 학생이 직접 등록한 시험
-      let sbExams: StudentExam[] = [];
+      // 2. Supabase → examUtils.supabaseToUnified
+      let sbExams: UnifiedExam[] = [];
       try {
         const sbRes = await fetch(
           `${SUPABASE_URL}/rest/v1/student_exams?order=english_exam_date.asc`,
@@ -188,32 +148,14 @@ export default function ExamPlanPanel() {
         );
         const sbData = await sbRes.json();
         if (Array.isArray(sbData)) {
-          sbExams = sbData.map((se: any) => {
-            const r = rosterToUse.find(r => r.studentCode === se.student_code);
-            return {
-              ...se,
-              student_name: se.student_name || r?.name || se.student_code,
-              school: se.school || r?.school || "",
-              grade: se.grade || r?.grade || "",
-              source: "supabase" as const,
-            };
-          });
+          sbExams = sbData.map((se: any) => supabaseToUnified(se, rosterToUse));
         }
       } catch(e) { console.error("Supabase 조회 오류:", e); }
 
-      // 3. 통합 + 중복 제거 (같은 학생코드 + 영어시험일)
-      const allExams = [...localExams];
-      sbExams.forEach(se => {
-        const dup = allExams.find(e =>
-          e.student_code === se.student_code &&
-          e.english_exam_date === se.english_exam_date
-        );
-        if (!dup) allExams.push(se);
-      });
-      allExams.sort((a, b) => a.english_exam_date.localeCompare(b.english_exam_date));
-
-      console.log(`시험 로딩: localStorage ${localExams.length}건 + Supabase ${sbExams.length}건 = 총 ${allExams.length}건`);
-      console.log("로컬 시험 목록:", localExams.map(e => `${e.student_name}(${e.student_code}) ${e.english_exam_date}`));
+      // 3. 통합 (examUtils.mergeExams - 중복 제거 + 정렬)
+      const allExams = mergeExams(localExams, sbExams);
+      console.log(`시험 로딩: 로컬 ${localExams.length}건 + Supabase ${sbExams.length}건 = 총 ${allExams.length}건`);
+      console.log("시험 목록:", allExams.map(e => `${e.student_name} / ${e.english_exam_date || "날짜없음"}`));
       setExams(allExams);
 
       // 4. 계획 로딩
@@ -223,12 +165,11 @@ export default function ExamPlanPanel() {
       );
       const pData = await pRes.json();
       setPlans(Array.isArray(pData) ? pData : []);
-
     } catch(err) { console.error("loadAll 오류:", err); }
     setLoading(false);
   }
 
-  async function generatePlan(exam: StudentExam) {
+  async function generatePlan(exam: UnifiedExam) {
     setGenerating(exam.id);
     try {
       // 이미 생성된 계획 삭제
