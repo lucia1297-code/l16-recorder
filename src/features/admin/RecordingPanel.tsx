@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { Mic, MicOff, Square, RotateCcw, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Mic, Square, RotateCcw, RefreshCw, ChevronDown, ChevronUp, Upload, CheckCircle, XCircle, Loader, Brain, FileText } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 
@@ -197,7 +197,7 @@ export default function RecordingPanel() {
       const transcript = await transcribeAudio(blob); // blob 직접 사용
 
       // 4. GPT 분석
-      setNotice("🔍 GPT 수업 분석 중…");
+      setNotice("<Brain size={11} style={{verticalAlign:"middle",marginRight:3}}/> GPT 수업 분석 중…");
       const { analysis, keywords } = await analyzeLesson(transcript, student.name);
 
       // 5. 결과 저장
@@ -207,7 +207,7 @@ export default function RecordingPanel() {
         body: JSON.stringify({ transcript, analysis, keywords, status:"done" }),
       });
 
-      setNotice(`✅ ${student.name} 수업 분석 완료!`);
+      setNotice(`${student.name} 수업 분석 완료!`);
       setTimeout(() => setNotice(""), 5000);
       await loadRecordings();
     } catch(e) {
@@ -230,7 +230,7 @@ export default function RecordingPanel() {
         headers:{ ...SB_H, "Content-Type":"application/json" },
         body: JSON.stringify({ transcript, analysis, keywords, status:"done" }),
       });
-      setNotice(`✅ ${rec.student_name} 재분석 완료`);
+      setNotice(`${rec.student_name} 재분석 완료`);
       setTimeout(() => setNotice(""), 4000);
       await loadRecordings();
     } catch(e) { setNotice("재분석 실패: " + (e as Error).message); }
@@ -261,7 +261,7 @@ export default function RecordingPanel() {
       <div style={{ border:"1.5px solid #e0f2fe", borderRadius:14, padding:20, marginBottom:24,
         background:"#f0f9ff" }}>
         <h3 style={{ fontSize:14, fontWeight:700, color:"#0369a1", marginBottom:14 }}>
-          📍 학생 선택 후 수업 녹음
+          학생 선택 후 수업 녹음
         </h3>
 
         {/* 학생 선택 */}
@@ -320,7 +320,7 @@ export default function RecordingPanel() {
 
         {selectedStudent && !recording && !uploading && (
           <p style={{ fontSize:12, color:"#64748b", marginTop:10 }}>
-            ✅ <strong>{roster.find(r=>r.studentCode===selectedStudent)?.name}</strong> 학생 선택됨
+            <strong>{roster.find(r=>r.studentCode===selectedStudent)?.name}</strong> 학생 선택됨
             — 녹음 후 자동으로 Whisper + GPT 분석이 진행됩니다.
           </p>
         )}
@@ -329,7 +329,7 @@ export default function RecordingPanel() {
       {/* 녹음 이력 */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
         <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", margin:0 }}>
-          📋 수업 녹음 이력
+          수업 녹음 이력
         </h3>
         <div style={{ display:"flex", gap:8 }}>
           <select value={filterStudent} onChange={e => setFilterStudent(e.target.value)}
@@ -376,13 +376,13 @@ export default function RecordingPanel() {
                   <span style={{ fontSize:11, padding:"2px 8px", borderRadius:8, fontWeight:600,
                     background:rec.status==="done"?"#d1fae5":rec.status==="transcribing"?"#fef3c7":rec.status==="error"?"#fee2e2":"#f1f5f9",
                     color:rec.status==="done"?"#059669":rec.status==="transcribing"?"#d97706":rec.status==="error"?"#dc2626":"#64748b" }}>
-                    {rec.status==="done"?"✅ 완료":rec.status==="transcribing"?"⏳ 분석중":rec.status==="error"?"❌ 오류":"📤 대기"}
+                    {rec.status==="done"?"<CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 완료":rec.status==="transcribing"?"<Loader size={11} style={{verticalAlign:"middle",marginRight:3}}/> 분석중":rec.status==="error"?"<XCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#ef4444"/> 오류":"<Upload size={11} style={{verticalAlign:"middle",marginRight:3}}/> 대기"}
                   </span>
                   {rec.status==="done" && (
                     <button onClick={() => reAnalyze(rec)} disabled={processing===rec.id}
                       style={{ padding:"4px 10px", borderRadius:7, border:"1px solid #e2e8f0",
                         background:"#fff", fontSize:11, cursor:"pointer" }}>
-                      {processing===rec.id?"…":"🔄 재분석"}
+                      {processing===rec.id?"…":"<RefreshCw size={11} style={{verticalAlign:"middle",marginRight:3}}/> 재분석"}
                     </button>
                   )}
                   <button onClick={() => setExpandId(expandId===rec.id?null:rec.id)}
@@ -407,7 +407,7 @@ export default function RecordingPanel() {
                   {rec.transcript && (
                     <div style={{ marginBottom:14 }}>
                       <p style={{ fontSize:11, fontWeight:700, color:"#94a3b8", marginBottom:6 }}>
-                        📝 Whisper 변환 텍스트
+                        <FileText size={11} style={{verticalAlign:"middle",marginRight:3}}/> Whisper 변환 텍스트
                       </p>
                       <div style={{ background:"#f8fafc", borderRadius:8, padding:"10px 12px",
                         fontSize:12, color:"#374151", lineHeight:1.8, maxHeight:160, overflowY:"auto" }}>
@@ -418,7 +418,7 @@ export default function RecordingPanel() {
                   {rec.analysis && (
                     <div>
                       <p style={{ fontSize:11, fontWeight:700, color:"#94a3b8", marginBottom:6 }}>
-                        🔍 GPT 수업 분석
+                        <Brain size={11} style={{verticalAlign:"middle",marginRight:3}}/> GPT 수업 분석
                       </p>
                       <pre style={{ background:"#f0fdf4", borderRadius:8, padding:"10px 12px",
                         fontSize:12, color:"#166534", lineHeight:1.8,
