@@ -19,6 +19,46 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
 
+async function saveOrderToSupabase(order: any, category: "ww" | "clinic") {
+  if (!SUPABASE_URL) return;
+  const SBH2 = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
+  await fetch(`${SUPABASE_URL}/rest/v1/ww_orders`, {
+    method: "POST", headers: { ...SBH2, "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify({
+      order_id: order.orderId, order_type: order.orderType,
+      student_code: order.studentCode, student_name: order.studentName,
+      school: order.school ?? "", grade: order.grade ?? "",
+      exam_date: order.examDate ?? "", exam_range: order.examRange ?? "",
+      weak_points: order.weakPoints ?? order.wrongPatterns ?? [],
+      target_score: order.targetScore ?? 0, current_score: order.currentScore ?? 0,
+      requested_at: order.requestedAt, memo: order.memo ?? "",
+      status: order.status, order_category: category,
+    }),
+  }).catch(e => console.warn("[WWSync]", e));
+}
+
+async function loadOrdersFromSupabase(category: "ww" | "clinic"): Promise<any[]> {
+  if (!SUPABASE_URL) return [];
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/ww_orders?order_category=eq.${category}&order=requested_at.desc`,
+      { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+    );
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r: any) => ({
+      orderId: r.order_id, orderType: r.order_type,
+      studentCode: r.student_code, studentName: r.student_name,
+      school: r.school ?? "", grade: r.grade ?? "",
+      examDate: r.exam_date ?? "", examRange: r.exam_range ?? "",
+      weakPoints: r.weak_points ?? [], wrongPatterns: r.weak_points ?? [],
+      targetScore: r.target_score ?? 0, currentScore: r.current_score ?? 0,
+      requestedAt: r.requested_at, memo: r.memo ?? "",
+      status: r.status ?? "pending", results: [],
+    }));
+  } catch { return []; }
+}
+
 const WW_ORDER_LABELS: Record<WWOrderType, { label: string; icon: React.ReactNode; desc: string }> = {
   variation_mock: { label:"모의고사 변형 문제", icon:<Zap size={14}/>, desc:"수능 18~45번 변형 문제세트 제작" },
   workbook:       { label:"워크북",             icon:<BookOpen size={14}/>, desc:"시험 범위 워크북 제작 (1~3차)" },
