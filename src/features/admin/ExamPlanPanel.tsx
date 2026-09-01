@@ -55,26 +55,26 @@ interface TaskTemplate {
 
 const WEEK_TEMPLATES: Record<number, TaskTemplate[]> = {
   4: [ // 4주 전
-    { key:"lecture_ch1", label:"교과서 1차 강의", detail:"시험 범위 전체 교과서 진도 1회독 — 핵심 문법·어휘 정리", icon:<BookOpen size={14}/>, color:"#2563eb", bg:"#dbeafe" },
-    { key:"vocab_list", label:"어휘 목록 작성", detail:"시험 범위 핵심 어휘 추출 및 암기 목록 배부", icon:<FileText size={14}/>, color:"#7c3aed", bg:"#ede9fe" },
-    { key:"grammar_review", label:"어법 핵심 정리", detail:"출제 가능 어법 포인트 5가지 선별·정리", icon:<ClipboardList size={14}/>, color:"#0891b2", bg:"#cffafe" },
+    { key:"lecture_ch1", label:"교과서 1차 강의", detail:"시험 범위 전체 교과서 진도 1회독 — 핵심 문법·어휘 정리", icon:, color:"#2563eb", bg:"#dbeafe" },
+    { key:"vocab_list", label:"어휘 목록 작성", detail:"시험 범위 핵심 어휘 추출 및 암기 목록 배부", icon:, color:"#7c3aed", bg:"#ede9fe" },
+    { key:"grammar_review", label:"어법 핵심 정리", detail:"출제 가능 어법 포인트 5가지 선별·정리", icon:, color:"#0891b2", bg:"#cffafe" },
   ],
   3: [ // 3주 전
-    { key:"problem_1st", label:"1차 문제풀이", detail:"교과서 단원평가 + 기출 유형별 문제 1회 풀이", icon:<Layers size={14}/>, color:"#059669", bg:"#d1fae5" },
-    { key:"workbook_1st", label:"워크북 1차", detail:"워크북 전 범위 1회차 풀이 — 오답 체크", icon:<BookOpen size={14}/>, color:"#d97706", bg:"#fef3c7" },
-    { key:"mock_variation_1st", label:"변형 모의고사 1차", detail:"수능형 변형 문제 1세트 풀이 (18~45번)", icon:<Zap size={14}/>, color:"#dc2626", bg:"#fee2e2" },
+    { key:"problem_1st", label:"1차 문제풀이", detail:"교과서 단원평가 + 기출 유형별 문제 1회 풀이", icon:, color:"#059669", bg:"#d1fae5" },
+    { key:"workbook_1st", label:"워크북 1차", detail:"워크북 전 범위 1회차 풀이 — 오답 체크", icon:, color:"#d97706", bg:"#fef3c7" },
+    { key:"mock_variation_1st", label:"변형 모의고사 1차", detail:"수능형 변형 문제 1세트 풀이 (18~45번)", icon:, color:"#dc2626", bg:"#fee2e2" },
   ],
   2: [ // 2주 전
-    { key:"prelim_exam", label:"예비 시험지", detail:"예상 문제 시험지 (학교 내신 스타일) 실전 풀이", icon:<FileText size={14}/>, color:"#7c3aed", bg:"#ede9fe" },
-    { key:"workbook_2nd", label:"워크북 2차", detail:"워크북 오답 위주 2회차 집중 복습", icon:<BookOpen size={14}/>, color:"#d97706", bg:"#fef3c7" },
-    { key:"mock_variation_2nd", label:"변형 모의고사 2차", detail:"수능형 변형 문제 2세트 풀이 + 오답 분석", icon:<Zap size={14}/>, color:"#dc2626", bg:"#fee2e2" },
-    { key:"lecture_ch2", label:"교과서 2차 강의", detail:"취약 단원 집중 재강의 — 실전 적용 훈련", icon:<BookOpen size={14}/>, color:"#2563eb", bg:"#dbeafe" },
+    { key:"prelim_exam", label:"예비 시험지", detail:"예상 문제 시험지 (학교 내신 스타일) 실전 풀이", icon:, color:"#7c3aed", bg:"#ede9fe" },
+    { key:"workbook_2nd", label:"워크북 2차", detail:"워크북 오답 위주 2회차 집중 복습", icon:, color:"#d97706", bg:"#fef3c7" },
+    { key:"mock_variation_2nd", label:"변형 모의고사 2차", detail:"수능형 변형 문제 2세트 풀이 + 오답 분석", icon:, color:"#dc2626", bg:"#fee2e2" },
+    { key:"lecture_ch2", label:"교과서 2차 강의", detail:"취약 단원 집중 재강의 — 실전 적용 훈련", icon:, color:"#2563eb", bg:"#dbeafe" },
   ],
   1: [ // 1주 전
-    { key:"workbook_3rd", label:"워크북 3차 (최종)", detail:"워크북 3회차 — 전 범위 빠른 복습 + 실수 체크", icon:<BookOpen size={14}/>, color:"#d97706", bg:"#fef3c7" },
-    { key:"final_mock", label:"최종 모의 시험", detail:"실전 시험지 풀이 (시간 엄수) → 직후 오답 분석", icon:<Zap size={14}/>, color:"#dc2626", bg:"#fee2e2" },
-    { key:"vocab_final", label:"어휘 최종 점검", detail:"암기 어휘 전체 테스트 → 취약 어휘 집중 암기", icon:<FileText size={14}/>, color:"#7c3aed", bg:"#ede9fe" },
-    { key:"day_before", label:"전날 최종 정리", detail:"핵심 포인트 한 장 정리 + 멘탈 관리", icon:<CheckCircle size={14}/>, color:"#059669", bg:"#d1fae5" },
+    { key:"workbook_3rd", label:"워크북 3차 (최종)", detail:"워크북 3회차 — 전 범위 빠른 복습 + 실수 체크", icon:, color:"#d97706", bg:"#fef3c7" },
+    { key:"final_mock", label:"최종 모의 시험", detail:"실전 시험지 풀이 (시간 엄수) → 직후 오답 분석", icon:, color:"#dc2626", bg:"#fee2e2" },
+    { key:"vocab_final", label:"어휘 최종 점검", detail:"암기 어휘 전체 테스트 → 취약 어휘 집중 암기", icon:, color:"#7c3aed", bg:"#ede9fe" },
+    { key:"day_before", label:"전날 최종 정리", detail:"핵심 포인트 한 장 정리 + 멘탈 관리", icon:, color:"#059669", bg:"#d1fae5" },
   ],
 };
 
@@ -258,7 +258,7 @@ export default function ExamPlanPanel() {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
           <h2 style={{ margin:0, color:"#7c3aed", display:"flex", alignItems:"center", gap:8 }}>
-            <Calendar size={22} color="#7c3aed" /> 시험대비 계획
+            시험대비 계획
           </h2>
           <p style={{ fontSize:12, color:"#64748b", margin:"4px 0 0" }}>
             학생별 시험 준비 단계를 주차별로 관리합니다.
@@ -268,7 +268,7 @@ export default function ExamPlanPanel() {
           style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px",
             borderRadius:8, border:"1px solid #e2e8f0", background:"#fff",
             fontSize:12, cursor:"pointer" }}>
-          <RefreshCw size={12} /> 새로고침
+          새로고침
         </button>
       </div>
 
@@ -314,7 +314,6 @@ export default function ExamPlanPanel() {
         <p style={{ color:"#94a3b8", textAlign:"center", padding:"30px 0" }}>로딩 중…</p>
       ) : filteredExams.length === 0 ? (
         <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
-          <Calendar size={40} color="#cbd5e1" style={{ marginBottom:10 }} />
           <p>시험 일정이 없습니다.</p>
           <p style={{ fontSize:12 }}>시험일정조사 탭에서 학생이 등록한 시험을 먼저 확인하세요.</p>
         </div>
@@ -390,14 +389,14 @@ export default function ExamPlanPanel() {
                         background: generating===exam.id?"#e2e8f0":"#7c3aed",
                         color: generating===exam.id?"#94a3b8":"#fff",
                         fontWeight:700, fontSize:12, cursor: generating===exam.id?"not-allowed":"pointer" }}>
-                      {generating===exam.id?"생성 중…":hasPlans?"<RefreshCw size={12} style={{verticalAlign:"middle",marginRight:4}}/> 재생성":"<ClipboardList size={12} style={{verticalAlign:"middle",marginRight:4}}/> 계획 생성"}
+                      {generating===exam.id?"생성 중…":hasPlans?"재생성":"계획 생성"}
                     </button>
                     {hasPlans && (
                       <button onClick={() => setExpandedExam(expandedExam===exam.id?null:exam.id)}
                         style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0",
                           background:"#fff", fontSize:12, cursor:"pointer",
                           display:"flex", alignItems:"center" }}>
-                        {expandedExam===exam.id?<ChevronUp size={14}/>:<ChevronDown size={14}/>}
+                        {expandedExam===exam.id?<ChevronUp size={14}/>:}
                       </button>
                     )}
                   </div>
@@ -477,7 +476,7 @@ export default function ExamPlanPanel() {
                                       )}
                                       {plan.alt_material && (
                                         <p style={{ fontSize:11, color:"#0891b2", margin:"3px 0" }}>
-                                          <BookOpen size={11} style={{verticalAlign:"middle",marginRight:3}}/> 대체 자료: {plan.alt_material}
+                                          대체 자료: {plan.alt_material}
                                         </p>
                                       )}
                                     </div>
@@ -490,7 +489,7 @@ export default function ExamPlanPanel() {
                                             padding:"4px 8px", borderRadius:6, border:"none",
                                             background:"#059669", color:"#fff",
                                             fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
-                                          <CheckCircle size={10}/> 완료
+                                          완료
                                         </button>
                                       )}
                                       {isDone && (
@@ -499,7 +498,7 @@ export default function ExamPlanPanel() {
                                             padding:"4px 8px", borderRadius:6, border:"1px solid #e2e8f0",
                                             background:"#fff", color:"#64748b",
                                             fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>
-                                          <Circle size={10}/> 취소
+                                          취소
                                         </button>
                                       )}
                                       {!isDone && (
@@ -512,7 +511,7 @@ export default function ExamPlanPanel() {
                                             padding:"4px 8px", borderRadius:6, border:"1px solid #fde68a",
                                             background:"#fef3c7", color:"#d97706",
                                             fontSize:10, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
-                                          <AlertCircle size={10}/> 조정
+                                          조정
                                         </button>
                                       )}
                                       {!isSkip && !isDone && (
@@ -521,7 +520,7 @@ export default function ExamPlanPanel() {
                                             padding:"4px 8px", borderRadius:6, border:"1px solid #e2e8f0",
                                             background:"#fff", color:"#94a3b8",
                                             fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>
-                                          <SkipForward size={10}/> 건너뜀
+                                          건너뜀
                                         </button>
                                       )}
                                     </div>
