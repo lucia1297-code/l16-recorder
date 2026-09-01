@@ -396,7 +396,7 @@ export default function ExamPlanPanel() {
                         style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0",
                           background:"#fff", fontSize:12, cursor:"pointer",
                           display:"flex", alignItems:"center" }}>
-                        {expandedExam===exam.id?:}
+                        {expandedExam===exam.id ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                       </button>
                     )}
                   </div>
