@@ -23,6 +23,7 @@ interface StudentExam {
   english_exam_date: string;
   exam_range: string;
   admin_confirmed: boolean;
+  source?: "local" | "supabase";
 }
 
 interface ExamPlan {
@@ -140,13 +141,52 @@ export default function ExamPlanPanel() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [e, p] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/student_exams?order=english_exam_date.asc`, { headers: SB_H }).then(r => r.json()),
-        fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?order=english_exam_date.asc,week_number.asc`, { headers: SB_H }).then(r => r.json()),
-      ]);
-      setExams(Array.isArray(e) ? e : []);
-      setPlans(Array.isArray(p) ? p : []);
-    } catch { }
+      // Supabase: 학생 직접 등록 시험
+      const sbRes = await fetch(`${SUPABASE_URL}/rest/v1/student_exams?order=english_exam_date.asc`, { headers: SB_H });
+      const sbExams = Array.isArray(await sbRes.json()) ? await sbRes.clone().json() : [];
+
+      // localStorage: 관리자 등록 시험 (ExamPrepPanel에서 저장)
+      let localExams: StudentExam[] = [];
+      try {
+        const raw = localStorage.getItem("l16.examSchedules");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          // ExamSchedule 형식 → StudentExam 형식으로 변환
+          localExams = parsed
+            .filter((ex: any) => ex.studentCode && ex.englishExamDate)
+            .map((ex: any) => ({
+              id: ex.id ?? `local_${ex.studentCode}_${ex.englishExamDate}`,
+              student_code: ex.studentCode,
+              student_name: ex.studentName ?? "",
+              school: ex.school ?? "",
+              grade: ex.grade ?? "",
+              semester: ex.semester ?? "2",
+              exam_type: ex.examType ?? "final",
+              english_exam_date: ex.englishExamDate,
+              exam_range: ex.range ?? "",
+              admin_confirmed: true,
+              source: "local" as const,
+            }));
+        }
+      } catch { }
+
+      // Supabase + localStorage 통합 (중복 제거)
+      const allExams = [...localExams];
+      sbExams.forEach((se: any) => {
+        const dup = allExams.find(e =>
+          e.student_code === se.student_code &&
+          e.english_exam_date === se.english_exam_date
+        );
+        if (!dup) allExams.push({ ...se, source: "supabase" });
+      });
+      allExams.sort((a, b) => a.english_exam_date.localeCompare(b.english_exam_date));
+      setExams(allExams);
+
+      // 계획 로딩
+      const pRes = await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?order=english_exam_date.asc,week_number.asc`, { headers: SB_H });
+      const plans = await pRes.json();
+      setPlans(Array.isArray(plans) ? plans : []);
+    } catch(err) { console.error("loadAll 실패:", err); }
     setLoading(false);
   }
 
@@ -284,7 +324,15 @@ export default function ExamPlanPanel() {
       {/* 필터 */}
       <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16,
         padding:"12px 14px", background:"#f8fafc", borderRadius:10, border:"1px solid #e2e8f0" }}>
-        <select value={filterStudent} onChange={e => setFilterStudent(e.target.value)}
+        <select value={filterStudent} onChange={e => {
+            const code = e.target.value;
+            setFilterStudent(code);
+            if (code) {
+              // 해당 학생 시험을 자동 펼침
+              const firstExam = exams.find(ex => ex.student_code === code);
+              if (firstExam) setExpandedExam(firstExam.id);
+            }
+          }}
           style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:12 }}>
           <option value="">전체 학생</option>
           {roster.filter(r=>(r.studentStatus??"active")!=="withdrawn")
@@ -314,8 +362,13 @@ export default function ExamPlanPanel() {
         <p style={{ color:"#94a3b8", textAlign:"center", padding:"30px 0" }}>로딩 중…</p>
       ) : filteredExams.length === 0 ? (
         <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
-          <p>시험 일정이 없습니다.</p>
-          <p style={{ fontSize:12 }}>시험일정조사 탭에서 학생이 등록한 시험을 먼저 확인하세요.</p>
+          <p style={{ fontWeight:600, fontSize:14 }}>표시할 시험 일정이 없습니다.</p>
+          <p style={{ fontSize:12, marginTop:6 }}>
+            다음 중 하나를 확인해주세요:<br/>
+            1. <strong>시험일정조사</strong> 탭 → 학생이 등록한 시험 확인<br/>
+            2. <strong>시험일정조사</strong> 탭 → 관리자가 직접 시험 일정 추가<br/>
+            3. 필터 조건이 너무 좁을 경우 필터를 초기화해보세요.
+          </p>
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
