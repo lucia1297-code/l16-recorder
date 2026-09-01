@@ -266,7 +266,7 @@ export default function StudentExamRegister({
                         { label:"직보일", value: ex.report_deadline ? ex.report_deadline.slice(5) : "-" },
                         { label:"다음 수업", value: ex.next_lesson_date ? ex.next_lesson_date.slice(5) : "-" },
                         { label:"시험 범위", value: ex.exam_range || "-" },
-                        { label:"시험지 제출", value: ex.exam_paper_submitted ? "✅ 완료" : "<XCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#ef4444"/> 미제출" },
+                        { label:"시험지 제출", value: ex.exam_paper_submitted ? "✅ 완료" : "미제출" },
                       ].map(it => (
                         <div key={it.label}>
                           <div style={{ fontSize:10, color:"#94a3b8", fontWeight:600 }}>{it.label}</div>
@@ -305,7 +305,7 @@ export default function StudentExamRegister({
                 background: submitting || !newMsg.trim() ? "#e2e8f0" : "#7c3aed",
                 color: submitting || !newMsg.trim() ? "#94a3b8" : "#fff",
                 fontWeight:700, fontSize:14, cursor: submitting || !newMsg.trim() ? "not-allowed" : "pointer" }}>
-              {submitting ? "발송 중…" : "<Send size={14} style={{verticalAlign:"middle",marginRight:4}}/> 선생님께 보내기"}
+              {submitting ? "발송 중…" : "선생님께 보내기"}
             </button>
           </div>
 
