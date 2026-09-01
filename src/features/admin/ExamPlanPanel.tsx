@@ -134,59 +134,92 @@ export default function ExamPlanPanel() {
   const [generating, setGenerating] = useState<string | null>(null);
 
   useEffect(() => {
-    rosterStore.listRoster().then(setRoster);
-    loadAll();
+    // roster 먼저 로드 → 완료 후 loadAll (학생 이름/학교/학년 매핑 필요)
+    rosterStore.listRoster().then(r => {
+      setRoster(r);
+      loadAll(r);  // roster를 인자로 전달
+    });
   }, []);
 
-  async function loadAll() {
+  // roster가 로드된 후 시험 목록 구성
+  async function loadAll(currentRoster?: RosterEntry[]) {
     setLoading(true);
-    try {
-      // Supabase: 학생 직접 등록 시험
-      const sbRes = await fetch(`${SUPABASE_URL}/rest/v1/student_exams?order=english_exam_date.asc`, { headers: SB_H });
-      const sbExams = Array.isArray(await sbRes.json()) ? await sbRes.clone().json() : [];
+    const rosterToUse = currentRoster ?? roster;
 
-      // localStorage: 관리자 등록 시험 (ExamPrepPanel에서 저장)
+    try {
+      // 1. localStorage: 관리자가 시험일정조사에서 등록한 시험
       let localExams: StudentExam[] = [];
       try {
         const raw = localStorage.getItem("l16.examSchedules");
         if (raw) {
-          const parsed = JSON.parse(raw);
-          // ExamSchedule 형식 → StudentExam 형식으로 변환
+          const parsed: any[] = JSON.parse(raw);
           localExams = parsed
-            .filter((ex: any) => ex.studentCode && ex.englishExamDate)
-            .map((ex: any) => ({
-              id: ex.id ?? `local_${ex.studentCode}_${ex.englishExamDate}`,
-              student_code: ex.studentCode,
-              student_name: ex.studentName ?? "",
-              school: ex.school ?? "",
-              grade: ex.grade ?? "",
-              semester: ex.semester ?? "2",
-              exam_type: ex.examType ?? "final",
-              english_exam_date: ex.englishExamDate,
-              exam_range: ex.range ?? "",
-              admin_confirmed: true,
-              source: "local" as const,
-            }));
+            .filter(ex => ex.studentCode && ex.englishExamDate)
+            .map(ex => {
+              // roster에서 학생 정보 가져오기
+              const r = rosterToUse.find(r => r.studentCode === ex.studentCode);
+              return {
+                id: ex.id ?? `local_${ex.studentCode}_${ex.englishExamDate}`,
+                student_code: ex.studentCode,
+                student_name: r?.name ?? ex.studentCode,   // roster에서 이름
+                school: r?.school ?? "",                    // roster에서 학교
+                grade: r?.grade ?? "",                      // roster에서 학년
+                semester: ex.semester ?? "2",
+                exam_type: ex.examType ?? "final",
+                english_exam_date: ex.englishExamDate,
+                exam_range: ex.examRange ?? "",
+                admin_confirmed: true,
+                source: "local" as const,
+              };
+            });
         }
-      } catch { }
+      } catch(e) { console.error("localStorage 파싱 오류:", e); }
 
-      // Supabase + localStorage 통합 (중복 제거)
+      // 2. Supabase: 학생이 직접 등록한 시험
+      let sbExams: StudentExam[] = [];
+      try {
+        const sbRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/student_exams?order=english_exam_date.asc`,
+          { headers: SB_H }
+        );
+        const sbData = await sbRes.json();
+        if (Array.isArray(sbData)) {
+          sbExams = sbData.map((se: any) => {
+            const r = rosterToUse.find(r => r.studentCode === se.student_code);
+            return {
+              ...se,
+              student_name: se.student_name || r?.name || se.student_code,
+              school: se.school || r?.school || "",
+              grade: se.grade || r?.grade || "",
+              source: "supabase" as const,
+            };
+          });
+        }
+      } catch(e) { console.error("Supabase 조회 오류:", e); }
+
+      // 3. 통합 + 중복 제거 (같은 학생코드 + 영어시험일)
       const allExams = [...localExams];
-      sbExams.forEach((se: any) => {
+      sbExams.forEach(se => {
         const dup = allExams.find(e =>
           e.student_code === se.student_code &&
           e.english_exam_date === se.english_exam_date
         );
-        if (!dup) allExams.push({ ...se, source: "supabase" });
+        if (!dup) allExams.push(se);
       });
       allExams.sort((a, b) => a.english_exam_date.localeCompare(b.english_exam_date));
+
+      console.log(`시험 로딩: localStorage ${localExams.length}건 + Supabase ${sbExams.length}건 = 총 ${allExams.length}건`);
       setExams(allExams);
 
-      // 계획 로딩
-      const pRes = await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?order=english_exam_date.asc,week_number.asc`, { headers: SB_H });
-      const plans = await pRes.json();
-      setPlans(Array.isArray(plans) ? plans : []);
-    } catch(err) { console.error("loadAll 실패:", err); }
+      // 4. 계획 로딩
+      const pRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/exam_prep_plans?order=english_exam_date.asc,week_number.asc`,
+        { headers: SB_H }
+      );
+      const pData = await pRes.json();
+      setPlans(Array.isArray(pData) ? pData : []);
+
+    } catch(err) { console.error("loadAll 오류:", err); }
     setLoading(false);
   }
 
