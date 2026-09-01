@@ -1,10 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
-import {
-  CheckCircle, Circle, AlertCircle, RefreshCw, ChevronDown, ChevronUp,
-  Calendar, BookOpen, FileText, ClipboardList, Layers, Zap, SkipForward
-} from "lucide-react";
+import { CheckCircle, Circle, AlertCircle, RefreshCw, ChevronDown, ChevronUp, Calendar, BookOpen, FileText, ClipboardList, Layers, Zap, SkipForward } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -191,7 +188,7 @@ export default function ExamPlanPanel() {
         body: JSON.stringify(newPlans),
       });
 
-      setNotice(`✅ ${exam.student_name} 시험대비 계획 생성 완료!`);
+      setNotice(` ${exam.student_name} 시험대비 계획 생성 완료!`);
       setTimeout(() => setNotice(""), 4000);
       await loadAll();
       setExpandedExam(exam.id);
@@ -212,10 +209,10 @@ export default function ExamPlanPanel() {
       const next = examPlans.find(p => p.week_number === plan.week_number && p.status === "pending")
         || examPlans.find(p => p.week_number > plan.week_number && p.status === "pending");
       if (next) {
-        setNotice(`✅ 완료! 다음 → 「${next.task_label}」 을 준비해주세요.`);
+        setNotice(`완료! 다음 → 「${next.task_label}」 을 준비해주세요.`);
         setTimeout(() => setNotice(""), 5000);
       } else {
-        setNotice("🎉 이 주차 모든 준비 완료!");
+        setNotice(" 이 주차 모든 준비 완료!");
         setTimeout(() => setNotice(""), 4000);
       }
     }
@@ -277,9 +274,9 @@ export default function ExamPlanPanel() {
 
       {notice && (
         <div style={{ padding:"10px 14px", borderRadius:8, marginBottom:12, fontWeight:600, fontSize:13,
-          background: notice.startsWith("✅")||notice.startsWith("🎉") ? "#f0fdf4" : "#fef3c7",
-          border:`1px solid ${notice.startsWith("✅")||notice.startsWith("🎉") ? "#86efac" : "#fde68a"}`,
-          color: notice.startsWith("✅")||notice.startsWith("🎉") ? "#166534" : "#92400e" }}>
+          background: notice.startsWith("")||notice.startsWith("") ? "#f0fdf4" : "#fef3c7",
+          border:`1px solid ${notice.startsWith("")||notice.startsWith("") ? "#86efac" : "#fde68a"}`,
+          color: notice.startsWith("")||notice.startsWith("") ? "#166534" : "#92400e" }}>
           {notice}
         </div>
       )}
@@ -393,7 +390,7 @@ export default function ExamPlanPanel() {
                         background: generating===exam.id?"#e2e8f0":"#7c3aed",
                         color: generating===exam.id?"#94a3b8":"#fff",
                         fontWeight:700, fontSize:12, cursor: generating===exam.id?"not-allowed":"pointer" }}>
-                      {generating===exam.id?"생성 중…":hasPlans?"🔄 재생성":"📋 계획 생성"}
+                      {generating===exam.id?"생성 중…":hasPlans?"<RefreshCw size={12} style={{verticalAlign:"middle",marginRight:4}}/> 재생성":"<ClipboardList size={12} style={{verticalAlign:"middle",marginRight:4}}/> 계획 생성"}
                     </button>
                     {hasPlans && (
                       <button onClick={() => setExpandedExam(expandedExam===exam.id?null:exam.id)}
@@ -426,7 +423,7 @@ export default function ExamPlanPanel() {
                                 background: isCurrent?"#7c3aed":"#f1f5f9",
                                 color: isCurrent?"#fff":"#64748b",
                                 whiteSpace:"nowrap" }}>
-                                {isCurrent&&"🔥 "}{weekLabel(wk)} ({wkDone}/{wkPlans.length})
+                                {isCurrent&&""}{weekLabel(wk)} ({wkDone}/{wkPlans.length})
                               </span>
                               <div style={{ height:2, flex:1, background: isCurrent?"#7c3aed":"#e2e8f0" }} />
                             </div>
@@ -475,12 +472,12 @@ export default function ExamPlanPanel() {
                                       {plan.adjusted_note && (
                                         <p style={{ fontSize:11, color:"#d97706", margin:"3px 0",
                                           background:"#fef3c7", padding:"3px 8px", borderRadius:5 }}>
-                                          📝 {plan.adjusted_note}
+                                          {plan.adjusted_note}
                                         </p>
                                       )}
                                       {plan.alt_material && (
                                         <p style={{ fontSize:11, color:"#0891b2", margin:"3px 0" }}>
-                                          📚 대체 자료: {plan.alt_material}
+                                          <BookOpen size={11} style={{verticalAlign:"middle",marginRight:3}}/> 대체 자료: {plan.alt_material}
                                         </p>
                                       )}
                                     </div>
@@ -549,7 +546,7 @@ export default function ExamPlanPanel() {
           display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
           <div style={{ background:"#fff", borderRadius:14, padding:24, width:"100%", maxWidth:420,
             boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
-            <h3 style={{ margin:"0 0 4px", color:"#7c3aed" }}>📝 일정 조정</h3>
+            <h3 style={{ margin:"0 0 4px", color:"#7c3aed" }}>일정 조정</h3>
             <p style={{ fontSize:12, color:"#64748b", marginBottom:14 }}>
               「{adjustModal.task_label}」 항목을 조정합니다.
             </p>
