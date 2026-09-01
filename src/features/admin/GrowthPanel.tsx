@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Printer, Send, MessageSquare, Mail } from "lucide-react";
+import { TrendingUp, BarChart2, Microscope, Mail, Pill, FileText, Calendar, AlertTriangle, Repeat, FileEdit, Bookmark, User, BookOpen, Send, CheckCircle, Pencil, Printer } from "lucide-react";
 import type { ExamResult } from "../../core/types";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
@@ -321,7 +321,7 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
 </div>
 
 <div class="section">
-  <h2>💊 강사 처방</h2>
+  <h2><Pill size={13} style={{verticalAlign:"middle",marginRight:4}}/> 강사 처방</h2>
   <div class="reflection">
     ${top3.map(r=>`<div>• ${r} 집중 보완 필요</div>`).join("")}
     <div style="margin-top:8px;color:#0f766e;font-weight:600">목표: 다음 시험 ${(latest?.score??0)+5}점 이상</div>
@@ -440,7 +440,7 @@ ${monthLabel} 학습 상담 평가서
     <div className="card">
       {/* 헤더 */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
-        <h2 style={{ margin:0, color:"#0f766e" }}>📈 발전 기록</h2>
+        <h2 style={{ margin:0, color:"#0f766e" }}><TrendingUp size={20} style={{verticalAlign:"middle",marginRight:6}} color="#0f766e"/> 발전 기록</h2>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <select value={selected} onChange={e => setSelected(e.target.value)}
             style={{ padding:"6px 12px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13 }}>
@@ -449,9 +449,9 @@ ${monthLabel} 학습 상담 평가서
           </select>
           <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
             {([
-              { key:"compare",  label:"📊 비교 분석" },
-              { key:"analysis", label:"🔬 정밀 분석" },
-              { key:"message",  label:"💌 처방 메시지" },
+              { key:"compare",  label:"<BarChart2 size={12} style={{verticalAlign:"middle",marginRight:4}}/> 비교 분석" },
+              { key:"analysis", label:"<Microscope size={12} style={{verticalAlign:"middle",marginRight:4}}/> 정밀 분석" },
+              { key:"message",  label:"<Mail size={12} style={{verticalAlign:"middle",marginRight:4}}/> 처방 메시지" },
             ] as const).map(t => (
               <button key={t.key} onClick={() => setViewTab(t.key)}
                 style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
@@ -518,19 +518,19 @@ ${monthLabel} 학습 상담 평가서
                         <button onClick={() => createMsg(code)}
                           style={{ padding:"6px 12px", borderRadius:8, border:"none", background:"#0f766e",
                             color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                          💊 처방 생성
+                          <Pill size={12} style={{verticalAlign:"middle",marginRight:4}}/> 처방 생성
                         </button>
                         <button onClick={() => { setReportModal({code, name: roster.find(r=>r.studentCode===code)?.name ?? ""}); }}
                           style={{ padding:"6px 12px", borderRadius:8, border:"1.5px solid #0f766e", background:"#fff",
                             color:"#0f766e", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                          📋 상담평가서
+                          <FileText size={12} style={{verticalAlign:"middle",marginRight:4}}/> 상담평가서
                         </button>
                       </div>
                     </div>
 
                     <div style={{ padding:"14px 16px" }}>
                       {/* ① 점수 추이 */}
-                      <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}>📅 점수 추이</p>
+                      <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}><Calendar size={12} style={{verticalAlign:"middle",marginRight:4}}/> 점수 추이</p>
                       <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
                         {sorted.map((r, i) => {
                           const prev2 = sorted[i-1];
@@ -566,7 +566,7 @@ ${monthLabel} 학습 상담 평가서
                         {/* ② 오답 원인 */}
                         <div>
                           <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}>
-                            ⚠️ 오답 원인 누적
+                            <AlertTriangle size={12} style={{verticalAlign:"middle",marginRight:4}}/> 오답 원인 누적
                           </p>
                           {topReasons.length === 0 ? (
                             <p style={{ fontSize:12, color:"#94a3b8" }}>오답 데이터 없음</p>
@@ -594,10 +594,10 @@ ${monthLabel} 학습 상담 평가서
                         {/* ③ 반복 오답 문항 */}
                         <div>
                           <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}>
-                            🔁 반복 오답 문항 (2회↑)
+                            <Repeat size={12} style={{verticalAlign:"middle",marginRight:4}}/> 반복 오답 문항 (2회↑)
                           </p>
                           {repeatWrong.length === 0 ? (
-                            <p style={{ fontSize:12, color:"#94a3b8" }}>반복 오답 없음 👍</p>
+                            <p style={{ fontSize:12, color:"#94a3b8" }}>반복 오답 없음 </p>
                           ) : (
                             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                               {repeatWrong.map(([num, cnt]) => (
@@ -615,7 +615,7 @@ ${monthLabel} 학습 상담 평가서
                       </div>
 
                       {/* ④ 회고 이력 비교 테이블 */}
-                      <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}>📝 회고 이력 비교</p>
+                      <p style={{ fontSize:12, fontWeight:700, color:"#475569", marginBottom:8 }}><FileEdit size={12} style={{verticalAlign:"middle",marginRight:4}}/> 회고 이력 비교</p>
                       <div style={{ overflowX:"auto" }}>
                         <table style={{ borderCollapse:"collapse", width:"100%", fontSize:12, minWidth:600, tableLayout:"fixed" }}>
                           <thead>
@@ -804,7 +804,7 @@ ${monthLabel} 학습 상담 평가서
         <div>
           {messages.filter(m => !selected || m.studentCode === selected).length === 0 ? (
             <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
-              <p style={{ fontSize:32, marginBottom:8 }}>💊</p>
+              <p style={{ fontSize:32, marginBottom:8 }}><Pill size={13} style={{verticalAlign:"middle",marginRight:4}}/></p>
               <p>비교 분석 탭 → 학생 카드 → "처방 생성" 버튼을 눌러주세요.</p>
             </div>
           ) : (
@@ -821,9 +821,9 @@ ${monthLabel} 학습 상담 평가서
                         {new Date(msg.createdAt).toLocaleDateString("ko-KR")}
                       </span>
                       {msg.sentAt && <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}>
-                        ✅ 발송 {new Date(msg.sentAt).toLocaleDateString("ko-KR")}
+                        <CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 발송 {new Date(msg.sentAt).toLocaleDateString("ko-KR")}
                       </span>}
-                      {msg.adminEdited && <span style={{ fontSize:11, color:"#7c3aed", marginLeft:6 }}>✏️ 수정됨</span>}
+                      {msg.adminEdited && <span style={{ fontSize:11, color:"#7c3aed", marginLeft:6 }}><Pencil size={11} style={{verticalAlign:"middle",marginRight:3}}/> 수정됨</span>}
                     </div>
                     <div style={{ display:"flex", gap:6 }}>
                       {editingId === msg.id ? (
@@ -838,12 +838,12 @@ ${monthLabel} 학습 상담 평가서
                       ) : (
                         <>
                           <button onClick={() => { setEditingId(msg.id); setEditText(msg.content); }}
-                            style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #e2e8f0", background:"#fff", fontSize:12, cursor:"pointer" }}>✏️ 수정</button>
+                            style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #e2e8f0", background:"#fff", fontSize:12, cursor:"pointer" }}><Pencil size={11} style={{verticalAlign:"middle",marginRight:3}}/> 수정</button>
                           <button onClick={() => sendMsg(msg)} disabled={sending === msg.id}
                             style={{ padding:"4px 10px", borderRadius:6, border:"none",
                               background: msg.sentAt ? "#f1f5f9" : "#0f766e",
                               color: msg.sentAt ? "#64748b" : "#fff", fontSize:12, cursor:"pointer", fontWeight:600 }}>
-                            {sending === msg.id ? "발송 중…" : msg.sentAt ? "📱 재발송" : "📱 발송"}
+                            {sending === msg.id ? "발송 중…" : msg.sentAt ? "<Send size={11} style={{verticalAlign:"middle",marginRight:3}}/> 재발송" : "<Send size={11} style={{verticalAlign:"middle",marginRight:3}}/> 발송"}
                           </button>
                           <button onClick={() => { if (!confirm("삭제?")) return; saveMsgs(messages.filter(m => m.id !== msg.id)); }}
                             style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #fca5a5", background:"#fff", fontSize:12, cursor:"pointer", color:"#ef4444" }}>삭제</button>
@@ -875,7 +875,7 @@ ${monthLabel} 학습 상담 평가서
           display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
           <div style={{ background:"#fff", borderRadius:14, padding:24, width:"100%", maxWidth:400,
             boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
-            <h3 style={{ margin:"0 0 16px", color:"#0f766e" }}>📋 상담평가서 작성</h3>
+            <h3 style={{ margin:"0 0 16px", color:"#0f766e" }}><FileText size={12} style={{verticalAlign:"middle",marginRight:4}}/> 상담평가서 작성</h3>
             <p style={{ fontSize:13, color:"#475569", marginBottom:16 }}>
               <strong>{reportModal.name}</strong> 학생의 상담평가서를 작성합니다.
             </p>
@@ -930,7 +930,7 @@ ${monthLabel} 학습 상담 평가서
       {assignmentSubs.length > 0 && (
         <div style={{ marginBottom:16 }}>
           <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
-            📚 과제 정밀 분석 이력
+            <BookOpen size={14} style={{verticalAlign:"middle",marginRight:6}}/> 과제 정밀 분석 이력
           </h3>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {(() => {
@@ -1140,7 +1140,7 @@ function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: 
       {/* ① 유형별 취약점 분포 */}
       <div style={{ marginBottom:24 }}>
         <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
-          📐 유형별 취약점 분포
+          <BarChart2 size={14} style={{verticalAlign:"middle",marginRight:6}}/> 유형별 취약점 분포
         </h3>
         <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
           {Array.from(byType.entries())
@@ -1166,7 +1166,7 @@ function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: 
       {/* ② 학생별 정밀조사 이력 */}
       <div style={{ marginBottom:24 }}>
         <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
-          👤 학생별 정밀조사 이력
+          <User size={14} style={{verticalAlign:"middle",marginRight:6}}/> 학생별 정밀조사 이력
         </h3>
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           {activeStudents
@@ -1301,7 +1301,7 @@ function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: 
                       {/* 근거 문장 별도 표시 */}
                       {items.some(i => i.detail.evidenceSentence) && (
                         <div style={{ marginTop:10 }}>
-                          <p style={{ fontSize:11, fontWeight:600, color:"#64748b", marginBottom:6 }}>📌 근거 문장 이력</p>
+                          <p style={{ fontSize:11, fontWeight:600, color:"#64748b", marginBottom:6 }}><Bookmark size={11} style={{verticalAlign:"middle",marginRight:4}}/> 근거 문장 이력</p>
                           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
                             {items.filter(i => i.detail.evidenceSentence).map((item, i) => (
                               <div key={i} style={{ padding:"6px 10px", background:"#f0fdf4",
@@ -1324,7 +1324,7 @@ function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: 
       {/* ③ 지속 모니터링: 자신감 낮은 문항 경보 */}
       <div style={{ marginBottom:16 }}>
         <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
-          ⚠️ 모니터링 경보 — 자신감 40% 미만 반복 오답
+          <AlertTriangle size={14} style={{verticalAlign:"middle",marginRight:6}}/> 모니터링 경보 — 자신감 40% 미만 반복 오답
         </h3>
         {(() => {
           const alerts: Array<{studentName:string; qno:number; type:string; cnt:number; avgConf:number}> = [];
@@ -1373,7 +1373,7 @@ function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: 
       {assignmentSubs.length > 0 && (
         <div style={{ marginBottom:16 }}>
           <h3 style={{ fontSize:14, fontWeight:700, color:"#475569", marginBottom:12 }}>
-            📚 과제 정밀 분석 이력
+            <BookOpen size={14} style={{verticalAlign:"middle",marginRight:6}}/> 과제 정밀 분석 이력
           </h3>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {(() => {
