@@ -396,7 +396,7 @@ export default function ExamPlanPanel() {
                         style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0",
                           background:"#fff", fontSize:12, cursor:"pointer",
                           display:"flex", alignItems:"center" }}>
-                        {expandedExam===exam.id?<ChevronUp size={14}/>:}
+                        {expandedExam===exam.id?:}
                       </button>
                     )}
                   </div>
@@ -417,15 +417,13 @@ export default function ExamPlanPanel() {
                           <div key={wk} style={{ marginBottom:16 }}>
                             {/* 주차 헤더 */}
                             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-                              <div style={{ height:2, flex:1, background: isCurrent?"#7c3aed":"#e2e8f0" }} />
                               <span style={{ fontSize:12, fontWeight:700, padding:"3px 12px", borderRadius:20,
                                 background: isCurrent?"#7c3aed":"#f1f5f9",
                                 color: isCurrent?"#fff":"#64748b",
                                 whiteSpace:"nowrap" }}>
                                 {isCurrent&&""}{weekLabel(wk)} ({wkDone}/{wkPlans.length})
                               </span>
-                              <div style={{ height:2, flex:1, background: isCurrent?"#7c3aed":"#e2e8f0" }} />
-                            </div>
+                              </div>
 
                             {/* 태스크 목록 */}
                             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
