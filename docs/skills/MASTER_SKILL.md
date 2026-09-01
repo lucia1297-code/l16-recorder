@@ -239,3 +239,68 @@ L16 Student Recorder Lite (이 앱)
 | EXAM_DATA_SKILL.md | 시험 데이터 변환 규칙 |
 | GROWTH_REPORT_SKILL.md | 상담평가서 작성 기준 |
 | DEPLOYMENT_CHECKLIST.md | 배포 체크리스트 |
+
+---
+
+## AFX-Desk (L19) 연동
+
+### 시스템 관계도
+```
+L16 Student Recorder (Supabase)
+    │
+    ├── 과제제출 이벤트 → Supabase Webhook
+    │                          ↓
+    │              AFX-Desk /api/webhooks/supabase/assignment-submission
+    │                          ↓
+    │              sms_notifications 대기열 등록
+    │                          ↓
+    │              관리자 승인 → Solapi SMS 발송
+    │
+    ├── 학생 데이터 공유
+    │   L16 roster.studentCode  ←→  AFX students.notes "ASX 학생코드: {code}"
+    │
+    ├── 성적/학습 데이터 공유
+    │   L16 results             →   AFX learning_records + asx_exam_results
+    │
+    ├── 수업 녹음 분석
+    │   L16 lesson_recordings   →   AFX learning_records (notes)
+    │
+    └── 월간 보고서
+        L16 GrowthPanel 상담평가서 ←→ AFX student_reports (초안→검토→확정)
+```
+
+### 학생 코드 연결 규칙
+```
+L16: roster.studentCode = "ABC123"
+AFX: students.notes 에 "ASX 학생코드: ABC123" 포함
+```
+
+### 데이터 흐름 방향
+
+| 데이터 | L16→AFX | AFX→L16 |
+|---|---|---|
+| 학생 명단 | ← 원본 (ASX) | 동기화 |
+| 모의고사 결과 | → 전송 | - |
+| 과제 제출 이벤트 | → 웹훅 | - |
+| SMS 발송 승인 | - | ← 승인 후 |
+| 월간 보고서 | → 초안 | ← 확정본 |
+| 수업 녹음 분석 | → 전송 | - |
+
+### 연동 파일
+- `src/lib/afxBridge.ts` — L16↔AFX 데이터 변환 및 전송
+- AFX: `server/supabaseAssignmentWebhook.ts` — 웹훅 수신
+- AFX: `server/routers/coredesk.ts` — tRPC 라우터
+
+### 환경변수 추가 필요
+| 변수명 | 용도 |
+|---|---|
+| VITE_AFX_WEBHOOK_URL | AFX-Desk 웹훅 수신 URL |
+| VITE_AFX_WEBHOOK_SECRET | 웹훅 서명 시크릿 |
+
+### AFX-Desk 절대 규칙 (코드 내부)
+- 화면 텍스트: **AFX-Desk** (브랜드명)
+- 컴포넌트: `CoreDeskShell` / `.coredesk-shell` (변경 금지 — 계약 테스트)
+- CSS 토큰: `--afx-*` 20종
+- DB: Neon PostgreSQL (운영) + Neon (ASX 원본 분리)
+- ORM: Drizzle (`drizzle-orm/neon-http`)
+- 테스트 게이트: `pnpm check && pnpm test` (81/86 이상)
