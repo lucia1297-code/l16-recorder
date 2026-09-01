@@ -117,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "examplan" | "growth" | "recording"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "examplan" | "growth" | "recording" | "wworder"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -194,6 +194,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "examplan" && <ExamPlanPanelLazy />}
         {tab === "growth" && <GrowthPanelLazy />}
         {tab === "recording" && <RecordingPanelLazy />}
+        {tab === "wworder" && <WWOrderPanelLazy />}
       </div>
     </div>
   );
@@ -3782,6 +3783,17 @@ function ReportLinkButton({ studentCode, studentName }: { studentCode: string; s
 
 type SmsMode = "urgent" | "regular" | "individual" | "parent";
 
+
+function WWOrderPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./WWOrderPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>WW 의뢰 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
 
 function RecordingPanelLazy() {
   const [Comp, setComp] = useState<React.ComponentType | null>(null);
