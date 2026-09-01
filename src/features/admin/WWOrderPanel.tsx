@@ -7,7 +7,7 @@ import {
   loadWWOrders, loadClinicOrders,
 } from "../../lib/wwUtils";
 import type { WWOrder, ClinicOrder, WWOrderType, ClinicOrderType } from "../../lib/wwUtils";
-import { createStorageProvider } from "../../lib/storageFactory";
+import { createStorage } from "../../lib/storageFactory";
 import type { ExamResult } from "../../core/types";
 import {
   Send, FileText, ClipboardList, CheckCircle,
@@ -42,7 +42,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
 
 export default function WWOrderPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
-  const storage = useMemo(() => createStorageProvider(), []);
+  const storage = useMemo(() => createStorage(), []);
 
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [results, setResults] = useState<ExamResult[]>([]);
