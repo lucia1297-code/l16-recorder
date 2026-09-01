@@ -1,3 +1,4 @@
+import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send } from "lucide-react";
 import { useEffect, useMemo, useState, Fragment } from "react";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
@@ -163,7 +164,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
           발전기록
         </button>
         <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")} style={{ background: tab === "recording" ? "#0891b2" : "", color: tab === "recording" ? "#fff" : "" }}>
-          🎙 녹음분석
+           녹음분석
         </button>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")} style={{ background: tab === "examprep" ? "#7c3aed" : "", color: tab === "examprep" ? "#fff" : "" }}>
           시험일정조사
@@ -560,7 +561,7 @@ function RosterManager() {
           <button onClick={exportExcel}
             style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#059669",
               color:"#fff", fontWeight:700, fontSize:12, cursor:"pointer" }}>
-            ⬇ CSV 다운로드
+            <Download size={13} style={{verticalAlign:"middle",marginRight:4}}/> CSV 다운로드
           </button>
         </div>
       </div>
@@ -991,7 +992,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
 
   return (
     <div style={{ marginTop: 24, padding: 20, border: "2px solid #2980b9", borderRadius: 12 }}>
-      <h3 style={{ margin: "0 0 16px", color: "#2980b9" }}>📅 학생별 수업 요일 등록</h3>
+      <h3 style={{ margin: "0 0 16px", color: "#2980b9" }}> 학생별 수업 요일 등록</h3>
 
       {/* ── 학생 시수 현황 명단 ── */}
       <div style={{ marginBottom: 20, background: "#f8f9ff", borderRadius: 10, padding: 14 }}>
@@ -1251,7 +1252,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                   onClick={() => setAddingSession({ date: new Date().toISOString().slice(0, 10), status: "cancelled", makeupDate: "", time: "", reason: "" })}
                   style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "none", background: "#e74c3c", color: "#fff", cursor: "pointer" }}
                 >
-                  ⚡ 긴급 보충일 추가
+                   긴급 보충일 추가
                 </button>
               </div>
 
@@ -2330,7 +2331,7 @@ function AssignmentManager() {
                         {warningRec && warningRec.count > 0 && (
                           <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
                             <span style={{ fontSize: 11, color: "var(--incorrect)" }}>
-                              누적경고 {warningRec.count}회{isNew ? " 🆕" : ""}
+                              누적경고 {warningRec.count}회{isNew ? " " : ""}
                             </span>
                             <button
                               className="btn ghost"
@@ -3291,9 +3292,9 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
       </div>
       <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
         마지막 제출 후 경과일 &nbsp;·&nbsp;
-        <span style={{ color: "#2ecc71" }}>●</span> 당일 &nbsp;
-        <span style={{ color: "#f39c12" }}>●</span> 3일 이내 &nbsp;
-        <span style={{ color: "#e74c3c" }}>●</span> 4일 이상
+        <span style={{ color: "#2ecc71" }}></span> 당일 &nbsp;
+        <span style={{ color: "#f39c12" }}></span> 3일 이내 &nbsp;
+        <span style={{ color: "#e74c3c" }}></span> 4일 이상
       </p>
       {submitted.length === 0 ? (
         <p className="muted center">제출된 데이터가 없습니다.</p>
@@ -3336,7 +3337,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
 
       {/* ── 섹션 2: 미제출 학생 ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ color: "#e74c3c" }}>❌ 미제출 학생 ({notSubmitted.length}명)</h2>
+        <h2 style={{ color: "#e74c3c" }}><XCircle size={12} style={{verticalAlign:"middle",marginRight:3}} color="#ef4444"/> 미제출 학생 ({notSubmitted.length}명)</h2>
         <button className="btn" style={{ padding: "4px 12px", fontSize: 13 }}
           onClick={exportNotSubmittedCSV} disabled={notSubmitted.length === 0}>
           CSV 저장
@@ -3348,7 +3349,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
       </p>
       {notSubmitted.length === 0 ? (
         <p className="muted center" style={{ color: "#2ecc71", fontWeight: 600 }}>
-          {roster.length === 0 ? "명부가 비어 있습니다." : "🎉 전원 제출 완료!"}
+          {roster.length === 0 ? "명부가 비어 있습니다." : " 전원 제출 완료!"}
         </p>
       ) : (
         <div className="table-wrap">
@@ -3555,7 +3556,7 @@ function StudentAnalysisReport({ rows }: { rows: ExamResult[] }) {
 
           {/* 학생 헤더 */}
           <div style={{ background: "#2c3e50", color: "#fff", padding: "10px 18px", borderRadius: "11px 11px 0 0" }}>
-            <span style={{ fontSize: 18, fontWeight: 700 }}>👤 {name}</span>
+            <span style={{ fontSize: 18, fontWeight: 700 }}> {name}</span>
             <span style={{ marginLeft: 12, fontSize: 13, opacity: 0.7 }}>{months.length}개월 데이터</span>
           </div>
 
@@ -3565,7 +3566,7 @@ function StudentAnalysisReport({ rows }: { rows: ExamResult[] }) {
 
               {/* 월 헤더 */}
               <div style={{ background: "#ecf0f1", borderRadius: 8, padding: "6px 14px", marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 700, fontSize: 15 }}>📅 {ym.replace("-", "년 ")}월</span>
+                <span style={{ fontWeight: 700, fontSize: 15 }}> {ym.replace("-", "년 ")}월</span>
                 <span style={{ fontSize: 13, color: "#666" }}>{submissions.length}회 제출</span>
               </div>
 
