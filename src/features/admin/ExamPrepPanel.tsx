@@ -121,8 +121,33 @@ export default function ExamPrepPanel() {
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
-    const saved = localStorage.getItem("l16.examSchedules");
-    if (saved) setExams(JSON.parse(saved));
+    // Supabase 우선 로드 (localStorage는 오프라인 폴백)
+    loadExamsFromSupabase().then(sbExams => {
+      if (sbExams.length > 0) {
+        setExams(sbExams);
+        // Supabase 데이터로 localStorage도 갱신
+        localStorage.setItem("l16.examSchedules", JSON.stringify(
+          sbExams.map(ex => ({
+            id: ex.id, studentCode: ex.studentCode, semester: ex.semester,
+            examType: ex.examType, subject: ex.subject,
+            examStart: ex.examStart, examEnd: ex.examEnd,
+            englishExamDate: ex.englishExamDate, examRange: ex.examRange,
+            reportDeadline: ex.reportDeadline, nextLessonDate: ex.nextLessonDate,
+            score: ex.score, examPaperReceived: ex.examPaperReceived,
+            completed: ex.completed, memo: ex.memo,
+          }))
+        ));
+      } else {
+        // Supabase 없으면 localStorage 폴백
+        const saved = localStorage.getItem("l16.examSchedules");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setExams(parsed);
+          // localStorage 데이터를 Supabase에 백업
+          syncExamsToSupabase(parsed).catch(() => {});
+        }
+      }
+    });
     // 학생이 직접 등록한 시험 + 상담 메시지 로딩
     fetch(`${SUPABASE_URL}/rest/v1/student_exams?order=submitted_at.desc`, { headers: SB_H })
       .then(r => r.json()).then(d => setStudentExams(Array.isArray(d) ? d : [])).catch(() => {});
@@ -132,7 +157,87 @@ export default function ExamPrepPanel() {
 
   function saveExams(newExams: ExamSchedule[]) {
     setExams(newExams);
+    // 1. localStorage 백업 (오프라인 대응)
     localStorage.setItem("l16.examSchedules", JSON.stringify(newExams));
+    // 2. Supabase 영구 저장 (비동기 - 실패해도 UI는 정상)
+    syncExamsToSupabase(newExams).catch(e =>
+      console.warn("[ExamSync] Supabase 동기화 실패:", e)
+    );
+  }
+
+  async function syncExamsToSupabase(exams: ExamSchedule[]) {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return;
+    for (const ex of exams) {
+      await fetch(`${SUPABASE_URL}/rest/v1/admin_exam_schedules`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "resolution=merge-duplicates",  // upsert
+        },
+        body: JSON.stringify({
+          id: ex.id,
+          student_code: ex.studentCode,
+          semester: ex.semester,
+          exam_type: ex.examType,
+          subject: ex.subject,
+          exam_start: ex.examStart,
+          exam_end: ex.examEnd,
+          english_exam_date: ex.englishExamDate,
+          exam_range: ex.examRange,
+          report_deadline: ex.reportDeadline,
+          next_lesson_date: ex.nextLessonDate,
+          score: ex.score,
+          exam_paper_received: ex.examPaperReceived,
+          completed: ex.completed,
+          memo: ex.memo,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    }
+  }
+
+  async function loadExamsFromSupabase(): Promise<ExamSchedule[]> {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return [];
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/admin_exam_schedules?order=created_at.asc`,
+        { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+      );
+      if (!res.ok) return [];
+      const rows = await res.json();
+      if (!Array.isArray(rows)) return [];
+      return rows.map((r: any): ExamSchedule => ({
+        id: r.id,
+        studentCode: r.student_code,
+        semester: r.semester,
+        examType: r.exam_type,
+        subject: r.subject ?? "영어",
+        examStart: r.exam_start ?? "",
+        examEnd: r.exam_end ?? "",
+        englishExamDate: r.english_exam_date ?? "",
+        examRange: r.exam_range ?? "",
+        reportDeadline: r.report_deadline ?? "",
+        nextLessonDate: r.next_lesson_date ?? "",
+        score: r.score ?? null,
+        examPaperReceived: r.exam_paper_received ?? false,
+        completed: r.completed ?? false,
+        memo: r.memo ?? "",
+      }));
+    } catch(e) {
+      console.warn("[ExamSync] Supabase 로드 실패:", e);
+      return [];
+    }
+  }
+
+  async function deleteExamFromSupabase(id: string) {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return;
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_exam_schedules?id=eq.${id}`,
+      { method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+    ).catch(e => console.warn("[ExamSync] 삭제 실패:", e));
   }
 
   async function sendReply(msgId: string) {
@@ -181,6 +286,7 @@ export default function ExamPrepPanel() {
   function deleteExam(id: string) {
     if (!confirm("삭제하시겠습니까?")) return;
     saveExams(exams.filter(e => e.id !== id));
+    deleteExamFromSupabase(id);  // Supabase에서도 삭제
   }
 
   function updateResult(id: string, field: "score" | "examPaperReceived" | "completed", value: any) {
