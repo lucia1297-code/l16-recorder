@@ -116,7 +116,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "growth" | "recording"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "examplan" | "growth" | "recording"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -166,7 +166,10 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
           🎙 녹음분석
         </button>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")} style={{ background: tab === "examprep" ? "#7c3aed" : "", color: tab === "examprep" ? "#fff" : "" }}>
-          시험준비
+          시험일정조사
+        </button>
+        <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")} style={{ background: tab === "examplan" ? "#7c3aed" : "", color: tab === "examplan" ? "#fff" : "" }}>
+          시험대비 계획
         </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
           등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
@@ -187,6 +190,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
         {tab === "examprep" && <ExamPrepPanelLazy />}
+        {tab === "examplan" && <ExamPlanPanelLazy />}
         {tab === "growth" && <GrowthPanelLazy />}
         {tab === "recording" && <RecordingPanelLazy />}
       </div>
@@ -3812,6 +3816,17 @@ function GrowthPanelLazy() {
       </button>
     </div>
   );
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function ExamPlanPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./ExamPlanPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>로드 실패: {err}</p></div>;
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
