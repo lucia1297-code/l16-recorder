@@ -115,9 +115,20 @@ export default function GrowthPanel() {
   const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
   const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message">("compare");
-  const [messages, setMessages] = useState<GrowthMessage[]>(() => {
-    try { return JSON.parse(localStorage.getItem("l16.growthMessages") || "[]"); } catch { return []; }
-  });
+  const [messages, setMessages] = useState<GrowthMessage[]>([]);
+  useEffect(() => {
+    loadMsgsFromSupabase().then(sbMsgs => {
+      if (sbMsgs.length > 0) {
+        setMessages(sbMsgs);
+        localStorage.setItem("l16.growthMessages", JSON.stringify(sbMsgs));
+      } else {
+        try {
+          const saved = JSON.parse(localStorage.getItem("l16.growthMessages") || "[]");
+          if (saved.length > 0) { setMessages(saved); syncMsgsToSupabase(saved).catch(()=>{}); }
+        } catch {}
+      }
+    });
+  }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [sending, setSending] = useState<string | null>(null);
@@ -137,6 +148,49 @@ export default function GrowthPanel() {
   function saveMsgs(msgs: GrowthMessage[]) {
     setMessages(msgs);
     localStorage.setItem("l16.growthMessages", JSON.stringify(msgs));
+    syncMsgsToSupabase(msgs).catch(e => console.warn("[MsgSync]", e));
+  }
+
+  async function syncMsgsToSupabase(msgs: GrowthMessage[]) {
+    for (const m of msgs) {
+      await fetch(`${SUPABASE_URL}/rest/v1/growth_messages`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          id: m.id, student_code: m.studentCode,
+          student_name: m.studentName, content: m.content,
+          created_at: m.createdAt, sent_at: m.sentAt ?? null,
+          admin_edited: m.adminEdited,
+          type: m.type ?? "prescription",
+          report_month: m.reportMonth ?? "",
+        }),
+      }).catch(() => {});
+    }
+  }
+
+  async function loadMsgsFromSupabase(): Promise<GrowthMessage[]> {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/growth_messages?order=created_at.desc`,
+        { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+      );
+      if (!res.ok) return [];
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) return [];
+      return rows.map((r: any): GrowthMessage => ({
+        id: r.id, studentCode: r.student_code,
+        studentName: r.student_name, content: r.content,
+        createdAt: r.created_at, sentAt: r.sent_at ?? null,
+        adminEdited: r.admin_edited ?? false,
+        type: r.type ?? "prescription",
+        reportMonth: r.report_month || undefined,
+      }));
+    } catch { return []; }
   }
 
   const byStudent = useMemo(() => {
