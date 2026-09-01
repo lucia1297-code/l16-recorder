@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from "react";
+import { useRegisterSW } from "virtual:pwa-register/react";
 import StudentFlow from "./features/student/StudentFlow";
 import ExamPaperUpload from "./features/student/ExamPaperUpload";
 import AdminPanel from "./features/admin/AdminPanel";
@@ -13,6 +14,12 @@ const TAP_WINDOW_MS = 2000;
 
 export default function App() {
   const [role, setRole] = useState<"student" | "admin">("student");
+
+  // PWA 업데이트 감지
+  const { needRefresh, updateServiceWorker } = useRegisterSW({
+    onRegistered(r) { console.log("[PWA] 등록:", r?.scope); },
+    onRegisterError(e) { console.warn("[PWA] 오류:", e); },
+  });
   const [previewMode, setPreviewMode] = useState(false); // 관리자가 학생 화면 미리보기
   const [showGatePrompt, setShowGatePrompt] = useState(false);
   const [gateCode, setGateCode] = useState("");
@@ -87,6 +94,29 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* PWA 업데이트 알림 배너 */}
+      {needRefresh[0] && (
+        <div style={{
+          position:"fixed", top:0, left:0, right:0, zIndex:9999,
+          background:"#0f766e", color:"#fff",
+          padding:"10px 16px",
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+          gap:10, fontSize:14, fontWeight:600,
+          boxShadow:"0 2px 12px rgba(0,0,0,0.3)"
+        }}>
+          <span>새 버전이 있습니다. 업데이트해주세요.</span>
+          <button
+            onClick={() => updateServiceWorker(true)}
+            style={{
+              padding:"6px 18px", borderRadius:8,
+              border:"none", background:"#fff", color:"#0f766e",
+              fontWeight:700, fontSize:13, cursor:"pointer",
+              flexShrink:0
+            }}>
+            지금 업데이트
+          </button>
+        </div>
+      )}
       <div className="topbar">
         <h1 onClick={handleTitleTap} style={{ cursor: "default", userSelect: "none" }}>
           L16 Student Recorder Lite
