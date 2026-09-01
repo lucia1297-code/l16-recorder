@@ -337,7 +337,7 @@ export default function ExamPlanPanel() {
             학생별 시험 준비 단계를 주차별로 관리합니다.
           </p>
         </div>
-        <button onClick={loadAll}
+        <button onClick={() => loadAll()}
           style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 12px",
             borderRadius:8, border:"1px solid #e2e8f0", background:"#fff",
             fontSize:12, cursor:"pointer" }}>
