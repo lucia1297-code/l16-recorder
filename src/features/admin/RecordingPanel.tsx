@@ -202,7 +202,7 @@ export default function RecordingPanel() {
         if (type.includes("wav")) return "wav";
         return "mp4";  // iOS 기본값
       };
-      const ext = getExt(blob.type || mime);
+      const ext = getExt(blob.type);
       const path = `${selectedStudent}/${Date.now()}.${ext}`;
 
       // 1. Storage 업로드
