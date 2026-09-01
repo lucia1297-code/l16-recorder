@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",          // 업데이트 감지 시 앱에 알림
       includeAssets: ["favicon.svg"],
       manifest: {
         name: "L16 Student Recorder Lite",
