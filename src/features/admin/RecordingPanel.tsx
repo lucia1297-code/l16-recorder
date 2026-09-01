@@ -388,7 +388,7 @@ export default function RecordingPanel() {
                   <button onClick={() => setExpandId(expandId===rec.id?null:rec.id)}
                     style={{ padding:"4px 10px", borderRadius:7, border:"1px solid #e2e8f0",
                       background:"#fff", fontSize:12, cursor:"pointer" }}>
-                    {expandId===rec.id ? : }
+                    {expandId===rec.id ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                   </button>
                 </div>
               </div>
