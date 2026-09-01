@@ -23,6 +23,7 @@ interface StudentExam {
   english_exam_date: string;
   exam_range: string;
   admin_confirmed: boolean;
+  completed?: boolean;
   source?: "local" | "supabase";
 }
 
@@ -153,22 +154,25 @@ export default function ExamPlanPanel() {
         const raw = localStorage.getItem("l16.examSchedules");
         if (raw) {
           const parsed: any[] = JSON.parse(raw);
+          // studentCode만 있으면 포함 (englishExamDate 없어도)
           localExams = parsed
-            .filter(ex => ex.studentCode && ex.englishExamDate)
+            .filter(ex => ex.studentCode)
             .map(ex => {
-              // roster에서 학생 정보 가져오기
-              const r = rosterToUse.find(r => r.studentCode === ex.studentCode);
+              const rv = rosterToUse.find(r => r.studentCode === ex.studentCode);
+              // 영어시험일: englishExamDate → examStart → examEnd 순으로 대체
+              const engDate = ex.englishExamDate || ex.examStart || ex.examEnd || "";
               return {
-                id: ex.id ?? `local_${ex.studentCode}_${ex.englishExamDate}`,
+                id: ex.id ?? `local_${ex.studentCode}_${engDate || Date.now()}`,
                 student_code: ex.studentCode,
-                student_name: r?.name ?? ex.studentCode,   // roster에서 이름
-                school: r?.school ?? "",                    // roster에서 학교
-                grade: r?.grade ?? "",                      // roster에서 학년
+                student_name: rv?.name ?? ex.studentName ?? ex.studentCode,
+                school: rv?.school ?? ex.school ?? "",
+                grade: rv?.grade ?? ex.grade ?? "",
                 semester: ex.semester ?? "2",
                 exam_type: ex.examType ?? "final",
-                english_exam_date: ex.englishExamDate,
-                exam_range: ex.examRange ?? "",
+                english_exam_date: engDate,
+                exam_range: ex.examRange ?? ex.range ?? "",
                 admin_confirmed: true,
+                completed: ex.completed ?? false,
                 source: "local" as const,
               };
             });
@@ -209,6 +213,7 @@ export default function ExamPlanPanel() {
       allExams.sort((a, b) => a.english_exam_date.localeCompare(b.english_exam_date));
 
       console.log(`시험 로딩: localStorage ${localExams.length}건 + Supabase ${sbExams.length}건 = 총 ${allExams.length}건`);
+      console.log("로컬 시험 목록:", localExams.map(e => `${e.student_name}(${e.student_code}) ${e.english_exam_date}`));
       setExams(allExams);
 
       // 4. 계획 로딩
