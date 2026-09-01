@@ -62,8 +62,14 @@ export default function WWOrderPanel() {
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
     storage.listResults().then(setResults);
-    setWwOrders(loadWWOrders());
-    setClinicOrders(loadClinicOrders());
+    loadOrdersFromSupabase("ww").then(rows => {
+      if (rows.length > 0) setWwOrders(rows);
+      else setWwOrders(loadWWOrders());
+    });
+    loadOrdersFromSupabase("clinic").then(rows => {
+      if (rows.length > 0) setClinicOrders(rows);
+      else setClinicOrders(loadClinicOrders());
+    });
   }, []);
 
   function createWWOrder() {
@@ -73,6 +79,7 @@ export default function WWOrderPanel() {
     const studentResults = results.filter(r => r.student.studentCode === selectedStudent);
     const order = buildWWOrder(student, examDate, examRange, studentResults, selectedWWType, memo);
     saveWWOrder(order);
+    saveOrderToSupabase(order, "ww").catch(()=>{});
     setWwOrders(loadWWOrders());
     setNotice(`✅ WW 작업 의뢰 생성 완료: ${WW_ORDER_LABELS[selectedWWType].label}`);
     setMemo(""); setTimeout(() => setNotice(""), 4000);
@@ -85,6 +92,7 @@ export default function WWOrderPanel() {
     if (studentResults.length === 0) { setNotice("모의고사 데이터가 없습니다."); return; }
     const order = buildClinicOrder(student, studentResults, selectedClinicType);
     saveClinicOrder(order);
+    saveOrderToSupabase(order, "clinic").catch(()=>{});
     setClinicOrders(loadClinicOrders());
     setNotice(`✅ CLINIC-WW 의뢰 생성: ${CLINIC_ORDER_LABELS[selectedClinicType].label}`);
     setTimeout(() => setNotice(""), 4000);
