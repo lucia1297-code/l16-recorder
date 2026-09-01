@@ -1,3 +1,4 @@
+import { Calendar, MessageSquare, Send, CheckCircle, XCircle, Clock, PlusCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -129,8 +130,8 @@ export default function StudentExamRegister({
       {/* 탭 */}
       <div style={{ display:"flex", gap:8, marginBottom:16 }}>
         {([
-          { key:"exam", label:"📅 시험 등록" },
-          { key:"consult", label:"💬 상담 메시지" },
+          { key:"exam", label:"<Calendar size={14} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록" },
+          { key:"consult", label:"<MessageSquare size={14} style={{verticalAlign:"middle",marginRight:4}}/> 상담 메시지" },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding:"8px 18px", borderRadius:10, border:"none", fontWeight:700, fontSize:13,
@@ -152,7 +153,7 @@ export default function StudentExamRegister({
             <button onClick={() => { setShowForm(true); setForm(EMPTY_EXAM); }}
               style={{ padding:"7px 16px", borderRadius:8, border:"none", background:"#7c3aed",
                 color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-              + 시험 등록
+              <PlusCircle size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록
             </button>
           </div>
 
@@ -255,7 +256,7 @@ export default function StudentExamRegister({
                         {dl !== null && dl >= 0 && (
                           <span style={{ fontSize:12, fontWeight:700, color: urgent?"#dc2626":"#f97316" }}>D-{dl}</span>
                         )}
-                        {ex.admin_confirmed && <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}>✅ 선생님 확인</span>}
+                        {ex.admin_confirmed && <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}><CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 선생님 확인</span>}
                       </div>
                     </div>
                     <div style={{ padding:"10px 14px", display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(140px,1fr))", gap:"6px 12px", fontSize:12 }}>
@@ -265,7 +266,7 @@ export default function StudentExamRegister({
                         { label:"직보일", value: ex.report_deadline ? ex.report_deadline.slice(5) : "-" },
                         { label:"다음 수업", value: ex.next_lesson_date ? ex.next_lesson_date.slice(5) : "-" },
                         { label:"시험 범위", value: ex.exam_range || "-" },
-                        { label:"시험지 제출", value: ex.exam_paper_submitted ? "✅ 완료" : "❌ 미제출" },
+                        { label:"시험지 제출", value: ex.exam_paper_submitted ? "✅ 완료" : "<XCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#ef4444"/> 미제출" },
                       ].map(it => (
                         <div key={it.label}>
                           <div style={{ fontSize:10, color:"#94a3b8", fontWeight:600 }}>{it.label}</div>
@@ -304,7 +305,7 @@ export default function StudentExamRegister({
                 background: submitting || !newMsg.trim() ? "#e2e8f0" : "#7c3aed",
                 color: submitting || !newMsg.trim() ? "#94a3b8" : "#fff",
                 fontWeight:700, fontSize:14, cursor: submitting || !newMsg.trim() ? "not-allowed" : "pointer" }}>
-              {submitting ? "발송 중…" : "📨 선생님께 보내기"}
+              {submitting ? "발송 중…" : "<Send size={14} style={{verticalAlign:"middle",marginRight:4}}/> 선생님께 보내기"}
             </button>
           </div>
 
@@ -333,7 +334,7 @@ export default function StudentExamRegister({
                     </div>
                   ) : (
                     <div style={{ padding:"8px 14px", background:"#f8fafc", borderTop:"1px solid #f1f5f9" }}>
-                      <span style={{ fontSize:11, color:"#94a3b8" }}>⏳ 선생님 답변 대기 중</span>
+                      <span style={{ fontSize:11, color:"#94a3b8" }}><Clock size={11} style={{verticalAlign:"middle",marginRight:3}}/> 선생님 답변 대기 중</span>
                     </div>
                   )}
                 </div>
