@@ -33,7 +33,15 @@ async function getSignedUrl(path: string): Promise<string> {
 
 async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const form = new FormData();
-  form.append("file", audioBlob, "recording.webm");
+  // 파일 타입에 맞는 확장자로 Whisper 전송
+  const getWhisperExt = (type: string) => {
+    if (type.includes("mp4")) return "mp4";
+    if (type.includes("webm")) return "webm";
+    if (type.includes("ogg")) return "ogg";
+    return "mp4";
+  };
+  const whisperExt = getWhisperExt(audioBlob.type);
+  form.append("file", audioBlob, `recording.${whisperExt}`);
   form.append("model", "whisper-1");
   form.append("language", "ko");
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -138,8 +146,17 @@ export default function RecordingPanel() {
     setNotice("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg;codecs=opus";
-      const mr = new MediaRecorder(stream, { mimeType: mime });
+      // iOS Safari: audio/mp4, Android Chrome: audio/webm, Firefox: audio/ogg
+      const SUPPORTED_MIMES = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+        "",  // 브라우저 기본값
+      ];
+      const mime = SUPPORTED_MIMES.find(m => !m || MediaRecorder.isTypeSupported(m)) ?? "";
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
       chunksRef.current = [];
       mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.start(1000);
@@ -148,7 +165,14 @@ export default function RecordingPanel() {
       setRecording(true); setElapsed(0);
       timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now()-startRef.current)/1000)), 1000);
     } catch(e) {
-      setNotice("마이크 접근 실패: " + (e as Error).message);
+      const errMsg = (e as Error).message;
+      if (errMsg.includes("NotAllowed") || errMsg.includes("Permission") || errMsg.includes("denied")) {
+        setNotice("마이크 권한이 필요합니다.\n\niPhone: 설정 → Safari → 마이크 → 허용\nAndroid: 브라우저 주소창 옆 자물쇠 → 마이크 허용");
+      } else if (errMsg.includes("NotFound") || errMsg.includes("DevicesNotFound")) {
+        setNotice("마이크를 찾을 수 없습니다. 기기에 마이크가 연결되어 있는지 확인해주세요.");
+      } else {
+        setNotice("녹음 시작 실패: " + errMsg);
+      }
     }
   }
 
@@ -170,7 +194,15 @@ export default function RecordingPanel() {
     setUploading(true);
     setNotice("업로드 중…");
     try {
-      const ext = blob.type.includes("webm") ? "webm" : "ogg";
+      // 파일 확장자 자동 결정
+      const getExt = (type: string) => {
+        if (type.includes("mp4")) return "mp4";
+        if (type.includes("webm")) return "webm";
+        if (type.includes("ogg")) return "ogg";
+        if (type.includes("wav")) return "wav";
+        return "mp4";  // iOS 기본값
+      };
+      const ext = getExt(blob.type || mime);
       const path = `${selectedStudent}/${Date.now()}.${ext}`;
 
       // 1. Storage 업로드
@@ -271,8 +303,8 @@ export default function RecordingPanel() {
           </label>
           <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
             disabled={recording || uploading}
-            style={{ width:"100%", padding:"10px 12px", borderRadius:10, border:"1.5px solid #7dd3fc",
-              fontSize:14, fontWeight:600, background:"#fff" }}>
+            style={{ width:"100%", padding:"14px 12px", borderRadius:10, border:"1.5px solid #7dd3fc",
+              fontSize:16, fontWeight:600, background:"#fff", touchAction:"manipulation" }}>
             <option value="">-- 학생 선택 --</option>
             {active.map(r => (
               <option key={r.studentCode} value={r.studentCode}>
@@ -306,8 +338,8 @@ export default function RecordingPanel() {
             </button>
           )}
           {recording && (
-            <div style={{ fontSize:28, fontWeight:700, color:"#ef4444",
-              fontVariantNumeric:"tabular-nums", minWidth:80 }}>
+            <div style={{ fontSize:40, fontWeight:700, color:"#ef4444",
+              fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center" }}>
               {fmt(elapsed)}
             </div>
           )}
