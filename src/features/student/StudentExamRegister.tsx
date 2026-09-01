@@ -130,8 +130,8 @@ export default function StudentExamRegister({
       {/* 탭 */}
       <div style={{ display:"flex", gap:8, marginBottom:16 }}>
         {([
-          { key:"exam", label:"<Calendar size={14} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록" },
-          { key:"consult", label:"<MessageSquare size={14} style={{verticalAlign:"middle",marginRight:4}}/> 상담 메시지" },
+          { key:"exam", label:"시험 등록" },
+          { key:"consult", label:"상담 메시지" },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{ padding:"8px 18px", borderRadius:10, border:"none", fontWeight:700, fontSize:13,
@@ -153,7 +153,7 @@ export default function StudentExamRegister({
             <button onClick={() => { setShowForm(true); setForm(EMPTY_EXAM); }}
               style={{ padding:"7px 16px", borderRadius:8, border:"none", background:"#7c3aed",
                 color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-              <PlusCircle size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록
+              + 시험 등록
             </button>
           </div>
 
