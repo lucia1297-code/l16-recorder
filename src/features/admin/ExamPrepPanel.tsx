@@ -278,14 +278,14 @@ export default function ExamPrepPanel() {
                           <span style={{ fontSize:11, background:"#f1f5f9", color:"#475569", padding:"1px 7px", borderRadius:8 }}>{ex.subject}</span>
                           {dl !== null && dl >= 0 && <span style={{ fontSize:12, fontWeight:700, color: dl<=7?"#dc2626":"#f97316" }}>D-{dl}</span>}
                           {ex.admin_confirmed
-                            ? <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}><CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 확인완료</span>
-                            : <span style={{ fontSize:11, color:"#d97706", fontWeight:600 }}><Clock size={11} style={{verticalAlign:"middle",marginRight:3}} color="#d97706"/> 미확인</span>}
+                            ? <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}>확인완료</span>
+                            : <span style={{ fontSize:11, color:"#d97706", fontWeight:600 }}>미확인</span>}
                         </div>
                         {!ex.admin_confirmed && (
                           <button onClick={() => confirmStudentExam(ex.id)}
                             style={{ padding:"4px 12px", borderRadius:7, border:"none", background:"#7c3aed",
                               color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                            <CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#fff"/> 확인 처리
+                            확인 처리
                           </button>
                         )}
                       </div>
@@ -333,8 +333,8 @@ export default function ExamPrepPanel() {
                         <span style={{ fontWeight:700, fontSize:13 }}>{m.student_name}</span>
                         <span style={{ fontSize:11, color:"#94a3b8", marginLeft:8 }}>{m.created_at?.slice(0,10)}</span>
                         {m.admin_reply
-                          ? <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}><CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 답변완료</span>
-                          : <span style={{ fontSize:11, color:"#d97706", marginLeft:8, fontWeight:600 }}><Clock size={11} style={{verticalAlign:"middle",marginRight:3}} color="#d97706"/> 답변 필요</span>}
+                          ? <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}>답변완료</span>
+                          : <span style={{ fontSize:11, color:"#d97706", marginLeft:8, fontWeight:600 }}>답변 필요</span>}
                       </div>
                     </div>
                     <div style={{ padding:"12px 14px" }}>
@@ -354,7 +354,7 @@ export default function ExamPrepPanel() {
                             <button onClick={() => sendReply(m.id)} disabled={replying}
                               style={{ flex:1, padding:"8px", borderRadius:7, border:"none",
                                 background:"#7c3aed", color:"#fff", fontWeight:600, fontSize:13, cursor:"pointer" }}>
-                              {replying ? "전송 중…" : "<Send size={11} style={{verticalAlign:"middle",marginRight:3}}/> 답변 전송"}
+                              {replying ? "전송 중…" : "답변 전송"}
                             </button>
                             <button onClick={() => { setReplyId(null); setReplyText(""); }}
                               style={{ padding:"8px 14px", borderRadius:7, border:"1px solid #e2e8f0",
@@ -365,7 +365,7 @@ export default function ExamPrepPanel() {
                         <button onClick={() => { setReplyId(m.id); setReplyText(""); }}
                           style={{ padding:"7px 16px", borderRadius:8, border:"1.5px solid #7c3aed",
                             background:"#fff", color:"#7c3aed", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                          <Pencil size={11} style={{verticalAlign:"middle",marginRight:3}}/> 답변하기
+                          답변하기
                         </button>
                       )}
                     </div>
