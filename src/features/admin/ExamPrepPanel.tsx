@@ -1,3 +1,4 @@
+import { ClipboardList, LayoutList, FileInput, MessageSquare, Clock, CheckCircle, Pencil, Send } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
@@ -277,14 +278,14 @@ export default function ExamPrepPanel() {
                           <span style={{ fontSize:11, background:"#f1f5f9", color:"#475569", padding:"1px 7px", borderRadius:8 }}>{ex.subject}</span>
                           {dl !== null && dl >= 0 && <span style={{ fontSize:12, fontWeight:700, color: dl<=7?"#dc2626":"#f97316" }}>D-{dl}</span>}
                           {ex.admin_confirmed
-                            ? <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}>✅ 확인완료</span>
-                            : <span style={{ fontSize:11, color:"#d97706", fontWeight:600 }}>⏳ 미확인</span>}
+                            ? <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}><CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 확인완료</span>
+                            : <span style={{ fontSize:11, color:"#d97706", fontWeight:600 }}><Clock size={11} style={{verticalAlign:"middle",marginRight:3}} color="#d97706"/> 미확인</span>}
                         </div>
                         {!ex.admin_confirmed && (
                           <button onClick={() => confirmStudentExam(ex.id)}
                             style={{ padding:"4px 12px", borderRadius:7, border:"none", background:"#7c3aed",
                               color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                            ✅ 확인 처리
+                            <CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#fff"/> 확인 처리
                           </button>
                         )}
                       </div>
@@ -332,8 +333,8 @@ export default function ExamPrepPanel() {
                         <span style={{ fontWeight:700, fontSize:13 }}>{m.student_name}</span>
                         <span style={{ fontSize:11, color:"#94a3b8", marginLeft:8 }}>{m.created_at?.slice(0,10)}</span>
                         {m.admin_reply
-                          ? <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}>✅ 답변완료</span>
-                          : <span style={{ fontSize:11, color:"#d97706", marginLeft:8, fontWeight:600 }}>⏳ 답변 필요</span>}
+                          ? <span style={{ fontSize:11, color:"#059669", marginLeft:8, fontWeight:600 }}><CheckCircle size={11} style={{verticalAlign:"middle",marginRight:3}} color="#059669"/> 답변완료</span>
+                          : <span style={{ fontSize:11, color:"#d97706", marginLeft:8, fontWeight:600 }}><Clock size={11} style={{verticalAlign:"middle",marginRight:3}} color="#d97706"/> 답변 필요</span>}
                       </div>
                     </div>
                     <div style={{ padding:"12px 14px" }}>
@@ -353,7 +354,7 @@ export default function ExamPrepPanel() {
                             <button onClick={() => sendReply(m.id)} disabled={replying}
                               style={{ flex:1, padding:"8px", borderRadius:7, border:"none",
                                 background:"#7c3aed", color:"#fff", fontWeight:600, fontSize:13, cursor:"pointer" }}>
-                              {replying ? "전송 중…" : "📨 답변 전송"}
+                              {replying ? "전송 중…" : "<Send size={11} style={{verticalAlign:"middle",marginRight:3}}/> 답변 전송"}
                             </button>
                             <button onClick={() => { setReplyId(null); setReplyText(""); }}
                               style={{ padding:"8px 14px", borderRadius:7, border:"1px solid #e2e8f0",
@@ -364,7 +365,7 @@ export default function ExamPrepPanel() {
                         <button onClick={() => { setReplyId(m.id); setReplyText(""); }}
                           style={{ padding:"7px 16px", borderRadius:8, border:"1.5px solid #7c3aed",
                             background:"#fff", color:"#7c3aed", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                          ✏️ 답변하기
+                          <Pencil size={11} style={{verticalAlign:"middle",marginRight:3}}/> 답변하기
                         </button>
                       )}
                     </div>
@@ -402,7 +403,7 @@ export default function ExamPrepPanel() {
       {/* 시험 카드 목록 */}
       {filteredExams.length === 0 ? (
         <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
-          <p style={{ fontSize:32, marginBottom:8 }}>📅</p>
+          <p style={{ fontSize:32, marginBottom:8 }}></p>
           <p>등록된 시험 일정이 없습니다.</p>
         </div>
       ) : (
@@ -495,7 +496,7 @@ export default function ExamPrepPanel() {
                   </label>
                   {ex.completed && !ex.examPaperReceived && (
                     <span style={{ fontSize:11, background:"#fef3c7", color:"#d97706", padding:"2px 8px", borderRadius:8, fontWeight:600, border:"1px solid #fde68a" }}>
-                      ⚠️ 시험지 등록 요청 필요
+                       시험지 등록 요청 필요
                     </span>
                   )}
                 </div>
@@ -582,7 +583,7 @@ export default function ExamPrepPanel() {
           <div style={{ background:"#fff", borderRadius:14, padding:24, width:"100%", maxWidth:520,
             maxHeight:"90vh", overflowY:"auto", boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
             <h3 style={{ margin:"0 0 16px", color:"#7c3aed" }}>
-              {editingExam ? "✏️ 시험 일정 수정" : "📅 시험 일정 추가"}
+              {editingExam ? "✏️ 시험 일정 수정" : " 시험 일정 추가"}
             </h3>
             <label style={{ fontSize:13, fontWeight:600 }}>학생</label>
             <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
