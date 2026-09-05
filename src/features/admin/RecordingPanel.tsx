@@ -421,24 +421,26 @@ export default function RecordingPanel() {
             </button>
           )}
           {recording && (
-            {pendingCnt > 0 && (
-              <div style={{ fontSize:11, color:"#f97316", fontWeight:600,
-                background:"#fff7ed", padding:"3px 10px", borderRadius:20,
-                marginBottom:6 }}>
-                재전송 대기 {pendingCnt}건
+            <>
+              {pendingCnt > 0 && (
+                <div style={{ fontSize:11, color:"#f97316", fontWeight:600,
+                  background:"#fff7ed", padding:"3px 10px", borderRadius:20,
+                  marginBottom:6 }}>
+                  재전송 대기 {pendingCnt}건
+                </div>
+              )}
+              {autoSaving && (
+                <div style={{ fontSize:11, color:"#059669", fontWeight:600,
+                  background:"#f0fdf4", padding:"3px 10px", borderRadius:20,
+                  marginBottom:6 }}>
+                  자동 저장 중…
+                </div>
+              )}
+              <div style={{ fontSize:40, fontWeight:700, color:"#ef4444",
+                fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center" }}>
+                {fmt(elapsed)}
               </div>
-            )}
-            {autoSaving && (
-              <div style={{ fontSize:11, color:"#059669", fontWeight:600,
-                background:"#f0fdf4", padding:"3px 10px", borderRadius:20,
-                marginBottom:6 }}>
-                자동 저장 중…
-              </div>
-            )}
-            <div style={{ fontSize:40, fontWeight:700, color:"#ef4444",
-              fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center" }}>
-              {fmt(elapsed)}
-            </div>
+            </>
           )}
           {uploading && (
             <div style={{ fontSize:13, color:"#0891b2", fontWeight:600 }}>
