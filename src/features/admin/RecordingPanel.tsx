@@ -111,9 +111,11 @@ export default function RecordingPanel() {
 
   // 녹음 상태
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [recording, setRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [uploading, setUploading] = useState(false);
+  const [recording,  setRecording]  = useState(false);
+  const [elapsed,    setElapsed]    = useState(0);
+  const [uploading,  setUploading]  = useState(false);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [pendingCnt, setPendingCnt] = useState(0);
   const [processing, setProcessing] = useState<string|null>(null);
   const [notice, setNotice] = useState("");
   const [filterStudent, setFilterStudent] = useState("");
