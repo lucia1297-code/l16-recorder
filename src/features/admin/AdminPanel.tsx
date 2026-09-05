@@ -2056,9 +2056,6 @@ function AssignmentManager() {
   return (
     <div className="card">
       <h2>과제 관리</h2>
-      <p className="sub">
-        과제 유형 {types.length}개 등록됨 — 학생 화면에서 선택 가능
-      </p>
       {notice && <p className="muted">{notice}</p>}
       {errors.length > 0 && (
         <div className="errors">
