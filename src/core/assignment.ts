@@ -1,5 +1,3 @@
-export const MAX_ASSIGNMENT_TYPES = 999; // 사실상 무제한
-
 export interface AssignmentType {
   id: string;
   name: string;
@@ -162,9 +160,7 @@ export function validateAssignmentTypeInput(
   const others = existing.filter((e) => e.id !== editingId);
   if (name && others.some((e) => e.name === name)) {
     errors.push(`이미 같은 이름("${name}")의 과제 유형이 있습니다 — 중복될 수 없습니다.`);
-  }
-  if (!editingId && others.length >= MAX_ASSIGNMENT_TYPES) {
-    errors.push(`과제 유형은 최대 ${MAX_ASSIGNMENT_TYPES}개까지 등록할 수 있습니다.`);
+  }개까지 등록할 수 있습니다.`);
   }
   return errors;
 }
