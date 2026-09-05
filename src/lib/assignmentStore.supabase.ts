@@ -19,7 +19,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
   async listTypes(): Promise<AssignmentType[]> {
     const sb = getClient();
     const { data, error } = await sb.from("assignment_types").select("*").order("name");
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
     return (data ?? []).map((r: any) => ({
       id: r.id,
       name: r.name,
@@ -45,13 +45,13 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       },
       { onConflict: "id" },
     );
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
   async deleteType(id: string): Promise<void> {
     const sb = getClient();
     const { error } = await sb.from("assignment_types").delete().eq("id", id);
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
   async submit(entry: AssignmentSubmission): Promise<void> {
@@ -73,7 +73,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       completed: entry.completed,
       review_status: entry.reviewStatus ?? "pending",
     });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
   async updateSubmission(id: string, patch: Partial<AssignmentSubmission>): Promise<void> {
@@ -93,7 +93,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
     if (patch.reviewedAt !== undefined) row.reviewed_at = patch.reviewedAt;
     if (patch.reviewNote !== undefined) row.review_note = patch.reviewNote;
     const { error } = await sb.from("assignment_submissions").update(row).eq("id", id);
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
   async listSubmissions(): Promise<AssignmentSubmission[]> {
@@ -102,7 +102,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       .from("assignment_submissions")
       .select("*")
       .order("submitted_at", { ascending: false });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
     return (data ?? []).map(mapRow);
   }
 
@@ -113,7 +113,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       .select("*")
       .eq("student_code", studentCode)
       .order("submitted_at", { ascending: false });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
     return (data ?? []).map(mapRow);
   }
 }
