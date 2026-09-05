@@ -1,4 +1,4 @@
-export const MAX_ASSIGNMENT_TYPES = 50;
+export const MAX_ASSIGNMENT_TYPES = 999; // 사실상 무제한
 
 export interface AssignmentType {
   id: string;
