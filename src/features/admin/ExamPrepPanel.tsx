@@ -204,8 +204,8 @@ export default function ExamPrepPanel() {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/admin_exam_schedules?order=created_at.asc`,
         { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
-      );
-      if (!res.ok) return [];
+      ).catch(() => null);
+      if (!res || !res.ok) return [];
       const rows = await res.json();
       if (!Array.isArray(rows)) return [];
       return rows.map((r: any): ExamSchedule => ({
@@ -237,7 +237,7 @@ export default function ExamPrepPanel() {
       `${SUPABASE_URL}/rest/v1/admin_exam_schedules?id=eq.${id}`,
       { method: "DELETE",
         headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
-    ).catch(e => console.warn("[ExamSync] 삭제 실패:", e));
+    ).catch(e => console.warn("[ExamSync] 삭제 실패 (무시):", e?.message));
   }
 
   async function sendReply(msgId: string) {
