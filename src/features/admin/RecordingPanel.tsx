@@ -128,14 +128,24 @@ export default function RecordingPanel() {
   const [filterStudent, setFilterStudent] = useState("");
   const [expandId, setExpandId] = useState<string|null>(null);
 
-  const mediaRef  = useRef<MediaRecorder|null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef  = useRef<ReturnType<typeof setInterval>|null>(null);
-  const startRef  = useRef(0);
+  const mediaRef   = useRef<MediaRecorder|null>(null);
+  const chunksRef  = useRef<Blob[]>([]);
+  const timerRef   = useRef<ReturnType<typeof setInterval>|null>(null);
+  const startRef   = useRef(0);
+  const mountedRef = useRef(true); // 언마운트 후 setState 방지
 
   useEffect(() => {
-    rosterStore.listRoster().then(setRoster);
+    mountedRef.current = true;
+    rosterStore.listRoster().then(r => { if (mountedRef.current) setRoster(r); });
     loadRecordings();
+    return () => {
+      mountedRef.current = false;
+      // 언마운트 시 녹음 정리
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRef.current?.state !== "inactive") {
+        try { mediaRef.current?.stop(); } catch { }
+      }
+    };
   }, []);
 
   async function loadRecordings() {
@@ -146,9 +156,9 @@ export default function RecordingPanel() {
         { headers: SB_H }
       );
       const rdata = await res.json();
-      setRecordings(Array.isArray(rdata) ? rdata : []);
-    } catch {}
-    setLoading(false);
+      if (mountedRef.current) setRecordings(Array.isArray(rdata) ? rdata : []);
+    } catch(e) { console.warn('loadRecordings 오류:', e); }
+    if (mountedRef.current) setLoading(false);
   }
 
   async function startRecording() {
@@ -230,7 +240,10 @@ export default function RecordingPanel() {
     }
 
     const savedMime = mediaRef.current.mimeType || "audio/webm";
-    mediaRef.current.stop();
+    // MediaRecorder state 체크 후 중지
+    if (mediaRef.current.state !== "inactive") {
+      mediaRef.current.stop();
+    }
     mediaRef.current.stream.getTracks().forEach(t => t.stop());
     await new Promise<void>((resolve, reject) => {
       if (!mediaRef.current) { resolve(); return; }
