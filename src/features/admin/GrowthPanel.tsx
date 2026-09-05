@@ -450,13 +450,13 @@ ${monthLabel} 학습 상담 평가서
   }
 
   async function sendMsg(msg: GrowthMessage) {
-    if (!SUPABASE_URL || !SUPABASE_KEY) { setNotice("설정 오류"); return; } { setNotice("SMS 설정이 없습니다."); return; }
+    if (!SUPABASE_URL || !SUPABASE_KEY) { setNotice("설정 오류"); return; }
     const s = roster.find(r => r.studentCode === msg.studentCode);
     const phone = s?.parentPhone || s?.phone;
-    if (!phone) return alert("전화번호가 없습니다.");
+    if (!phone) { setNotice("전화번호가 없습니다."); return; }
     setSending(msg.id);
     try {
-      await sendSMS(phone, msg.content);
+      await sendSMS(phone as string, msg.content);
       saveMsgs(messages.map(m => m.id === msg.id ? { ...m, sentAt: new Date().toISOString() } : m));
       setNotice(`${msg.studentName} 발송 완료`);
       setTimeout(() => setNotice(""), 3000);
