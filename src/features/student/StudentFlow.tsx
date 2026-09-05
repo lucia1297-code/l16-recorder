@@ -228,7 +228,15 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
       return;
     }
 
-    await storage.saveResult(result);
+    // 저장 시도 — 실패 시 오류 표시
+    try {
+      await storage.saveResult(result);
+    } catch(e: any) {
+      const msg = e?.message ?? e?.details ?? "저장 실패";
+      console.error("[Submit] Supabase 저장 오류:", e);
+      setErrors([`제출 중 오류가 발생했습니다: ${msg}\n잠시 후 다시 시도해주세요.`]);
+      return;
+    }
 
     // 관리자 SMS 알림 (실패해도 제출 자체는 완료)
     const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
@@ -277,7 +285,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
       }
     }
 
-    await storage.clearDraft();
+    await storage.clearDraft().catch(() => {});
     setDone(true);
   }
 
