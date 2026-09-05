@@ -15,6 +15,26 @@ const TAP_WINDOW_MS = 2000;
 export default function App() {
   const [role, setRole] = useState<"student" | "admin">("student");
 
+  // 전역 Promise 오류 캐치 (네트워크 오류 등 미처리 Promise)
+  useEffect(() => {
+    const handler = (e: PromiseRejectionEvent) => {
+      console.error("[L16] 미처리 Promise 오류:", e.reason);
+      // 치명적 오류만 사용자에게 표시 (네트워크 오류 등은 무시)
+      e.preventDefault();
+    };
+    window.addEventListener("unhandledrejection", handler);
+    return () => window.removeEventListener("unhandledrejection", handler);
+  }, []);
+
+  // 전역 JS 오류 캐치
+  useEffect(() => {
+    const handler = (e: ErrorEvent) => {
+      console.error("[L16] 전역 오류:", e.message, e.filename, e.lineno);
+    };
+    window.addEventListener("error", handler);
+    return () => window.removeEventListener("error", handler);
+  }, []);
+
   // PWA 업데이트 감지
   const { needRefresh, updateServiceWorker } = useRegisterSW({
     onRegistered(r) { console.log("[PWA] 등록:", r?.scope); },
