@@ -526,32 +526,214 @@ export default function RecordingPanel() {
                   step.key === "gpt" ? notice.includes("완료") :
                   false
                 );
+                // 단계 계산
+  const stepIndex = (() => {
+    if (notice.includes("업로드")) return 0;
+    if (notice.includes("레코드") || notice.includes("DB")) return 1;
+    if (notice.includes("Whisper")) return 2;
+    if (notice.includes("GPT")) return 3;
+    if (notice.includes("저장")) return 4;
+    return uploading ? 0 : -1;
+  })();
+
+  const STEPS = [
+    { label: "음성 파일 업로드",  icon: "upload" },
+    { label: "DB 레코드 생성",    icon: "database" },
+    { label: "Whisper AI 전사",   icon: "mic" },
+    { label: "GPT 수업 분석",     icon: "brain" },
+    { label: "분석 결과 저장",    icon: "save" },
+  ];
+
+  const currentStudent = roster.find(r => r.studentCode === selectedStudent);
+
+  return (
+    <div style={{ background:"#0f172a", minHeight:"100vh", paddingBottom:40, color:"#e2e8f0" }}>
+
+      {/* ── 헤더 ── */}
+      <div style={{ background:"#0c1a2e", padding:"14px 16px 12px",
+        borderBottom:"1px solid #1e3a5f" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+          <div style={{ width:32, height:32, borderRadius:"50%",
+            background:"linear-gradient(135deg,#0891b2,#0e7490)",
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <Mic size={15} color="#fff"/>
+          </div>
+          <div>
+            <h2 style={{ margin:0, fontSize:16, fontWeight:800, color:"#f0f9ff", letterSpacing:"-0.3px" }}>
+              수업 녹음 & AI 분석
+            </h2>
+            <p style={{ margin:0, fontSize:10, color:"#475569" }}>
+              Whisper 전사 → GPT-4o-mini → Supabase
+            </p>
+          </div>
+        </div>
+        <div style={{ padding:"6px 10px", borderRadius:8,
+          background:"rgba(8,145,178,0.1)", border:"1px solid rgba(8,145,178,0.2)",
+          fontSize:10, color:"#7dd3fc", lineHeight:1.7 }}>
+          갤럭시: 화면 끄고 다른 앱 사용 가능 → 복귀: <strong>최근 앱 → L16</strong>
+          &nbsp;|&nbsp; 종료 시 반드시 <strong>[수업 종료]</strong> 버튼
+        </div>
+      </div>
+
+      <div style={{ padding:"14px 14px 0" }}>
+
+        {/* ── 알림 배너 ── */}
+        {notice && !uploading && (
+          <div style={{
+            padding:"10px 14px", borderRadius:10, marginBottom:14,
+            background: notice.startsWith("✅") ? "rgba(5,150,105,0.15)"
+                      : notice.startsWith("오류") || notice.startsWith("마이크") ? "rgba(239,68,68,0.15)"
+                      : "rgba(8,145,178,0.15)",
+            border:`1px solid ${
+              notice.startsWith("✅") ? "rgba(5,150,105,0.4)"
+            : notice.startsWith("오류") || notice.startsWith("마이크") ? "rgba(239,68,68,0.4)"
+            : "rgba(8,145,178,0.4)"}`,
+            color: notice.startsWith("✅") ? "#34d399"
+                 : notice.startsWith("오류") || notice.startsWith("마이크") ? "#f87171" : "#38bdf8",
+            fontSize:12, fontWeight:600, lineHeight:1.6,
+          }}>
+            {notice}
+          </div>
+        )}
+
+        {/* ── 녹음 패널 ── */}
+        <div style={{ background:"#1e293b", borderRadius:14,
+          border:"1px solid #334155", overflow:"hidden", marginBottom:16 }}>
+
+          {/* 상태 표시줄 */}
+          <div style={{ padding:"9px 14px", borderBottom:"1px solid #1e3a5f",
+            display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{
+              width:8, height:8, borderRadius:"50%", flexShrink:0,
+              background: recording ? "#ef4444" : uploading ? "#f59e0b" : "#22c55e",
+              boxShadow: recording ? "0 0 0 4px rgba(239,68,68,0.25)"
+                       : uploading ? "0 0 0 3px rgba(245,158,11,0.2)"
+                       : "0 0 0 3px rgba(34,197,94,0.2)",
+              animation: (recording || uploading) ? "rp-pulse 1s infinite" : "none",
+            }}/>
+            <span style={{ fontSize:11, fontWeight:700,
+              color: recording ? "#ef4444" : uploading ? "#f59e0b" : "#64748b" }}>
+              {recording ? "녹음 중" : uploading ? "분석 중" : "대기"}
+            </span>
+            {recording && (
+              <span style={{ marginLeft:"auto", fontSize:24, fontWeight:900,
+                color:"#ef4444", fontFamily:"monospace", letterSpacing:2 }}>
+                {fmt(elapsed)}
+              </span>
+            )}
+          </div>
+
+          {/* 학생 선택 (녹음/분석 중 아닐 때) */}
+          {!recording && !uploading && (
+            <div style={{ padding:"12px 14px" }}>
+              <label style={{ fontSize:10, fontWeight:700, color:"#64748b",
+                display:"block", marginBottom:6, letterSpacing:"0.05em" }}>
+                학생 선택
+              </label>
+              <select value={selectedStudent}
+                onChange={e => setSelectedStudent(e.target.value)}
+                style={{ width:"100%", padding:"10px 12px", borderRadius:9,
+                  border:`1.5px solid ${selectedStudent ? "#0891b2" : "#334155"}`,
+                  background:"#0f172a",
+                  color: selectedStudent ? "#f0f9ff" : "#475569",
+                  fontSize:13, fontWeight:600, outline:"none",
+                  boxSizing:"border-box" as const }}>
+                <option value="">-- 학생을 선택하세요 --</option>
+                {active.map(r => (
+                  <option key={r.studentCode} value={r.studentCode}>
+                    {r.name}　{r.school} {r.grade}학년
+                  </option>
+                ))}
+              </select>
+
+              {currentStudent && (
+                <div style={{ marginTop:10, padding:"8px 10px", borderRadius:8,
+                  background:"rgba(8,145,178,0.08)",
+                  border:"1px solid rgba(8,145,178,0.2)",
+                  display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ width:30, height:30, borderRadius:"50%", flexShrink:0,
+                    background:"linear-gradient(135deg,#0891b2,#0e7490)",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:13, fontWeight:800, color:"#fff" }}>
+                    {currentStudent.name[0]}
+                  </div>
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>
+                      {currentStudent.name}
+                    </div>
+                    <div style={{ fontSize:10, color:"#64748b" }}>
+                      {currentStudent.school} {currentStudent.grade}학년
+                      {currentStudent.phone ? ` · ${currentStudent.phone}` : ""}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 녹음 중 — 학생 이름 + 진행 바 */}
+          {recording && (
+            <div style={{ padding:"10px 14px 0" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                <div style={{ width:30, height:30, borderRadius:"50%", flexShrink:0,
+                  background:"linear-gradient(135deg,#0891b2,#0e7490)",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:13, fontWeight:800, color:"#fff" }}>
+                  {currentStudent?.name?.[0] ?? "?"}
+                </div>
+                <div>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#e2e8f0" }}>
+                    {currentStudent?.name ?? "학생"}
+                  </div>
+                  <div style={{ fontSize:10, color:"#64748b" }}>녹음 진행 중</div>
+                </div>
+              </div>
+              <div style={{ height:3, background:"#1e3a5f", borderRadius:2, marginBottom:10 }}>
+                <div style={{ height:"100%", borderRadius:2,
+                  background:"linear-gradient(90deg,#ef4444,#f97316)",
+                  width:`${Math.min(100,(elapsed/3600)*100+3)}%`,
+                  transition:"width 1s linear" }}/>
+              </div>
+            </div>
+          )}
+
+          {/* 분석 단계 */}
+          {uploading && (
+            <div style={{ padding:"12px 14px", borderTop:"1px solid #1e3a5f" }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#64748b",
+                marginBottom:10, letterSpacing:"0.05em" }}>처리 단계</div>
+              {STEPS.map((step, i) => {
+                const done   = i < stepIndex;
+                const active = i === stepIndex;
                 return (
-                  <div key={step.key} style={{ display:"flex", alignItems:"center",
-                    gap:12, marginBottom:i < 4 ? 8 : 0 }}>
-                    <div style={{ width:28, height:28, borderRadius:"50%", flexShrink:0,
-                      display:"flex", alignItems:"center", justifyContent:"center", fontSize:13,
-                      background: isDone ? "rgba(5,150,105,0.2)"
-                                : isActive ? "rgba(8,145,178,0.2)" : "rgba(255,255,255,0.05)",
-                      border: `1.5px solid ${isDone ? "#10b981" : isActive ? "#0891b2" : "#334155"}` }}>
-                      {isDone ? <CheckCircle size={14} color="#10b981"/> :
-                       isActive ? <span style={{ fontSize:9, animation:"spin 1s linear infinite",
-                         display:"inline-block" }}>⟳</span> :
-                       <span style={{ fontSize:12 }}>{step.icon}</span>}
+                  <div key={step.label} style={{ display:"flex", alignItems:"center",
+                    gap:10, marginBottom: i < 4 ? 8 : 0 }}>
+                    <div style={{ width:24, height:24, borderRadius:"50%", flexShrink:0,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      background: done   ? "rgba(16,185,129,0.2)"
+                                : active ? "rgba(8,145,178,0.2)"
+                                : "rgba(255,255,255,0.04)",
+                      border:`1.5px solid ${done ? "#10b981" : active ? "#0891b2" : "#334155"}` }}>
+                      {done   ? <CheckCircle size={12} color="#10b981"/>
+                       : active ? <RefreshCw size={11} color="#38bdf8"
+                           style={{ animation:"rp-spin 1s linear infinite" }}/>
+                       : <Upload size={11} color="#475569"/>}
                     </div>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:12, fontWeight:600,
-                        color: isDone ? "#10b981" : isActive ? "#38bdf8" : "#475569" }}>
+                      <div style={{ fontSize:11, fontWeight:600,
+                        color: done ? "#10b981" : active ? "#38bdf8" : "#475569" }}>
                         {step.label}
                       </div>
-                      {isActive && (
-                        <div style={{ fontSize:10, color:"#64748b", marginTop:1 }}>
+                      {active && (
+                        <div style={{ fontSize:9, color:"#64748b", marginTop:1 }}>
                           진행 중…
                         </div>
                       )}
                     </div>
-                    {isDone && (
-                      <span style={{ fontSize:10, color:"#10b981", fontWeight:700 }}>완료</span>
+                    {done && (
+                      <span style={{ fontSize:10, color:"#10b981", fontWeight:700 }}>
+                        완료
+                      </span>
                     )}
                   </div>
                 );
@@ -559,213 +741,204 @@ export default function RecordingPanel() {
             </div>
           )}
 
-          {/* ── 녹음 버튼 ── */}
-          <div style={{ padding:"18px" }}>
-            {!recording && !uploading ? (
+          {/* 버튼 */}
+          <div style={{ padding:"12px 14px" }}>
+            {!recording && !uploading && (
               <button onClick={startRecording}
                 disabled={!selectedStudent}
-                style={{ width:"100%", padding:"16px", borderRadius:12, border:"none",
+                style={{ width:"100%", padding:"14px", borderRadius:11, border:"none",
                   background: selectedStudent
-                    ? "linear-gradient(135deg,#0891b2 0%,#0e7490 100%)"
-                    : "#1e293b",
+                    ? "linear-gradient(135deg,#0891b2,#0e7490)" : "#1e293b",
                   color: selectedStudent ? "#fff" : "#475569",
-                  fontWeight:800, fontSize:16, cursor: selectedStudent ? "pointer" : "not-allowed",
-                  boxShadow: selectedStudent ? "0 4px 20px rgba(8,145,178,0.4)" : "none",
-                  display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-                  transition:"all 0.2s", letterSpacing:"-0.3px" }}>
-                <Mic size={20}/>
+                  fontWeight:800, fontSize:15, cursor: selectedStudent ? "pointer" : "not-allowed",
+                  boxShadow: selectedStudent ? "0 4px 18px rgba(8,145,178,0.4)" : "none",
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                  letterSpacing:"-0.2px" }}>
+                <Mic size={18}/>
                 수업 녹음 시작
               </button>
-            ) : recording ? (
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {/* 파형 시각화 */}
-                <div style={{ height:4, borderRadius:2, background:"#1e3a5f", overflow:"hidden" }}>
-                  <div style={{ height:"100%", borderRadius:2,
-                    background:"linear-gradient(90deg,#ef4444,#f97316)",
-                    width:`${Math.min(100, (elapsed / 3600) * 100 + 3)}%`,
-                    transition:"width 1s linear" }}/>
-                </div>
+            )}
+            {recording && (
+              <>
                 <button onClick={stopRecording}
-                  style={{ width:"100%", padding:"16px", borderRadius:12, border:"none",
-                    background:"linear-gradient(135deg,#dc2626 0%,#b91c1c 100%)",
-                    color:"#fff", fontWeight:800, fontSize:16, cursor:"pointer",
-                    boxShadow:"0 4px 20px rgba(220,38,38,0.4)",
-                    display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-                    animation:"pulse 2s infinite" }}>
-                  <Square size={18} fill="#fff"/>
+                  style={{ width:"100%", padding:"14px", borderRadius:11, border:"none",
+                    background:"linear-gradient(135deg,#dc2626,#b91c1c)",
+                    color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer",
+                    boxShadow:"0 4px 18px rgba(220,38,38,0.4)",
+                    display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                    animation:"rp-pulse 2s infinite" }}>
+                  <Square size={16} fill="#fff"/>
                   수업 종료
                 </button>
-              </div>
-            ) : (
-              <div style={{ padding:"16px", borderRadius:12, background:"rgba(245,158,11,0.1)",
-                border:"1px solid rgba(245,158,11,0.2)",
-                display:"flex", alignItems:"center", gap:12 }}>
-                <div style={{ width:8, height:8, borderRadius:"50%",
-                  background:"#f59e0b", animation:"pulse 1s infinite" }}/>
-                <span style={{ fontSize:13, color:"#fbbf24", fontWeight:600 }}>
-                  {notice || "분석 처리 중…"}
+                <div style={{ fontSize:10, color:"#64748b", textAlign:"center",
+                  marginTop:8, lineHeight:1.7 }}>
+                  다른 앱 사용 후 돌아오려면&nbsp;
+                  <strong style={{ color:"#94a3b8" }}>최근 앱 → L16</strong>
+                </div>
+              </>
+            )}
+            {uploading && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 0" }}>
+                <div style={{ width:7, height:7, borderRadius:"50%",
+                  background:"#f59e0b", animation:"rp-pulse 1s infinite" }}/>
+                <span style={{ fontSize:12, color:"#fbbf24", fontWeight:600 }}>
+                  {notice || "분석 중…"}
                 </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* ── 녹음 이력 ── */}
-        <div style={{ marginBottom:16, display:"flex", justifyContent:"space-between",
-          alignItems:"center", flexWrap:"wrap", gap:8 }}>
-          <h3 style={{ margin:0, fontSize:15, fontWeight:700, color:"#94a3b8",
+        {/* ── 이력 헤더 ── */}
+        <div style={{ display:"flex", justifyContent:"space-between",
+          alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
+          <h3 style={{ margin:0, fontSize:13, fontWeight:700, color:"#64748b",
             display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ width:3, height:18, borderRadius:2,
+            <span style={{ width:3, height:16, borderRadius:2,
               background:"#0891b2", display:"inline-block" }}/>
             수업 분석 이력
           </h3>
           <div style={{ display:"flex", gap:8 }}>
-            <select value={filterStudent} onChange={e => setFilterStudent(e.target.value)}
-              style={{ padding:"7px 12px", borderRadius:8, border:"1px solid #334155",
-                background:"#1e293b", color:"#94a3b8", fontSize:12 }}>
+            <select value={filterStudent}
+              onChange={e => setFilterStudent(e.target.value)}
+              style={{ padding:"6px 10px", borderRadius:8,
+                border:"1px solid #334155", background:"#1e293b",
+                color:"#94a3b8", fontSize:11, outline:"none" }}>
               <option value="">전체 학생</option>
-              {active.map(r => <option key={r.studentCode} value={r.studentCode}>{r.name}</option>)}
+              {active.map(r => (
+                <option key={r.studentCode} value={r.studentCode}>{r.name}</option>
+              ))}
             </select>
             <button onClick={() => loadRecordings()}
-              style={{ padding:"7px 12px", borderRadius:8, border:"1px solid #334155",
-                background:"#1e293b", color:"#64748b", fontSize:12, cursor:"pointer",
-                display:"flex", alignItems:"center", gap:4 }}>
-              <RefreshCw size={12}/>
+              style={{ width:32, height:32, borderRadius:8,
+                border:"1px solid #334155", background:"#1e293b",
+                color:"#64748b", cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <RefreshCw size={13}/>
             </button>
           </div>
         </div>
 
+        {/* ── 이력 목록 ── */}
         {loading ? (
           <div style={{ textAlign:"center", padding:"40px 0" }}>
-            <div style={{ width:32, height:32, border:"3px solid #334155",
-              borderTop:"3px solid #0891b2", borderRadius:"50%",
-              margin:"0 auto 12px", animation:"spin 1s linear infinite" }}/>
-            <p style={{ color:"#475569", fontSize:13 }}>불러오는 중…</p>
+            <RefreshCw size={24} color="#334155"
+              style={{ animation:"rp-spin 1s linear infinite", margin:"0 auto 10px", display:"block" }}/>
+            <p style={{ color:"#475569", fontSize:12 }}>불러오는 중…</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign:"center", padding:"50px 20px",
-            border:"1px dashed #334155", borderRadius:16 }}>
-            <Mic size={40} color="#334155" style={{ marginBottom:12 }}/>
-            <p style={{ color:"#475569", fontSize:14, fontWeight:600 }}>
-              녹음 이력이 없습니다
-            </p>
-            <p style={{ color:"#334155", fontSize:12, marginTop:4 }}>
+          <div style={{ textAlign:"center", padding:"44px 20px",
+            border:"1px dashed #1e3a5f", borderRadius:14 }}>
+            <Mic size={36} color="#1e3a5f" style={{ marginBottom:10, display:"block", margin:"0 auto 10px" }}/>
+            <p style={{ color:"#334155", fontSize:13, fontWeight:600 }}>녹음 이력이 없습니다</p>
+            <p style={{ color:"#1e3a5f", fontSize:11, marginTop:4 }}>
               위에서 학생을 선택하고 수업을 시작하세요
             </p>
           </div>
         ) : (
-          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:10, paddingBottom:20 }}>
             {filtered.map(rec => (
-              <div key={rec.id} style={{ background:"#1e293b", borderRadius:14,
+              <div key={rec.id} style={{ background:"#1e293b", borderRadius:12,
                 border:`1px solid ${
                   rec.status==="done" ? "rgba(16,185,129,0.3)"
-                : rec.status==="error" ? "rgba(239,68,68,0.3)"
+                : rec.status==="error"||rec.status==="whisper_failed" ? "rgba(239,68,68,0.3)"
                 : "#334155"}`,
                 overflow:"hidden" }}>
 
                 {/* 카드 헤더 */}
-                <div style={{ padding:"12px 16px",
-                  background: rec.status==="done" ? "rgba(16,185,129,0.06)"
-                            : rec.status==="error" ? "rgba(239,68,68,0.06)" : "transparent",
-                  display:"flex", justifyContent:"space-between",
-                  alignItems:"center", flexWrap:"wrap", gap:8 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                    {/* 아바타 */}
-                    <div style={{ width:38, height:38, borderRadius:10, flexShrink:0,
+                <div
+                  onClick={() => setExpandId(expandId===rec.id ? null : rec.id)}
+                  style={{ padding:"10px 14px", cursor:"pointer",
+                    background: rec.status==="done" ? "rgba(16,185,129,0.06)"
+                              : rec.status==="error" ? "rgba(239,68,68,0.06)" : "transparent",
+                    display:"flex", justifyContent:"space-between",
+                    alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ width:34, height:34, borderRadius:9, flexShrink:0,
                       background:`linear-gradient(135deg,${
                         rec.status==="done" ? "#065f46,#047857"
                       : rec.status==="error" ? "#7f1d1d,#991b1b"
                       : "#0c1a2e,#0f2744"})`,
                       display:"flex", alignItems:"center", justifyContent:"center",
-                      fontSize:16, fontWeight:800, color:"#fff" }}>
-                      {(rec.student_name || "?")[0]}
+                      fontSize:15, fontWeight:800, color:"#fff" }}>
+                      {(rec.student_name||"?")[0]}
                     </div>
                     <div>
-                      <div style={{ fontSize:14, fontWeight:700, color:"#e2e8f0" }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0" }}>
                         {rec.student_name}
                       </div>
-                      <div style={{ fontSize:11, color:"#64748b", marginTop:1,
+                      <div style={{ fontSize:10, color:"#64748b", marginTop:1,
                         display:"flex", gap:8, flexWrap:"wrap" }}>
                         <span>{new Date(rec.recorded_at).toLocaleDateString("ko-KR")}</span>
                         <span>{new Date(rec.recorded_at).toLocaleTimeString("ko-KR",
                           {hour:"2-digit",minute:"2-digit"})}</span>
-                        <span style={{ color:"#475569" }}>⏱ {fmt(rec.duration_sec)}</span>
+                        <span>⏱ {fmt(rec.duration_sec)}</span>
                       </div>
                     </div>
                   </div>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    {/* 상태 배지 */}
-                    <span style={{ fontSize:11, padding:"3px 10px", borderRadius:20,
-                      fontWeight:700, letterSpacing:"0.02em",
+                    <span style={{ fontSize:10, padding:"3px 9px", borderRadius:20, fontWeight:700,
                       background: rec.status==="done" ? "rgba(16,185,129,0.15)"
                                 : rec.status==="transcribing" ? "rgba(245,158,11,0.15)"
-                                : rec.status==="whisper_failed" ? "rgba(239,68,68,0.15)"
-                                : "rgba(100,116,139,0.15)",
+                                : rec.status==="whisper_failed"||rec.status==="error"
+                                  ? "rgba(239,68,68,0.15)" : "rgba(100,116,139,0.15)",
                       color: rec.status==="done" ? "#10b981"
                            : rec.status==="transcribing" ? "#f59e0b"
-                           : rec.status==="whisper_failed" ? "#ef4444"
-                           : "#64748b" }}>
+                           : rec.status==="whisper_failed"||rec.status==="error"
+                             ? "#ef4444" : "#64748b" }}>
                       {rec.status==="done" ? "✓ 분석완료"
                      : rec.status==="transcribing" ? "전사중…"
                      : rec.status==="whisper_failed" ? "전사실패"
                      : rec.status==="error" ? "오류"
                      : "처리중"}
                     </span>
-                    {/* 펼치기 */}
-                    <button onClick={() => setExpandId(expandId===rec.id ? null : rec.id)}
-                      style={{ width:28, height:28, borderRadius:8, border:"1px solid #334155",
-                        background:"#0f172a", color:"#64748b", cursor:"pointer",
-                        display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      {expandId===rec.id
-                        ? <ChevronUp size={14}/>
-                        : <ChevronDown size={14}/>}
-                    </button>
+                    <div style={{ width:26, height:26, borderRadius:7,
+                      border:"1px solid #334155", background:"#0f172a",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      color:"#64748b", transition:"transform .2s",
+                      transform: expandId===rec.id ? "rotate(180deg)" : "none" }}>
+                      <ChevronDown size={13}/>
+                    </div>
                   </div>
                 </div>
 
-                {/* 분석 내용 (펼침) */}
+                {/* 펼침 내용 */}
                 {expandId===rec.id && (
                   <div style={{ borderTop:"1px solid #1e3a5f" }}>
-                    {/* 전사 텍스트 */}
                     {rec.transcript && (
-                      <div style={{ padding:"14px 16px",
-                        borderBottom:"1px solid #1e3a5f" }}>
-                        <div style={{ fontSize:11, fontWeight:700, color:"#64748b",
-                          marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-                          <Mic size={11}/> Whisper 전사 텍스트
+                      <div style={{ padding:"12px 14px", borderBottom:"1px solid #1e3a5f" }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#475569",
+                          marginBottom:6, display:"flex", alignItems:"center", gap:5 }}>
+                          <Mic size={10}/> Whisper 전사 텍스트
                         </div>
-                        <p style={{ fontSize:12, color:"#94a3b8", lineHeight:1.8,
-                          margin:0, background:"#0f172a", padding:"10px 12px",
-                          borderRadius:8, maxHeight:120, overflow:"auto",
-                          fontFamily:"monospace", whiteSpace:"pre-wrap" }}>
+                        <div style={{ fontSize:11, color:"#64748b", lineHeight:1.8,
+                          background:"#0f172a", padding:"8px 10px", borderRadius:7,
+                          maxHeight:110, overflow:"auto", fontFamily:"monospace",
+                          whiteSpace:"pre-wrap" as const }}>
                           {rec.transcript}
-                        </p>
-                      </div>
-                    )}
-                    {/* GPT 분석 */}
-                    {rec.analysis && (
-                      <div style={{ padding:"14px 16px",
-                        borderBottom:"1px solid #1e3a5f" }}>
-                        <div style={{ fontSize:11, fontWeight:700, color:"#64748b",
-                          marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-                          <Brain size={11}/> GPT 수업 분석
                         </div>
-                        <p style={{ fontSize:12, color:"#94a3b8", lineHeight:1.8,
-                          margin:0, whiteSpace:"pre-wrap" }}>
-                          {rec.analysis}
-                        </p>
                       </div>
                     )}
-                    {/* 키워드 */}
+                    {rec.analysis && (
+                      <div style={{ padding:"12px 14px", borderBottom:"1px solid #1e3a5f" }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#475569",
+                          marginBottom:6, display:"flex", alignItems:"center", gap:5 }}>
+                          <Brain size={10}/> GPT 수업 분석
+                        </div>
+                        <div style={{ fontSize:11, color:"#94a3b8", lineHeight:1.8,
+                          whiteSpace:"pre-wrap" as const }}>
+                          {rec.analysis}
+                        </div>
+                      </div>
+                    )}
                     {rec.keywords && rec.keywords.length > 0 && (
-                      <div style={{ padding:"12px 16px",
-                        borderBottom:"1px solid #1e3a5f",
+                      <div style={{ padding:"10px 14px", borderBottom:"1px solid #1e3a5f",
                         display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                        <span style={{ fontSize:11, color:"#475569", marginRight:4 }}>
+                        <span style={{ fontSize:10, color:"#475569", marginRight:2 }}>
                           키워드
                         </span>
                         {rec.keywords.map((kw: string) => (
-                          <span key={kw} style={{ fontSize:11, padding:"2px 8px",
+                          <span key={kw} style={{ fontSize:10, padding:"2px 8px",
                             borderRadius:6, background:"rgba(8,145,178,0.15)",
                             color:"#38bdf8", fontWeight:600 }}>
                             {kw}
@@ -773,25 +946,22 @@ export default function RecordingPanel() {
                         ))}
                       </div>
                     )}
-                    {/* 액션 버튼 */}
-                    <div style={{ padding:"12px 16px",
-                      display:"flex", gap:8, flexWrap:"wrap" }}>
+                    <div style={{ padding:"10px 14px", display:"flex", gap:8, flexWrap:"wrap" }}>
                       {rec.status !== "done" && (
-                        <button
-                          onClick={() => reAnalyze(rec)}
-                          disabled={processing === rec.id}
+                        <button onClick={() => reAnalyze(rec)}
+                          disabled={processing===rec.id}
                           style={{ display:"flex", alignItems:"center", gap:6,
-                            padding:"7px 14px", borderRadius:8, border:"none",
+                            padding:"6px 14px", borderRadius:8, border:"none",
                             background: processing===rec.id
                               ? "#1e293b" : "rgba(8,145,178,0.2)",
                             color: processing===rec.id ? "#475569" : "#38bdf8",
-                            fontSize:12, fontWeight:700, cursor:"pointer" }}>
-                          <RefreshCw size={12}/>
+                            fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                          <RefreshCw size={11}/>
                           {processing===rec.id ? "재분석 중…" : "재분석"}
                         </button>
                       )}
-                      {processing === rec.id && (
-                        <span style={{ fontSize:11, color:"#f59e0b", alignSelf:"center" }}>
+                      {processing===rec.id && (
+                        <span style={{ fontSize:10, color:"#f59e0b", alignSelf:"center" }}>
                           {notice}
                         </span>
                       )}
@@ -802,12 +972,11 @@ export default function RecordingPanel() {
             ))}
           </div>
         )}
-
       </div>
 
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-        @keyframes spin { to{transform:rotate(360deg)} }
+        @keyframes rp-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+        @keyframes rp-spin  { to{transform:rotate(360deg)} }
         select option { background:#1e293b; color:#e2e8f0; }
       `}</style>
     </div>
