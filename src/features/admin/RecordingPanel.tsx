@@ -47,7 +47,7 @@ async function transcribeAudio(audioBlob: Blob): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method:"POST", headers:{ "Authorization": `Bearer ${OPENAI_KEY}` }, body: form,
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) { const t = await res.text().catch(() => `HTTP ${res.status}`); throw new Error(t.slice(0,200)); }
   return (await res.json()).text;
 }
 
@@ -198,7 +198,7 @@ export default function RecordingPanel() {
           (mediaRef.current as any).__audioCtx = ctx;
           (mediaRef.current as any).__oscillator = oscillator;
         }
-      } catch { /* 지원 안 해도 무관 */ }
+      } catch(e) { console.warn("AudioContext 불가:", e); }
     } catch(e) {
       const errMsg = (e as Error).message;
       if (errMsg.includes("NotAllowed") || errMsg.includes("Permission") || errMsg.includes("denied")) {
@@ -221,7 +221,7 @@ export default function RecordingPanel() {
     try {
       (mediaRef.current as any).__oscillator?.stop();
       (mediaRef.current as any).__audioCtx?.close();
-    } catch { }
+    } catch(e) { console.warn("AudioCtx 정리 실패:", e); }
 
     // MediaSession 초기화
     if ("mediaSession" in navigator) {
@@ -232,7 +232,11 @@ export default function RecordingPanel() {
     const savedMime = mediaRef.current.mimeType || "audio/webm";
     mediaRef.current.stop();
     mediaRef.current.stream.getTracks().forEach(t => t.stop());
-    await new Promise<void>(resolve => { mediaRef.current!.onstop = () => resolve(); });
+    await new Promise<void>((resolve, reject) => {
+      if (!mediaRef.current) { resolve(); return; }
+      const timeout = setTimeout(() => resolve(), 5000); // 5초 후 강제 완료
+      mediaRef.current.onstop = () => { clearTimeout(timeout); resolve(); };
+    });
     const blob = new Blob(chunksRef.current, { type: savedMime });
     await uploadAndAnalyze(blob, duration);
   }
