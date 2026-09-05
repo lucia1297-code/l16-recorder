@@ -207,12 +207,17 @@ export default function AdminInputPanel() {
   // ── 모의고사 삭제 ───────────────────────────────────
   async function deleteExam(id: string) {
     if (!confirm("이 모의고사 기록을 삭제하시겠습니까?")) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/results?id=eq.${id}`, {
-      method: "DELETE",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
-    });
-    setRecentExams(prev => prev.filter(r => r.id !== id));
-    notify("삭제됐습니다.");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/results?id=eq.${id}`, {
+        method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setRecentExams(prev => prev.filter(r => r.id !== id));
+      notify("삭제됐습니다.");
+    } catch(e: any) {
+      fail("삭제 실패: " + (e?.message ?? "네트워크 오류"));
+    }
   }
 
   // ── 렌더링 ─────────────────────────────────────────
