@@ -207,10 +207,13 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   }
 
   async function submit() {
-    const errs = validateStep(9, draft);
+    let errs: string[] = [];
+    try { errs = validateStep(9, draft); } catch(e) { console.warn("validateStep 오류:", e); }
     if (errs.length) return setErrors(errs);
     const result: ExamResult = {
-      id: crypto.randomUUID(),
+      id: (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       student: draft.student as StudentInfo,
       exam: draft.exam as ExamInfo,
       teacher: draft.teacher,
@@ -2015,7 +2018,9 @@ function ExamCompletionCheckScreen({
   async function answer(value: ExamCheckAnswer) {
     setSubmitting(true);
     await examCheckStore.submit({
-      id: crypto.randomUUID(),
+      id: (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       studentCode,
       studentName,
       answer: value,
