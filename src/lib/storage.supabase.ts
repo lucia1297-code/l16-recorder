@@ -53,7 +53,7 @@ export class SupabaseStorage implements Storage {
       question_details: r.questionDetails ?? [],
       submitted_at: r.submittedAt,
     });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
   async listResults(): Promise<ExamResult[]> {
@@ -62,7 +62,7 @@ export class SupabaseStorage implements Storage {
       .from("results")
       .select("*")
       .order("submitted_at", { ascending: false });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
     return (data ?? []).map((row: any) => ({
       id: row.id,
       student: {
