@@ -93,7 +93,7 @@ export class SupabaseStorage implements Storage {
   }
   async loadDraft(): Promise<DraftResult | null> {
     const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as DraftResult) : null;
+    return raw ? ((()=>{ try { return JSON.parse(raw); } catch { return null; } })() as DraftResult) : null;
   }
   async clearDraft(): Promise<void> {
     localStorage.removeItem(DRAFT_KEY);
