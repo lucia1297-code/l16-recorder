@@ -2073,8 +2073,7 @@ function AssignmentManager() {
       )}
 
 
-      {types.length < MAX_ASSIGNMENT_TYPES && (
-        <div style={{ marginBottom: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+      <div style={{ marginBottom: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
           <label>새 과제 이름</label>
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: 모의고사 풀이" />
           <label>지정 개수 (예: 3회)</label>
@@ -2134,7 +2133,6 @@ function AssignmentManager() {
             과제 유형 추가
           </button>
         </div>
-      )}
 
       <h3>과제 유형</h3>
       <div className="table-wrap">
