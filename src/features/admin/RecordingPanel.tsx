@@ -161,6 +161,34 @@ export default function RecordingPanel() {
       setRecording(true); setElapsed(0);
       timerRef.current = setInterval(() =>
         setElapsed(Math.floor((Date.now()-startRef.current)/1000)), 1000);
+
+      // 갤럭시 백그라운드 유지 힌트
+      // MediaSession API — 잠금화면에 "녹음 중" 표시 + 백그라운드 오디오 유지
+      const currentStudent = roster.find(r => r.studentCode === selectedStudent);
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: "수업 녹음 중",
+          artist: "L16 민수쌤",
+          album: currentStudent?.name ? `${currentStudent.name} 수업` : "수업",
+        });
+        navigator.mediaSession.setActionHandler("stop", () => stopRecording());
+      }
+      // 무음 오디오 컨텍스트 — 갤럭시에서 오디오 세션 유지용
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const oscillator = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = 0.00001; // 사실상 무음
+          oscillator.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          oscillator.start();
+          // stopRecording 시 정리를 위해 ref에 보관
+          (mediaRef.current as any).__audioCtx = ctx;
+          (mediaRef.current as any).__oscillator = oscillator;
+        }
+      } catch { /* 지원 안 해도 무관 */ }
     } catch(e) {
       const errMsg = (e as Error).message;
       if (errMsg.includes("NotAllowed") || errMsg.includes("Permission") || errMsg.includes("denied")) {
@@ -178,6 +206,19 @@ export default function RecordingPanel() {
     setRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
     const duration = Math.floor((Date.now()-startRef.current)/1000);
+
+    // 오디오 컨텍스트 정리
+    try {
+      (mediaRef.current as any).__oscillator?.stop();
+      (mediaRef.current as any).__audioCtx?.close();
+    } catch { }
+
+    // MediaSession 초기화
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.setActionHandler("stop", null);
+    }
+
     mediaRef.current.stop();
     mediaRef.current.stream.getTracks().forEach(t => t.stop());
     await new Promise<void>(resolve => { mediaRef.current!.onstop = () => resolve(); });
@@ -335,10 +376,18 @@ export default function RecordingPanel() {
             </button>
           )}
           {recording && (
-            <div style={{ fontSize:40, fontWeight:700, color:"#ef4444",
-              fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center" }}>
-              {fmt(elapsed)}
-            </div>
+            <>
+              <div style={{ fontSize:40, fontWeight:800, color:"#ef4444",
+                fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center",
+                letterSpacing:2 }}>
+                {fmt(elapsed)}
+              </div>
+              <div style={{ fontSize:11, color:"#64748b", textAlign:"center",
+                marginTop:4, lineHeight:1.6 }}>
+                녹음 중 — 다른 앱 사용 후 돌아오려면<br/>
+                <strong>최근 앱 → L16</strong> 선택
+              </div>
+            </>
           )}
           {uploading && (
             <div style={{ fontSize:13, color:"#0891b2", fontWeight:600 }}>
