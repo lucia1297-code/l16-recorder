@@ -18,7 +18,7 @@ interface Recording {
   transcript: string;
   analysis: string;
   keywords: string[];
-  status: "uploaded" | "transcribing" | "done" | "error";
+  status: "uploaded" | "transcribing" | "done" | "error" | "whisper_failed";
 }
 
 async function getSignedUrl(path: string): Promise<string> {
