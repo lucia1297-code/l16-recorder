@@ -47,9 +47,9 @@ async function fetchResults(): Promise<ExamResult[]> {
     { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
   );
   if (!res.ok) return [];
-  const rows = await res.json()
-  const _safe = Array.isArray(return rows) ? return rows : [];
-return rows_safe.map((r: any) => ({
+  const _rawRows = await res.json();
+  const rows = Array.isArray(_rawRows) ? _rawRows : [];
+  return rows.map((r: any) => ({
     id: r.id,
     student: {
       studentCode: r.student_code,
@@ -183,8 +183,8 @@ export default function GrowthPanel() {
         { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
       );
       if (!res.ok) return [];
-      const _rows = await res.json();
-    const rows = Array.isArray(_rows) ? _rows : [];
+      const _rawJson = await res.json();
+    const rows = Array.isArray(_rawJson) ? _rawJson : [];
       if (!Array.isArray(rows) || rows.length === 0) return [];
       return rows.map((r: any): GrowthMessage => ({
         id: r.id, studentCode: r.student_code,
