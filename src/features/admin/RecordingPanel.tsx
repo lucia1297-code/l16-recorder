@@ -188,8 +188,6 @@ export default function RecordingPanel() {
   async function savePendingSegment(seg: { blob: Blob; duration: number }) {
     try {
       const key = `seg_${Date.now()}`;
-      const arr = await seg.blob.arrayBuffer();
-      const item = { id: key, arr, type: seg.blob.type, duration: seg.duration, ts: Date.now() };
       localStorage.setItem(key, JSON.stringify({ type: seg.blob.type, duration: seg.duration, ts: Date.now() }));
       pendingRef.current.push({ blob: seg.blob, duration: seg.duration });
     } catch(e) { console.warn("세그먼트 임시저장 실패:", e); }
