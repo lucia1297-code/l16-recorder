@@ -230,27 +230,43 @@ export default function RecordingPanel() {
     const student = roster.find(r => r.studentCode === selectedStudent);
     if (!student) return;
     setUploading(true);
-    setNotice("업로드 중…");
-    try {
-      // 파일 확장자 자동 결정
-      const getExt = (type: string) => {
-        if (type.includes("mp4")) return "mp4";
-        if (type.includes("webm")) return "webm";
-        if (type.includes("ogg")) return "ogg";
-        if (type.includes("wav")) return "wav";
-        return "mp4";  // iOS 기본값
-      };
-      const ext = getExt(blob.type);
-      const path = `${selectedStudent}/${Date.now()}.${ext}`;
 
-      // 1. Storage 업로드
+    // ── STEP 1: 파일 크기 및 타입 검증 ──────────────
+    const sizeMB = blob.size / 1024 / 1024;
+    setNotice(`파일 준비 중… (${sizeMB.toFixed(1)}MB)`);
+
+    if (blob.size === 0) {
+      setNotice("오류: 녹음 데이터가 없습니다. 마이크 권한을 확인하고 다시 시도해주세요.");
+      setUploading(false); return;
+    }
+
+    // blob.type 없으면 갤럭시 기본값으로 보정
+    const blobType = blob.type || "audio/webm";
+    const fixedBlob = blob.type ? blob : new Blob([blob], { type: blobType });
+
+    const getExt = (type: string) => {
+      if (type.includes("mp4"))  return "mp4";
+      if (type.includes("webm")) return "webm";
+      if (type.includes("ogg"))  return "ogg";
+      if (type.includes("wav"))  return "wav";
+      return "webm"; // 갤럭시 기본값
+    };
+    const ext = getExt(blobType);
+    const path = `${selectedStudent}/${Date.now()}.${ext}`;
+
+    try {
+      // ── STEP 2: Supabase Storage 업로드 ──────────
+      setNotice(`업로드 중… (${sizeMB.toFixed(1)}MB)`);
       const upRes = await fetch(
         `${SUPABASE_URL}/storage/v1/object/lesson-recordings/${path}`,
-        { method:"POST", headers: SB_H, body: blob }
+        { method:"POST", headers: { ...SB_H, "Content-Type": blobType }, body: fixedBlob }
       );
-      if (!upRes.ok) throw new Error("업로드 실패");
+      if (!upRes.ok) {
+        const errText = await upRes.text().catch(() => upRes.status.toString());
+        throw new Error(`업로드 실패 (${upRes.status}): ${errText.slice(0,100)}`);
+      }
 
-      // 2. DB 저장
+      // ── STEP 3: DB 레코드 생성 ───────────────────
       const dbRes = await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings`, {
         method:"POST",
         headers:{ ...SB_H, "Content-Type":"application/json", "Prefer":"return=representation" },
@@ -259,25 +275,45 @@ export default function RecordingPanel() {
           audio_url: path, duration_sec: duration, status:"transcribing",
         }),
       });
-      const [rec] = await dbRes.json();
+      const dbData = await dbRes.json();
+      const rec = Array.isArray(dbData) ? dbData[0] : null;
+      if (!rec?.id) throw new Error("DB 저장 실패: 레코드를 생성하지 못했습니다.");
 
-      // 3. Whisper 변환 (즉시 실행)
-      setNotice("🎙 Whisper 텍스트 변환 중…");
-      const signedUrl = await getSignedUrl(path);
-      const transcript = await transcribeAudio(blob); // blob 직접 사용
+      // ── STEP 4: Whisper 전사 ─────────────────────
+      setNotice("Whisper 변환 중… (수업 길이에 따라 1~3분 소요)");
+      let transcript = "";
+      try {
+        transcript = await transcribeAudio(fixedBlob);
+      } catch(e: any) {
+        // Whisper 실패해도 계속 진행 (status는 partial로)
+        console.error("Whisper 실패:", e);
+        await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings?id=eq.${rec.id}`, {
+          method:"PATCH",
+          headers:{ ...SB_H, "Content-Type":"application/json" },
+          body: JSON.stringify({ status:"whisper_failed", transcript: `오류: ${e?.message}` }),
+        });
+        setNotice(`업로드 완료. Whisper 변환 실패: ${e?.message ?? "네트워크 오류"}`);
+        setUploading(false); loadRecordings(); return;
+      }
 
-      // 4. GPT 분석
-      setNotice("GPT 수업 분석 중…");
-      const { analysis, keywords } = await analyzeLesson(transcript, student.name);
+      // ── STEP 5: GPT 분석 ─────────────────────────
+      setNotice("GPT 분석 중…");
+      let analysis = ""; let keywords: string[] = [];
+      try {
+        ({ analysis, keywords } = await analyzeLesson(transcript, student.name));
+      } catch(e: any) {
+        console.error("GPT 분석 실패:", e);
+        analysis = `분석 실패: ${e?.message ?? "오류"}`;
+      }
 
-      // 5. 결과 저장
+      // ── STEP 6: 결과 저장 ────────────────────────
       await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings?id=eq.${rec.id}`, {
         method:"PATCH",
         headers:{ ...SB_H, "Content-Type":"application/json" },
         body: JSON.stringify({ transcript, analysis, keywords, status:"done" }),
       });
 
-      setNotice(`${student.name} 수업 분석 완료!`);
+      setNotice(`✅ ${student.name} 수업 분석 완료!`);
       setTimeout(() => setNotice(""), 5000);
       await loadRecordings();
     } catch(e) {
