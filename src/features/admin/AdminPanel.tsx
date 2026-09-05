@@ -135,15 +135,15 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
           모의고사 제출목록
         </button>
+        <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}
+          style={{ background: tab === "admininput" ? "#7c3aed" : "", color: tab === "admininput" ? "#fff" : "", fontWeight:700 }}>
+          직접 입력
+        </button>
         <button className={tab === "dash" ? "on" : ""} onClick={() => setTab("dash")}>
           대시보드
         </button>
         <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
           명부 관리
-        </button>
-        <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}
-          style={{ background: tab === "admininput" ? "#7c3aed" : "", color: tab === "admininput" ? "#fff" : "", fontWeight:700 }}>
-          직접 입력
         </button>
         <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
           과제 관리
