@@ -291,25 +291,26 @@ export default function AdminInputPanel() {
         )}
       </div>
 
-      {selectedStudent && (
+      {/* 탭 버튼 — 항상 표시 (과제유형은 학생 미선택에서도 사용) */}
+      <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2, marginBottom:18, flexWrap:"wrap" }}>
+        {([
+          { key:"exam",       label:"모의고사", icon:<ClipboardList size={14}/> },
+          { key:"assignment", label:"과제",     icon:<FileText size={14}/> },
+          { key:"types",      label:"과제유형 관리", icon:<ClipboardList size={14}/> },
+        ] as const).map(t => (
+          <button key={t.key} onClick={() => setInputTab(t.key)}
+            style={{ padding:"7px 18px", borderRadius:6, border:"none", fontSize:13,
+              fontWeight:600, cursor:"pointer",
+              background: inputTab===t.key ? "#7c3aed" : "transparent",
+              color: inputTab===t.key ? "#fff" : "#64748b",
+              display:"flex", alignItems:"center", gap:5 }}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {selectedStudent && inputTab !== "types" && (
         <>
-          {/* 입력 탭 */}
-          <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2, marginBottom:18, width:"fit-content" }}>
-            {([
-              { key:"exam", label:"📊 모의고사", icon:<ClipboardList size={14}/> },
-              { key:"assignment", label:"📚 과제", icon:<FileText size={14}/> },
-              { key:"types", label:"⚙️ 과제유형", icon:<ClipboardList size={14}/> },
-            ] as const).map(t => (
-              <button key={t.key} onClick={() => setInputTab(t.key)}
-                style={{ padding:"7px 18px", borderRadius:6, border:"none", fontSize:13,
-                  fontWeight:600, cursor:"pointer",
-                  background: inputTab===t.key ? "#7c3aed" : "transparent",
-                  color: inputTab===t.key ? "#fff" : "#64748b",
-                  display:"flex", alignItems:"center", gap:5 }}>
-                {t.icon} {t.label.split(" ")[1]}
-              </button>
-            ))}
-          </div>
 
           {/* ── 모의고사 입력 ── */}
           {inputTab === "exam" && (
@@ -590,8 +591,11 @@ export default function AdminInputPanel() {
             </div>
           )}
 
-          {/* ── 과제유형 관리 ── */}
-          {inputTab === "types" && (
+        </>
+      )}
+
+      {/* ── 과제유형 관리 — 학생 미선택에서도 접근 가능 ── */}
+      {inputTab === "types" && (
             <div>
               {typeNotice && (
                 <div style={{ padding:"10px 14px", borderRadius:8, marginBottom:12,
@@ -745,10 +749,6 @@ export default function AdminInputPanel() {
                 </div>
               )}
             </div>
-          )}
-        </>
-      )}
-
       {!selectedStudent && inputTab !== "types" && (
         <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
           <Edit2 size={40} color="#cbd5e1" style={{ marginBottom:10 }}/>
