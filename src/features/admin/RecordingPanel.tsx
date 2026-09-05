@@ -21,7 +21,7 @@ interface Recording {
   status: "uploaded" | "transcribing" | "done" | "error";
 }
 
-async function getSignedUrl(path: string): Promise<string> {
+async async function getSignedUrl(path: string): Promise<string> {
   const res = await fetch(
     `${SUPABASE_URL}/storage/v1/object/sign/lesson-recordings/${path}`,
     { method:"POST", headers:{...SB_H,"Content-Type":"application/json"},
@@ -52,13 +52,24 @@ async function transcribeAudio(audioBlob: Blob): Promise<string> {
 }
 
 async function analyzeLesson(transcript: string, studentName: string): Promise<{analysis:string;keywords:string[]}> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method:"POST",
-    headers:{ "Authorization":`Bearer ${OPENAI_KEY}`, "Content-Type":"application/json" },
-    body: JSON.stringify({
-      model:"gpt-4o-mini",
-      messages:[
-        { role:"system", content:`당신은 수능 영어 전문 강사의 수업 분석 보조 AI입니다.
+  if (!OPENAI_KEY) throw new Error("OpenAI API 키 미설정");
+  if (!transcript.trim()) throw new Error("전사 텍스트가 비어있습니다.");
+
+  // 텍스트가 너무 길면 앞 8000자만 사용 (토큰 제한)
+  const trimmed = transcript.length > 8000 ? transcript.slice(0, 8000) + "
+...(이하 생략)" : transcript;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2분 타임아웃
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 1500,
+        messages: [
+          { role: "system", content: `당신은 수능 영어 전문 강사(30년 경력)의 수업 분석 보조 AI입니다.
 수업 녹음 텍스트를 분석하여 다음 형식으로 작성하세요:
 
 【이해도 분석】
@@ -77,30 +88,29 @@ async function analyzeLesson(transcript: string, studentName: string): Promise<{
 • 구체적인 지도 제안 (유형별)
 
 전문적이고 간결하게 작성하세요.` },
-        { role:"user", content:`${studentName} 학생 수업 녹음입니다:\n\n${transcript}` }
-      ], max_tokens:800,
-    })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  const analysis = (await res.json()).choices[0].message.content;
+          { role: "user", content: `${studentName} 학생 수업 녹음입니다:
 
-  // 키워드 추출
-  const kRes = await fetch("https://api.openai.com/v1/chat/completions", {
-    method:"POST",
-    headers:{ "Authorization":`Bearer ${OPENAI_KEY}`, "Content-Type":"application/json" },
-    body: JSON.stringify({
-      model:"gpt-4o-mini",
-      messages:[{ role:"user", content:`다음 수업 내용에서 핵심 키워드 5개를 JSON 배열로만 응답하세요. 예: ["빈칸추론","어휘","독해전략"]\n\n${transcript}` }],
-      max_tokens:80,
-    })
-  });
-  let keywords: string[] = [];
-  try {
-    const txt = (await kRes.json()).choices[0].message.content;
-    const m = txt.match(/\[.*?\]/s);
-    if (m) keywords = JSON.parse(m[0]);
-  } catch { }
-  return { analysis, keywords };
+${trimmed}` }
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => `HTTP ${res.status}`);
+      throw new Error(`GPT API 오류 (${res.status}): ${errText.slice(0, 200)}`);
+    }
+    const json = await res.json();
+    const analysis = json.choices?.[0]?.message?.content ?? "분석 결과를 가져오지 못했습니다.";
+    // 키워드 추출 (분석 텍스트에서 【】 안 제목들)
+    const keywords = (analysis.match(/【([^】]+)】/g) ?? [])
+      .map((k: string) => k.replace(/【|】/g, ""));
+    return { analysis, keywords };
+  } catch(e: any) {
+    if (e.name === "AbortError") throw new Error("GPT 분석 시간 초과 (2분).");
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export default function RecordingPanel() {
@@ -136,7 +146,8 @@ export default function RecordingPanel() {
         `${SUPABASE_URL}/rest/v1/lesson_recordings?order=recorded_at.desc`,
         { headers: SB_H }
       );
-      setRecordings(Array.isArray(await res.json()) ? await res.clone().json() : []);
+      const rdata = await res.json();
+      setRecordings(Array.isArray(rdata) ? rdata : []);
     } catch {}
     setLoading(false);
   }
@@ -216,13 +227,14 @@ export default function RecordingPanel() {
     // MediaSession 초기화
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = null;
-      navigator.mediaSession.setActionHandler("stop", null);
+      try { navigator.mediaSession.setActionHandler("stop", null); } catch { }
     }
 
+    const savedMime = mediaRef.current.mimeType || "audio/webm";
     mediaRef.current.stop();
     mediaRef.current.stream.getTracks().forEach(t => t.stop());
     await new Promise<void>(resolve => { mediaRef.current!.onstop = () => resolve(); });
-    const blob = new Blob(chunksRef.current, { type: mediaRef.current.mimeType || "audio/mp4" });
+    const blob = new Blob(chunksRef.current, { type: savedMime });
     await uploadAndAnalyze(blob, duration);
   }
 
@@ -328,7 +340,9 @@ export default function RecordingPanel() {
     try {
       const signedUrl = await getSignedUrl(rec.audio_url);
       const audioRes = await fetch(signedUrl);
+      if (!audioRes.ok) throw new Error(`오디오 다운로드 실패 (${audioRes.status})`);
       const blob = await audioRes.blob();
+      if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
       const transcript = await transcribeAudio(blob);
       const { analysis, keywords } = await analyzeLesson(transcript, rec.student_name);
       await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings?id=eq.${rec.id}`, {
