@@ -172,7 +172,7 @@ export default function GrowthPanel() {
           type: m.type ?? "prescription",
           report_month: m.reportMonth ?? "",
         }),
-      }).catch(() => {});
+      }).catch(e => console.debug('[GrowthSync] 메시지 동기화 실패 (무시):', e?.message));
     }
   }
 
@@ -450,8 +450,7 @@ ${monthLabel} 학습 상담 평가서
   }
 
   async function sendMsg(msg: GrowthMessage) {
-    const apiKey = import.meta.env.VITE_SOLAPI_API_KEY as string;
-    if (!apiKey) { setNotice("SMS 설정이 없습니다."); return; }
+    if (!SUPABASE_URL || !SUPABASE_KEY) { setNotice("설정 오류"); return; } { setNotice("SMS 설정이 없습니다."); return; }
     const s = roster.find(r => r.studentCode === msg.studentCode);
     const phone = s?.parentPhone || s?.phone;
     if (!phone) return alert("전화번호가 없습니다.");
