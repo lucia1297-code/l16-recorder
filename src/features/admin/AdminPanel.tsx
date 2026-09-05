@@ -2058,8 +2058,7 @@ function AssignmentManager() {
     <div className="card">
       <h2>과제 관리</h2>
       <p className="sub">
-        과제 유형은 최대 {MAX_ASSIGNMENT_TYPES}개까지 만들 수 있습니다 ({types.length}/
-        {MAX_ASSIGNMENT_TYPES}).
+        과제 유형 {types.length}개 등록됨 — 학생 화면에서 선택 가능
       </p>
       {notice && <p className="muted">{notice}</p>}
       {errors.length > 0 && (
