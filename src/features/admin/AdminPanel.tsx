@@ -2283,7 +2283,6 @@ function AssignmentManager() {
           </tbody>
         </table>
       </div>
-}
 
       <MockExamTimingSettings />
 
