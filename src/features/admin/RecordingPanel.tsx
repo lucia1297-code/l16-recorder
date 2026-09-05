@@ -21,7 +21,7 @@ interface Recording {
   status: "uploaded" | "transcribing" | "done" | "error";
 }
 
-async async function getSignedUrl(path: string): Promise<string> {
+async function getSignedUrl(path: string): Promise<string> {
   const res = await fetch(
     `${SUPABASE_URL}/storage/v1/object/sign/lesson-recordings/${path}`,
     { method:"POST", headers:{...SB_H,"Content-Type":"application/json"},
