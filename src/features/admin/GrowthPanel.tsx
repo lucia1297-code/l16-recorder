@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp, BarChart2, Microscope, Mail, Pill, FileText, Calendar, AlertTriangle, Repeat, FileEdit, Bookmark, User, BookOpen, Send, CheckCircle, Pencil, Printer } from "lucide-react";
 import type { ExamResult } from "../../core/types";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
