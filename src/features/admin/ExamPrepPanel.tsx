@@ -252,7 +252,7 @@ export default function ExamPrepPanel() {
       setConsultMsgs(prev => prev.map(m => m.id === msgId
         ? { ...m, admin_reply: replyText, replied_at: new Date().toISOString() } : m));
       setReplyId(null); setReplyText("");
-      setNotice("답변을 전송했습니다."); setTimeout(() => setNotice(""), 3000);
+      setNotice("답변을 전송했습니다."); clearTimeout((window as any).__l16notice); (window as any).__l16notice = setTimeout(() => setNotice(""), 3000);
     } catch { setNotice("답변 전송 실패"); }
     setReplying(false);
   }
@@ -264,7 +264,7 @@ export default function ExamPrepPanel() {
       body: JSON.stringify({ admin_confirmed: true }),
     });
     setStudentExams(prev => prev.map(e => e.id === id ? { ...e, admin_confirmed: true } : e));
-    setNotice("확인 처리됐습니다."); setTimeout(() => setNotice(""), 3000);
+    setNotice("확인 처리됐습니다."); clearTimeout((window as any).__l16notice); (window as any).__l16notice = setTimeout(() => setNotice(""), 3000);
   }
 
   function daysUntil(dateStr: string): number {
@@ -280,7 +280,7 @@ export default function ExamPrepPanel() {
       saveExams([...exams, { id: examId(), studentCode: selectedStudent, ...form }]);
     }
     setShowForm(false); setEditingExam(null); setForm(EMPTY_EXAM);
-    setNotice("저장됐습니다."); setTimeout(() => setNotice(""), 2000);
+    setNotice("저장됐습니다."); clearTimeout((window as any).__l16notice); (window as any).__l16notice = setTimeout(() => setNotice(""), 2000);
   }
 
   function deleteExam(id: string) {
@@ -310,7 +310,7 @@ export default function ExamPrepPanel() {
     try {
       await sendExamPaperRequestSMS(student.phone, student.name, ex.subject);
       setNotice(`${student.name} 학생에게 시험지 제출 요청 SMS 발송 완료`);
-      setTimeout(() => setNotice(""), 3000);
+      clearTimeout((window as any).__l16notice); (window as any).__l16notice = setTimeout(() => setNotice(""), 3000);
     } catch (e) {
       alert("SMS 발송 실패: " + (e as Error).message);
     } finally {
