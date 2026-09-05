@@ -168,7 +168,7 @@ export default function ExamPrepPanel() {
   async function syncExamsToSupabase(exams: ExamSchedule[]) {
     if (!SUPABASE_URL || !SUPABASE_KEY) return;
     for (const ex of exams) {
-      await fetch(`${SUPABASE_URL}/rest/v1/admin_exam_schedules`, {
+      const _r = await fetch(`${SUPABASE_URL}/rest/v1/admin_exam_schedules`, {
         method: "POST",
         headers: {
           "apikey": SUPABASE_KEY,
