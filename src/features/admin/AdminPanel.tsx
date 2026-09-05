@@ -141,6 +141,10 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
           명부 관리
         </button>
+        <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}
+          style={{ background: tab === "admininput" ? "#7c3aed" : "", color: tab === "admininput" ? "#fff" : "", fontWeight:700 }}>
+          직접 입력
+        </button>
         <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
           과제 관리
         </button>
