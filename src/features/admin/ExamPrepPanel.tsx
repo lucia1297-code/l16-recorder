@@ -566,7 +566,6 @@ export default function ExamPrepPanel() {
                     { label:"직보일", value: ex.reportDeadline || "-" },
                     { label:"남은 날짜", value: ex.englishExamDate ? (daysLeft < 0 ? `D+${Math.abs(daysLeft)}` : `D-${daysLeft}`) : "-",
                       color: daysLeft <= 3 ? "#ef4444" : daysLeft <= 7 ? "#f97316" : "#2563eb" },
-                    { label:"시험 범위", value: ex.examRange || "-" },
                     { label:"다음 수업", value: ex.nextLessonDate || "-" },
                   ].map(item => (
                     <div key={item.label}>
@@ -575,6 +574,27 @@ export default function ExamPrepPanel() {
                     </div>
                   ))}
                 </div>
+
+                {/* 시험 범위 — 가로 전체 메모 형식 */}
+                {ex.examRange && (
+                  <div style={{
+                    margin:"8px 0 0",
+                    padding:"8px 12px",
+                    background:"#f8fafc",
+                    borderRadius:8,
+                    border:"1px solid #e2e8f0",
+                    display:"flex",
+                    alignItems:"flex-start",
+                    gap:8,
+                  }}>
+                    <span style={{ fontSize:10, color:"#94a3b8", fontWeight:600,
+                      whiteSpace:"nowrap", paddingTop:2 }}>시험 범위</span>
+                    <span style={{ fontSize:13, color:"#1e293b", lineHeight:1.6,
+                      wordBreak:"break-all", flex:1 }}>
+                      {ex.examRange}
+                    </span>
+                  </div>
+                )}
 
                 {/* 결과 섹션 */}
                 <div style={{ padding:"10px 14px", borderTop:"1px solid #f1f5f9", background:"#fafafa",
