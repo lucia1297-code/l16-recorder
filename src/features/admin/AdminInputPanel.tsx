@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createStorage } from "../../lib/storageFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
@@ -53,6 +53,7 @@ export default function AdminInputPanel() {
   const [asgTypes, setAsgTypes] = useState<AssignmentType[]>([]);
 
   // ── 학생 선택 ──────────────────────────────────────
+  const mountedRef = useRef(true);
   const [selectedCode, setSelectedCode] = useState("");
   const student = roster.find(r => r.studentCode === selectedCode);
 
@@ -74,10 +75,12 @@ export default function AdminInputPanel() {
 
   // ── 초기 로드 ──────────────────────────────────────
   useEffect(() => {
+    mountedRef.current = true;
     rosterStore.listRoster().then(r =>
       setRoster(r.filter(s => (s.studentStatus ?? "active") !== "withdrawn"))
     );
-    asgStore.listTypes().then(setAsgTypes);
+    asgStore.listTypes().then(t => { if (mountedRef.current) setAsgTypes(t); });
+    return () => { mountedRef.current = false; };
   }, []);
 
   // ── 학생 선택 시 이력 로드 ─────────────────────────
