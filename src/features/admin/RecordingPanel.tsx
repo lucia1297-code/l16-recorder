@@ -111,25 +111,18 @@ export default function RecordingPanel() {
 
   // 녹음 상태
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [recording,  setRecording]  = useState(false);
-  const [elapsed,    setElapsed]    = useState(0);
-  const [uploading,  setUploading]  = useState(false);
-  const [autoSaving, setAutoSaving] = useState(false);
-  const [pendingCnt, setPendingCnt] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [elapsed,   setElapsed]   = useState(0);
+  const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState<string|null>(null);
   const [notice, setNotice] = useState("");
   const [filterStudent, setFilterStudent] = useState("");
   const [expandId, setExpandId] = useState<string|null>(null);
 
-  const mediaRef      = useRef<MediaRecorder|null>(null);
-  const chunksRef     = useRef<Blob[]>([]);           // 현재 세그먼트 청크
-  const allChunksRef  = useRef<Blob[]>([]);           // 전체 누적 청크
-  const timerRef      = useRef<ReturnType<typeof setInterval>|null>(null);
-  const autoSaveRef   = useRef<ReturnType<typeof setInterval>|null>(null);
-  const startRef      = useRef(0);
-  const segStartRef   = useRef(0);                    // 2분 세그먼트 시작
-  const pendingRef    = useRef<{blob:Blob,duration:number}[]>([]); // 미전송 세그먼트
-  const studentRef    = useRef("");                   // 백그라운드 중 학생코드 보관
+  const mediaRef  = useRef<MediaRecorder|null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef  = useRef<ReturnType<typeof setInterval>|null>(null);
+  const startRef  = useRef(0);
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
@@ -148,97 +141,26 @@ export default function RecordingPanel() {
     setLoading(false);
   }
 
-  // 2분마다 세그먼트 자동 저장
-  async function autoSaveSegment() {
-    const mr = mediaRef.current;
-    if (!mr || mr.state !== "recording") return;
-    setAutoSaving(true);
-
-    // 현재 청크 스냅샷 후 초기화
-    const segChunks = [...chunksRef.current];
-    chunksRef.current = [];
-    allChunksRef.current.push(...segChunks);
-    segStartRef.current = Date.now();
-
-    if (segChunks.length === 0) { setAutoSaving(false); return; }
-
-    const segBlob = new Blob(segChunks, { type: mr.mimeType || "audio/mp4" });
-    const segDuration = Math.round((Date.now() - segStartRef.current) / 1000) + 120;
-
-    // IndexedDB에 미전송 세그먼트 저장
-    await savePendingSegment({ blob: segBlob, duration: segDuration });
-    setPendingCnt(c => c + 1);
-    setAutoSaving(false);
-
-    // 즉시 전송 시도 (백그라운드)
-    flushPendingSegments(studentRef.current).catch(() => {});
-  }
-
-  // 미전송 세그먼트 재전송
-  async function flushPendingSegments(studentCode: string) {
-    const pending = await loadPendingSegments();
-    for (const seg of pending) {
-      try {
-        await uploadAndAnalyze(seg.blob, seg.duration, true);
-        await removePendingSegment(seg.id);
-        setPendingCnt(c => Math.max(0, c - 1));
-      } catch { break; } // 네트워크 오류면 중단, 다음 기회에
-    }
-  }
-
-  // IndexedDB 헬퍼
-  async function savePendingSegment(seg: { blob: Blob; duration: number }) {
-    try {
-      const key = `seg_${Date.now()}`;
-      localStorage.setItem(key, JSON.stringify({ type: seg.blob.type, duration: seg.duration, ts: Date.now() }));
-      pendingRef.current.push({ blob: seg.blob, duration: seg.duration });
-    } catch(e) { console.warn("세그먼트 임시저장 실패:", e); }
-  }
-  async function loadPendingSegments() {
-    return pendingRef.current.map((s, i) => ({ ...s, id: String(i) }));
-  }
-  async function removePendingSegment(id: string) {
-    pendingRef.current.splice(Number(id), 1);
-  }
-
   async function startRecording() {
     if (!selectedStudent) { setNotice("학생을 먼저 선택해주세요."); return; }
     setNotice("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // iOS Safari: audio/mp4  /  Android Chrome: audio/webm
       const SUPPORTED_MIMES = [
         "audio/webm;codecs=opus", "audio/webm",
         "audio/mp4", "audio/ogg;codecs=opus", "audio/ogg", "",
       ];
       const mime = SUPPORTED_MIMES.find(m => !m || MediaRecorder.isTypeSupported(m)) ?? "";
       const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
-
       chunksRef.current = [];
-      allChunksRef.current = [];
-      pendingRef.current = [];
-      studentRef.current = selectedStudent;
-
-      mr.ondataavailable = e => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-          allChunksRef.current.push(e.data);
-        }
-      };
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.start(1000);
       mediaRef.current = mr;
       startRef.current = Date.now();
-      segStartRef.current = Date.now();
-      setRecording(true); setElapsed(0); setPendingCnt(0);
-
-      // 타이머
+      setRecording(true); setElapsed(0);
       timerRef.current = setInterval(() =>
         setElapsed(Math.floor((Date.now()-startRef.current)/1000)), 1000);
-
-      // 2분마다 자동 저장
-      autoSaveRef.current = setInterval(() => autoSaveSegment(), 120_000);
-
-      // 백그라운드 안내
-      setNotice("🎙 녹음 중 — 화면을 꺼도 백그라운드로 계속 녹음됩니다. 종료 시 [수업 종료] 버튼을 눌러주세요.");
     } catch(e) {
       const errMsg = (e as Error).message;
       if (errMsg.includes("NotAllowed") || errMsg.includes("Permission") || errMsg.includes("denied")) {
@@ -254,24 +176,16 @@ export default function RecordingPanel() {
   async function stopRecording() {
     if (!mediaRef.current) return;
     setRecording(false);
-    if (timerRef.current)   clearInterval(timerRef.current);
-    if (autoSaveRef.current) clearInterval(autoSaveRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
     const duration = Math.floor((Date.now()-startRef.current)/1000);
     mediaRef.current.stop();
     mediaRef.current.stream.getTracks().forEach(t => t.stop());
     await new Promise<void>(resolve => { mediaRef.current!.onstop = () => resolve(); });
-    // 전체 누적 청크로 최종 업로드
-    const finalChunks = allChunksRef.current.length > 0
-      ? allChunksRef.current
-      : chunksRef.current;
-    const blob = new Blob(finalChunks, { type: mediaRef.current.mimeType || "audio/mp4" });
+    const blob = new Blob(chunksRef.current, { type: mediaRef.current.mimeType || "audio/mp4" });
     await uploadAndAnalyze(blob, duration);
-    pendingRef.current = [];
-    setPendingCnt(0);
-    setNotice("");
   }
 
-  async function uploadAndAnalyze(blob: Blob, duration: number, isSegment = false) {
+  async function uploadAndAnalyze(blob: Blob, duration: number) {
     const student = roster.find(r => r.studentCode === selectedStudent);
     if (!student) return;
     setUploading(true);
@@ -421,26 +335,10 @@ export default function RecordingPanel() {
             </button>
           )}
           {recording && (
-            <>
-              {pendingCnt > 0 && (
-                <div style={{ fontSize:11, color:"#f97316", fontWeight:600,
-                  background:"#fff7ed", padding:"3px 10px", borderRadius:20,
-                  marginBottom:6 }}>
-                  재전송 대기 {pendingCnt}건
-                </div>
-              )}
-              {autoSaving && (
-                <div style={{ fontSize:11, color:"#059669", fontWeight:600,
-                  background:"#f0fdf4", padding:"3px 10px", borderRadius:20,
-                  marginBottom:6 }}>
-                  자동 저장 중…
-                </div>
-              )}
-              <div style={{ fontSize:40, fontWeight:700, color:"#ef4444",
-                fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center" }}>
-                {fmt(elapsed)}
-              </div>
-            </>
+            <div style={{ fontSize:40, fontWeight:700, color:"#ef4444",
+              fontVariantNumeric:"tabular-nums", minWidth:100, textAlign:"center" }}>
+              {fmt(elapsed)}
+            </div>
           )}
           {uploading && (
             <div style={{ fontSize:13, color:"#0891b2", fontWeight:600 }}>
