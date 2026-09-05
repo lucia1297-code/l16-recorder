@@ -155,8 +155,8 @@ export default function AdminInputPanel() {
         )
       );
     } catch(e: any) {
-      const msg = e?.message ?? e?.details ?? JSON.stringify(e) ?? "알 수 없는 오류";
-      fail("저장 실패: " + msg);
+      const msg = e?.message ?? e?.details ?? (typeof e === "string" ? e : "알 수 없는 오류");
+      fail(`저장 실패: ${msg} — 네트워크를 확인하고 다시 시도해주세요.`);
       console.error("[AdminInput] 모의고사 저장 오류:", e);
     }
     setSaving(false);
