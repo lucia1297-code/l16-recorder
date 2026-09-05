@@ -2072,6 +2072,69 @@ function AssignmentManager() {
         </div>
       )}
 
+
+      {types.length < MAX_ASSIGNMENT_TYPES && (
+        <div style={{ marginBottom: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+          <label>새 과제 이름</label>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: 모의고사 풀이" />
+          <label>지정 개수 (예: 3회)</label>
+          <input
+            type="number"
+            value={newTarget}
+            onChange={(e) => setNewTarget(e.target.value)}
+          />
+          <label>형식</label>
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            모의고사형: 학생이 회차·점수·틀린문항을 직접 입력하고, 관리자가 켜두면 세부풀이시간도
+            입력. 일반과제: 회차 자동 계산 + 관리자가 정한 필드 3개.
+          </p>
+          <div className="chips">
+            <div
+              className={"chip" + (newKind === "mock_exam" ? " on" : "")}
+              onClick={() => setNewKind("mock_exam")}
+            >
+              모의고사형
+            </div>
+            <div
+              className={"chip" + (newKind === "general" ? " on" : "")}
+              onClick={() => setNewKind("general")}
+            >
+              일반과제
+            </div>
+          </div>
+
+          {newKind === "general" && (
+            <div style={{ marginTop: 10 }}>
+              <p className="muted" style={{ fontSize: 12 }}>
+                학생 화면에 보일 필드 이름을 정하세요 (비워두면 기본값 사용).
+              </p>
+              <label>필드1 이름 (기본: 분야명)</label>
+              <input
+                value={newItemLabel}
+                onChange={(e) => setNewItemLabel(e.target.value)}
+                placeholder="분야명"
+              />
+              <label>필드2 이름 (기본: 학습내용)</label>
+              <input
+                value={newScopeLabel}
+                onChange={(e) => setNewScopeLabel(e.target.value)}
+                placeholder="학습내용"
+              />
+              <label>필드3 이름 (기본: 완수여부)</label>
+              <input
+                value={newCompletedLabel}
+                onChange={(e) => setNewCompletedLabel(e.target.value)}
+                placeholder="완수여부"
+              />
+            </div>
+          )}
+
+          <div style={{ height: 10 }} />
+          <button className="btn" onClick={addType}>
+            과제 유형 추가
+          </button>
+        </div>
+      )
       <h3>과제 유형</h3>
       <div className="table-wrap">
         <table>
@@ -2219,69 +2282,7 @@ function AssignmentManager() {
           </tbody>
         </table>
       </div>
-
-      {types.length < MAX_ASSIGNMENT_TYPES && (
-        <div style={{ marginTop: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
-          <label>새 과제 이름</label>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: 모의고사 풀이" />
-          <label>지정 개수 (예: 3회)</label>
-          <input
-            type="number"
-            value={newTarget}
-            onChange={(e) => setNewTarget(e.target.value)}
-          />
-          <label>형식</label>
-          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-            모의고사형: 학생이 회차·점수·틀린문항을 직접 입력하고, 관리자가 켜두면 세부풀이시간도
-            입력. 일반과제: 회차 자동 계산 + 관리자가 정한 필드 3개.
-          </p>
-          <div className="chips">
-            <div
-              className={"chip" + (newKind === "mock_exam" ? " on" : "")}
-              onClick={() => setNewKind("mock_exam")}
-            >
-              모의고사형
-            </div>
-            <div
-              className={"chip" + (newKind === "general" ? " on" : "")}
-              onClick={() => setNewKind("general")}
-            >
-              일반과제
-            </div>
-          </div>
-
-          {newKind === "general" && (
-            <div style={{ marginTop: 10 }}>
-              <p className="muted" style={{ fontSize: 12 }}>
-                학생 화면에 보일 필드 이름을 정하세요 (비워두면 기본값 사용).
-              </p>
-              <label>필드1 이름 (기본: 분야명)</label>
-              <input
-                value={newItemLabel}
-                onChange={(e) => setNewItemLabel(e.target.value)}
-                placeholder="분야명"
-              />
-              <label>필드2 이름 (기본: 학습내용)</label>
-              <input
-                value={newScopeLabel}
-                onChange={(e) => setNewScopeLabel(e.target.value)}
-                placeholder="학습내용"
-              />
-              <label>필드3 이름 (기본: 완수여부)</label>
-              <input
-                value={newCompletedLabel}
-                onChange={(e) => setNewCompletedLabel(e.target.value)}
-                placeholder="완수여부"
-              />
-            </div>
-          )}
-
-          <div style={{ height: 10 }} />
-          <button className="btn" onClick={addType}>
-            과제 유형 추가
-          </button>
-        </div>
-      )}
+}
 
       <MockExamTimingSettings />
 
