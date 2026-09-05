@@ -1,4 +1,4 @@
-export const MAX_ASSIGNMENT_TYPES = 8;
+export const MAX_ASSIGNMENT_TYPES = 50;
 
 export interface AssignmentType {
   id: string;
