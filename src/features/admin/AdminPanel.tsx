@@ -2134,7 +2134,8 @@ function AssignmentManager() {
             과제 유형 추가
           </button>
         </div>
-      )
+      )}
+
       <h3>과제 유형</h3>
       <div className="table-wrap">
         <table>
