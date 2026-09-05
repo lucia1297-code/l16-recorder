@@ -56,8 +56,7 @@ async function analyzeLesson(transcript: string, studentName: string): Promise<{
   if (!transcript.trim()) throw new Error("전사 텍스트가 비어있습니다.");
 
   // 텍스트가 너무 길면 앞 8000자만 사용 (토큰 제한)
-  const trimmed = transcript.length > 8000 ? transcript.slice(0, 8000) + "
-...(이하 생략)" : transcript;
+  const trimmed = transcript.length > 8000 ? transcript.slice(0, 8000) + "\n...(이하 생략)" : transcript;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2분 타임아웃
