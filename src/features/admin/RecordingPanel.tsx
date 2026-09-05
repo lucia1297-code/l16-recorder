@@ -27,7 +27,9 @@ async function getSignedUrl(path: string): Promise<string> {
     { method:"POST", headers:{...SB_H,"Content-Type":"application/json"},
       body: JSON.stringify({ expiresIn: 3600 }) }
   );
-  const data = await res.json();
+  if (!res.ok) throw new Error(`서명 URL 생성 실패 (${res.status})`);
+  const data = await res.json().catch(() => ({}));
+  if (!data.signedURL) throw new Error("서명 URL 없음");
   return `${SUPABASE_URL}/storage/v1${data.signedURL}`;
 }
 
@@ -155,7 +157,8 @@ export default function RecordingPanel() {
         `${SUPABASE_URL}/rest/v1/lesson_recordings?order=recorded_at.desc`,
         { headers: SB_H }
       );
-      const rdata = await res.json();
+      if (!res.ok) throw new Error(`목록 로드 실패 (${res.status})`);
+      const rdata = await res.json().catch(() => []);
       if (mountedRef.current) setRecordings(Array.isArray(rdata) ? rdata : []);
     } catch(e) { console.warn('loadRecordings 오류:', e); }
     if (mountedRef.current) setLoading(false);
@@ -303,7 +306,8 @@ export default function RecordingPanel() {
           audio_url: path, duration_sec: duration, status:"transcribing",
         }),
       });
-      const dbData = await dbRes.json();
+      if (!dbRes.ok) throw new Error(`DB 저장 실패 (${dbRes.status}): ${await dbRes.text().catch(()=>'')}`);
+      const dbData = await dbRes.json().catch(() => []);
       const rec = Array.isArray(dbData) ? dbData[0] : null;
       if (!rec?.id) throw new Error("DB 저장 실패: 레코드를 생성하지 못했습니다.");
 
