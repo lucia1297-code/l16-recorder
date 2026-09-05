@@ -234,7 +234,21 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
 
   return (
     <div className="card">
-      <h2>모의고사 제출목록 ({filtered.length})</h2>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, flexWrap:"wrap", gap:8 }}>
+        <h2 style={{ margin:0 }}>모의고사 제출목록 ({filtered.length})</h2>
+        <button
+          onClick={() => {
+            // 관리자 직접 입력 탭으로 이동 — AdminPanel의 setTab 접근 필요
+            // window 이벤트로 통신
+            window.dispatchEvent(new CustomEvent("l16-goto-tab", { detail: "admininput" }));
+          }}
+          style={{ display:"flex", alignItems:"center", gap:6,
+            padding:"7px 16px", borderRadius:8, border:"none",
+            background:"#7c3aed", color:"#fff",
+            fontWeight:700, fontSize:13, cursor:"pointer" }}>
+          + 관리자 점수 추가
+        </button>
+      </div>
       <div className="admin-tools">
         <input placeholder="이름/코드 검색" value={q} onChange={(e) => setQ(e.target.value)} />
         <input placeholder="학교" value={school} onChange={(e) => setSchool(e.target.value)} />
