@@ -749,6 +749,8 @@ export default function AdminInputPanel() {
                 </div>
               )}
             </div>
+          )}
+
       {!selectedStudent && inputTab !== "types" && (
         <div style={{ textAlign:"center", padding:"40px 20px", color:"#94a3b8" }}>
           <Edit2 size={40} color="#cbd5e1" style={{ marginBottom:10 }}/>
