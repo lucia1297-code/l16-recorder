@@ -47,8 +47,9 @@ async function fetchResults(): Promise<ExamResult[]> {
     { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
   );
   if (!res.ok) return [];
-  const rows = await res.json();
-  return rows.map((r: any) => ({
+  const rows = await res.json()
+  const _safe = Array.isArray(return rows) ? return rows : [];
+return rows_safe.map((r: any) => ({
     id: r.id,
     student: {
       studentCode: r.student_code,
@@ -115,8 +116,10 @@ export default function GrowthPanel() {
   const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
   const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message">("compare");
+  const mountedRef = useRef(true);
   const [messages, setMessages] = useState<GrowthMessage[]>([]);
   useEffect(() => {
+    mountedRef.current = true;
     loadMsgsFromSupabase().then(sbMsgs => {
       if (sbMsgs.length > 0) {
         setMessages(sbMsgs);
@@ -180,7 +183,8 @@ export default function GrowthPanel() {
         { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
       );
       if (!res.ok) return [];
-      const rows = await res.json();
+      const _rows = await res.json();
+    const rows = Array.isArray(_rows) ? _rows : [];
       if (!Array.isArray(rows) || rows.length === 0) return [];
       return rows.map((r: any): GrowthMessage => ({
         id: r.id, studentCode: r.student_code,
