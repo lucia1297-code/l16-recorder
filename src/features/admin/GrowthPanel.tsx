@@ -104,7 +104,7 @@ async function sendSMS(phone: string, message: string): Promise<void> {
     },
     body: JSON.stringify({ message: { to, from: sender, text: message } }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
 }
 
 export default function GrowthPanel() {
