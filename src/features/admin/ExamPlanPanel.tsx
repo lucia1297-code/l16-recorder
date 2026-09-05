@@ -146,7 +146,8 @@ export default function ExamPlanPanel() {
           `${SUPABASE_URL}/rest/v1/student_exams?order=english_exam_date.asc`,
           { headers: SB_H }
         );
-        const sbData = await sbRes.json();
+        if (!sbRes.ok) throw new Error(`Supabase ${sbRes.status}`);
+        const sbData = await sbRes.json().catch(() => []);
         if (Array.isArray(sbData)) {
           sbExams = sbData.map((se: any) => supabaseToUnified(se, rosterToUse));
         }
@@ -163,8 +164,10 @@ export default function ExamPlanPanel() {
         `${SUPABASE_URL}/rest/v1/exam_prep_plans?order=english_exam_date.asc,week_number.asc`,
         { headers: SB_H }
       );
-      const pData = await pRes.json();
-      setPlans(Array.isArray(pData) ? pData : []);
+      if (pRes.ok) {
+        const pData = await pRes.json().catch(() => []);
+        setPlans(Array.isArray(pData) ? pData : []);
+      }
     } catch(err) { console.error("loadAll 오류:", err); }
     setLoading(false);
   }
@@ -216,10 +219,10 @@ export default function ExamPlanPanel() {
   }
 
   async function updateStatus(plan: ExamPlan, status: ExamPlan["status"]) {
-    await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?id=eq.${plan.id}`, {
+    try { await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?id=eq.${plan.id}`, {
       method: "PATCH", headers: SB_H,
       body: JSON.stringify({ status, updated_at: new Date().toISOString() }),
-    });
+    }); } catch(e) { console.warn("상태 업데이트 실패:", e); }
     setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, status } : p));
 
     if (status === "done") {
