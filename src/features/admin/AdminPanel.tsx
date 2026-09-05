@@ -21,7 +21,6 @@ import { createSmsProvider } from "../../lib/smsFactory";
 import { generateReportToken, buildReportUrl } from "../../lib/reportToken";
 import { createTeacherLogStore } from "../../lib/teacherLogStoreFactory";
 import {
-  MAX_ASSIGNMENT_TYPES,
   computeAssignmentStatus,
   countSubmissionsForType,
   validateAssignmentTypeInput,
