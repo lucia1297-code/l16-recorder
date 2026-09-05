@@ -204,11 +204,15 @@ export default function ExamPlanPanel() {
         }
       }
 
-      await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans`, {
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans`, {
         method: "POST",
         headers: { ...SB_H, "Prefer": "return=minimal" },
         body: JSON.stringify(newPlans),
-      });
+      }).catch(e => { throw new Error("계획 저장 실패: " + e?.message); });
+      if (!insertRes.ok) {
+        const errText = await insertRes.text().catch(() => `HTTP ${insertRes.status}`);
+        throw new Error(`계획 저장 오류 (${insertRes.status}): ${errText.slice(0,100)}`);
+      }
 
       setNotice(` ${exam.student_name} 시험대비 계획 생성 완료!`);
       setTimeout(() => setNotice(""), 4000);
@@ -242,7 +246,7 @@ export default function ExamPlanPanel() {
 
   async function saveAdjust() {
     if (!adjustModal) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?id=eq.${adjustModal.id}`, {
+    const adjRes = await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?id=eq.${adjustModal.id}`, {
       method: "PATCH", headers: SB_H,
       body: JSON.stringify({
         status: "adjusted",
@@ -250,7 +254,7 @@ export default function ExamPlanPanel() {
         alt_material: altMaterial,
         updated_at: new Date().toISOString(),
       }),
-    });
+    }).catch(e => console.warn("조정 저장 실패:", e));
     setPlans(prev => prev.map(p => p.id === adjustModal.id
       ? { ...p, status: "adjusted", adjusted_note: adjustNote, alt_material: altMaterial } : p));
     setAdjustModal(null); setAdjustNote(""); setAltMaterial("");
