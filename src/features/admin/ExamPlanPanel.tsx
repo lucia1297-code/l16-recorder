@@ -175,7 +175,7 @@ export default function ExamPlanPanel() {
       // 이미 생성된 계획 삭제
       await fetch(`${SUPABASE_URL}/rest/v1/exam_prep_plans?exam_id=eq.${exam.id}`, {
         method: "DELETE", headers: SB_H,
-      });
+      }).catch(e => console.warn("기존 계획 삭제 실패:", e));
 
       const examName = `${exam.semester}학기 ${exam.exam_type === "midterm" ? "중간" : "기말"}고사`;
       const newPlans = [];
@@ -211,7 +211,7 @@ export default function ExamPlanPanel() {
       setTimeout(() => setNotice(""), 4000);
       await loadAll();
       setExpandedExam(exam.id);
-    } catch(e) { setNotice("생성 실패: " + (e as Error).message); }
+    } catch(e: any) { setNotice("생성 실패: " + (e?.message ?? String(e))); console.error("[ExamPlan] 생성 오류:", e); }
     setGenerating(null);
   }
 
