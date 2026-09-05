@@ -384,6 +384,26 @@ export default function RecordingPanel() {
   const active = roster.filter(r => (r.studentStatus??"active") !== "withdrawn");
   const filtered = recordings.filter(r => !filterStudent || r.student_code === filterStudent);
 
+  // 단계 계산
+  const stepIndex = (() => {
+    if (notice.includes("업로드") || notice.includes("MB)")) return 0;
+    if (notice.includes("레코드") || notice.includes("DB")) return 1;
+    if (notice.includes("Whisper")) return 2;
+    if (notice.includes("GPT")) return 3;
+    if (notice.includes("저장")) return 4;
+    return uploading ? 0 : -1;
+  })();
+
+  const STEPS = [
+    { label: "음성 파일 업로드" },
+    { label: "DB 레코드 생성" },
+    { label: "Whisper AI 전사" },
+    { label: "GPT 수업 분석" },
+    { label: "분석 결과 저장" },
+  ];
+
+  const currentStudent = roster.find(r => r.studentCode === selectedStudent);
+
   return (
     <div style={{ background:"#0f172a", minHeight:"100vh", paddingBottom:40, color:"#e2e8f0" }}>
 
