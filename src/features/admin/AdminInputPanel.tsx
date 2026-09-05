@@ -154,7 +154,11 @@ export default function AdminInputPanel() {
              .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15)
         )
       );
-    } catch(e) { fail("저장 실패: " + (e as Error).message); }
+    } catch(e: any) {
+      const msg = e?.message ?? e?.details ?? JSON.stringify(e) ?? "알 수 없는 오류";
+      fail("저장 실패: " + msg);
+      console.error("[AdminInput] 모의고사 저장 오류:", e);
+    }
     setSaving(false);
   }
 
@@ -189,7 +193,11 @@ export default function AdminInputPanel() {
           all.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).slice(0, 15)
         )
       );
-    } catch(e) { fail("저장 실패: " + (e as Error).message); }
+    } catch(e: any) {
+      const msg = e?.message ?? e?.details ?? JSON.stringify(e) ?? "알 수 없는 오류";
+      fail("저장 실패: " + msg);
+      console.error("[AdminInput] 과제 저장 오류:", e);
+    }
     setSaving(false);
   }
 
