@@ -1,11 +1,10 @@
-import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic} from "lucide-react";
 import { useEffect, useMemo, useState, Fragment } from "react";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
 
 import { validatePhoneNumber, normalizePhoneNumber } from "../../core/otpLogic";
-import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement } from "../../core/roster";
+import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, calcWeeklyTotal, type LessonDayMap, type DayOfWeek, type StudentStatus, calcMonthlySettlement, generateSessionsForMonth } from "../../core/roster";
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
@@ -21,6 +20,15 @@ import { createSmsProvider } from "../../lib/smsFactory";
 import { generateReportToken, buildReportUrl } from "../../lib/reportToken";
 import { createTeacherLogStore } from "../../lib/teacherLogStoreFactory";
 import {
+  listScheduledSms,
+  addScheduledSms,
+  cancelScheduledSms,
+  deleteScheduledSms,
+  runScheduledSms,
+  type ScheduledSms,
+} from "../../lib/scheduledSms";
+import {
+  MAX_ASSIGNMENT_TYPES,
   computeAssignmentStatus,
   countSubmissionsForType,
   validateAssignmentTypeInput,
@@ -116,7 +124,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -131,79 +139,44 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="admin-shell">
-      <nav className="tabs admin-rail">
-
-        {/* ── 모의고사 ── */}
-        <div className="rail-group-label">모의고사</div>
+      <div className="tabs admin-rail">
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
-          📊 제출목록
-        </button>
-        <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}>
-          ✏️ 직접 입력
+          모의고사 제출목록
         </button>
         <button className={tab === "dash" ? "on" : ""} onClick={() => setTab("dash")}>
-          📈 대시보드
+          대시보드
         </button>
-        <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>
-          🔍 학생 분석
-        </button>
-
-        {/* ── 학생 관리 ── */}
-        <div className="rail-divider"/>
-        <div className="rail-group-label">학생 관리</div>
         <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
-          👥 명부 관리
+          명부 관리
         </button>
-        <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
-          📝 등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
-        </button>
-
-        {/* ── 과제 ── */}
-        <div className="rail-divider"/>
-        <div className="rail-group-label">과제</div>
         <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
-          📋 과제 관리
+          과제 관리
         </button>
         <button className={tab === "review" ? "on" : ""} onClick={() => setTab("review")}>
-          ✅ 과제 점검
+          과제 점검
         </button>
         <button className={tab === "teacherlog" ? "on" : ""} onClick={() => setTab("teacherlog")}>
-          🖊 과제 입력
+          학생별 과제입력
         </button>
         <button className={tab === "submit" ? "on" : ""} onClick={() => setTab("submit")}>
-          📌 제출 현황
+          제출 현황
         </button>
-
-        {/* ── 수업 ── */}
-        <div className="rail-divider"/>
-        <div className="rail-group-label">수업</div>
-        <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")}>
-          🎙 녹음분석
+        <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>
+          학생 분석
         </button>
-        <button className={tab === "growth" ? "on" : ""} onClick={() => setTab("growth")}>
-          💬 발전기록
+        <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")} style={{ background: tab === "sms" ? "#e74c3c" : "", color: tab === "sms" ? "#fff" : "" }}>
+          문자알림
         </button>
-        <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")}>
-          📱 문자알림
+        <button className={tab === "scheduled" ? "on" : ""} onClick={() => setTab("scheduled")} style={{ background: tab === "scheduled" ? "#8e44ad" : "", color: tab === "scheduled" ? "#fff" : "" }}>
+          📅 예약발송
         </button>
-
-        {/* ── 시험 ── */}
-        <div className="rail-divider"/>
-        <div className="rail-group-label">시험</div>
-        <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")}>
-          📅 시험일정
+        <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
+          등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
-        <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")}>
-          📆 시험계획
+        <button className="btn ghost" onClick={onLogout}>
+          로그아웃
         </button>
-
-        {/* ── 기타 ── */}
-        <div className="rail-divider"/>
-        <button className="btn ghost" onClick={onLogout} style={{ marginTop:4 }}>
-          🔓 로그아웃
-        </button>
-
-      </nav>
+      </div>
       <div className="admin-content" key={tab}>
         {tab === "list" && <ResultList rows={rows} />}
         {tab === "dash" && <DashboardView rows={rows} />}
@@ -215,12 +188,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "submit" && <SubmissionStatus rows={rows} />}
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
-        {tab === "examprep" && <ExamPrepPanelLazy />}
-        {tab === "examplan" && <ExamPlanPanelLazy />}
-        {tab === "growth" && <GrowthPanelLazy />}
-        {tab === "recording" && <RecordingPanelLazy />}
-        {tab === "wworder" && <WWOrderPanelLazy />}
-        {tab === "admininput" && <AdminInputPanelLazy />}
+        {tab === "scheduled" && <ScheduledSmsPanel />}
       </div>
     </div>
   );
@@ -256,21 +224,7 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
 
   return (
     <div className="card">
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, flexWrap:"wrap", gap:8 }}>
-        <h2 style={{ margin:0 }}>모의고사 제출목록 ({filtered.length})</h2>
-        <button
-          onClick={() => {
-            // 관리자 직접 입력 탭으로 이동 — AdminPanel의 setTab 접근 필요
-            // window 이벤트로 통신
-            window.dispatchEvent(new CustomEvent("l16-goto-tab", { detail: "admininput" }));
-          }}
-          style={{ display:"flex", alignItems:"center", gap:6,
-            padding:"7px 16px", borderRadius:8, border:"none",
-            background:"#7c3aed", color:"#fff",
-            fontWeight:700, fontSize:13, cursor:"pointer" }}>
-          + 관리자 점수 추가
-        </button>
-      </div>
+      <h2>모의고사 제출목록 ({filtered.length})</h2>
       <div className="admin-tools">
         <input placeholder="이름/코드 검색" value={q} onChange={(e) => setQ(e.target.value)} />
         <input placeholder="학교" value={school} onChange={(e) => setSchool(e.target.value)} />
@@ -414,7 +368,6 @@ function RosterManager() {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [preview, setPreview] = useState<RosterEntry[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [exportCols, setExportCols] = useState({ name:true, school:true, grade:true, phone:true, parentPhone:true, studentCode:true });
   const [fileName, setFileName] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -462,24 +415,14 @@ function RosterManager() {
       ...e,
       registeredAt: e.registeredAt ?? existingMap.get(e.studentCode) ?? undefined,
     }));
-    const t = setTimeout(() => {
-      setSaving(false);
-      setNotice("요청 시간이 초과됐습니다. 다시 시도해주세요.");
-    }, 15000);
-    try {
-      await rosterStore.saveRoster(stamped);
-      const all = await rosterStore.listRoster();
-      setRoster(all);
-      setNotice(`✅ ${preview.length}명 등록 완료.`);
-      setPreview([]);
-      setParseErrors([]);
-      setFileName("");
-    } catch(e: any) {
-      setNotice(`등록 실패: ${e?.message ?? "알 수 없는 오류"}`);
-    } finally {
-      clearTimeout(t);
-      setSaving(false);
-    }
+    await rosterStore.saveRoster(stamped);
+    const all = await rosterStore.listRoster();
+    setRoster(all);
+    setSaving(false);
+    setNotice(`${preview.length}명 등록 완료.`);
+    setPreview([]);
+    setParseErrors([]);
+    setFileName("");
   }
 
   async function clearAll() {
@@ -547,90 +490,22 @@ function RosterManager() {
     }
     setAdding(true);
     setAddErrors([]);
-
-    // 10초 타임아웃 — 멈춤 방지
-    const timeout = setTimeout(() => {
-      setAdding(false);
-      setAddErrors(["요청 시간이 초과됐습니다. 인터넷 연결을 확인하고 다시 시도해주세요."]);
-    }, 10000);
-
-    try {
-      await rosterStore.saveRoster([{ ...entry, registeredAt: new Date().toISOString() }]);
-      const all = await rosterStore.listRoster();
-      setRoster(all);
-      setNotice(`✅ ${entry.name} 학생 등록 완료 (코드: ${entry.studentCode})`);
-      setAddCode("");
-      setAddName("");
-      setAddSchool("");
-      setAddGrade("");
-      setAddPhone("");
-      setAddTeacher("");
-      setShowAddForm(false);
-    } catch(e: any) {
-      const msg = e?.message ?? e?.details ?? "알 수 없는 오류";
-      setAddErrors([`등록 실패: ${msg}`]);
-    } finally {
-      clearTimeout(timeout);
-      setAdding(false);
-    }
-  }
-
-  function exportExcel() {
-    const cols = [
-      exportCols.name && "이름",
-      exportCols.school && "학교",
-      exportCols.grade && "학년",
-      exportCols.phone && "전화번호",
-      exportCols.parentPhone && "학부모번호",
-      exportCols.studentCode && "학생코드",
-    ].filter(Boolean) as string[];
-
-    const colKeys: (keyof RosterEntry)[] = [
-      exportCols.name && "name",
-      exportCols.school && "school",
-      exportCols.grade && "grade",
-      exportCols.phone && "phone",
-      exportCols.parentPhone && "parentPhone",
-      exportCols.studentCode && "studentCode",
-    ].filter(Boolean) as (keyof RosterEntry)[];
-
-    const active = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
-    const rows = [cols, ...active.map(r => colKeys.map(k => String(r[k] ?? "")))];
-    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g,'""')}"`).join(",")).join("\n");
-    const bom = "﻿";
-    const blob = new Blob([bom + csv], { type:"text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `학생명단_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+    await rosterStore.saveRoster([{ ...entry, registeredAt: new Date().toISOString() }]);
+    const all = await rosterStore.listRoster();
+    setRoster(all);
+    setAdding(false);
+    setNotice(`${entry.name} 학생을 등록했습니다. (코드: ${entry.studentCode})`);
+    setAddCode("");
+    setAddName("");
+    setAddSchool("");
+    setAddGrade("");
+    setAddPhone("");
+    setAddTeacher("");
   }
 
   return (
     <div className="card">
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8, flexWrap:"wrap", gap:10 }}>
-        <h2 style={{ margin:0 }}>명부 관리</h2>
-        <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 14px", background:"#f8fafc" }}>
-          <p style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:8 }}>📊 Excel(CSV) 내보내기</p>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:8 }}>
-            {([
-              { key:"name", label:"이름" }, { key:"school", label:"학교" },
-              { key:"grade", label:"학년" }, { key:"phone", label:"전화번호" },
-              { key:"parentPhone", label:"학부모번호" }, { key:"studentCode", label:"학생코드" },
-            ] as const).map(col => (
-              <label key={col.key} style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, cursor:"pointer" }}>
-                <input type="checkbox" checked={exportCols[col.key]}
-                  onChange={e => setExportCols(prev => ({...prev, [col.key]: e.target.checked}))} />
-                {col.label}
-              </label>
-            ))}
-          </div>
-          <button onClick={exportExcel}
-            style={{ padding:"6px 14px", borderRadius:8, border:"none", background:"#059669",
-              color:"#fff", fontWeight:700, fontSize:12, cursor:"pointer" }}>
-            <Download size={13} style={{verticalAlign:"middle",marginRight:4}}/> CSV 다운로드
-          </button>
-        </div>
-      </div>
+      <h2>명부 관리</h2>
       <p className="sub">
         엑셀 명부를 업로드하면 학생코드·전화번호가 등록되어, 학생 전화인증 시 등록된 번호만
         허용됩니다.
@@ -780,13 +655,7 @@ function RosterManager() {
                 return (
                   <tr key={e.studentCode} style={{ background: isEditing ? "#f8f9ff" : "transparent" }}>
                     <td style={{ fontSize: 12, color: "#666" }}>{e.studentCode}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      {e.name}
-                      {e.registeredAt && (Date.now()-new Date(e.registeredAt).getTime())/86400000 <= 30 && (
-                        <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
-                          borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
-                      )}
-                    </td>
+                    <td style={{ fontWeight: 600 }}>{e.name}</td>
                     <td style={{ fontSize: 13 }}>{e.school}</td>
 
                     {/* 전화번호 - 수정 버튼 클릭 시만 편집 */}
@@ -1005,6 +874,28 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
     setTimeout(() => setNotice(""), 2000);
   }
 
+  // 이번 달 수업일 자동 생성 (수업 요일 기준, 기존 이력이 없는 날짜만 추가)
+  async function autoGenerateMonth() {
+    if (!student) return;
+    const [gy, gm] = calMonth.split("-").map(Number);
+    const existing = (student.classSessions ?? []).map((s) => s.date);
+    const generated = generateSessionsForMonth(student.lessonDays, gy, gm, existing);
+    if (generated.length === 0) {
+      setNotice("생성할 새 수업일이 없습니다.");
+      setTimeout(() => setNotice(""), 2000);
+      return;
+    }
+    const updated = roster.map((r) =>
+      r.studentCode === selectedStudent
+        ? { ...r, classSessions: [...(r.classSessions ?? []), ...generated] }
+        : r
+    );
+    setRoster(updated);
+    await rosterStore.saveRoster(updated);
+    setNotice(`${generated.length}개의 수업일 자동 생성 완료`);
+    setTimeout(() => setNotice(""), 2000);
+  }
+
   async function saveSession() {
     if (!addingSession || !student) return;
     const session: import("../../core/roster").ClassSession = {
@@ -1058,7 +949,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
 
   return (
     <div style={{ marginTop: 24, padding: 20, border: "2px solid #2980b9", borderRadius: 12 }}>
-      <h3 style={{ margin: "0 0 16px", color: "#2980b9" }}> 학생별 수업 요일 등록</h3>
+      <h3 style={{ margin: "0 0 16px", color: "#2980b9" }}>📅 학생별 수업 요일 등록</h3>
 
       {/* ── 학생 시수 현황 명단 ── */}
       <div style={{ marginBottom: 20, background: "#f8f9ff", borderRadius: 10, padding: 14 }}>
@@ -1087,13 +978,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                 const sc = statusConfig[status];
                 return (
                   <tr key={r.studentCode} style={{ background: status === "active" ? (i % 2 === 0 ? "#fff" : "#f5f5f5") : sc.bg, opacity: status === "withdrawn" ? 0.6 : 1 }}>
-                    <td style={{ padding: "6px 10px", fontWeight: 600, color: status !== "active" ? sc.color : "#333" }}>
-                      {r.name}
-                      {r.registeredAt && (Date.now()-new Date(r.registeredAt).getTime())/86400000 <= 30 && (
-                        <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
-                          borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
-                      )}
-                    </td>
+                    <td style={{ padding: "6px 10px", fontWeight: 600, color: status !== "active" ? sc.color : "#333" }}>{r.name}</td>
                     <td style={{ padding: "6px 10px", color: "#666" }}>{r.school}</td>
                     <td style={{ padding: "6px 10px", textAlign: "center" }}>
                       <span style={{ padding: "2px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: sc.bg, color: sc.color, border: `1px solid ${sc.color}` }}>
@@ -1243,6 +1128,12 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                   setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
                 }} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer" }}>›</button>
               </div>
+              <button
+                onClick={autoGenerateMonth}
+                style={{ width: "100%", padding: "8px 0", marginBottom: 10, borderRadius: 6, fontSize: 13, border: "none", background: "#8e44ad", color: "#fff", cursor: "pointer", fontWeight: 700 }}
+              >
+                이번 달 수업일 자동 생성
+              </button>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, textAlign: "center" }}>
                 {["일","월","화","수","목","금","토"].map((d) => (
                   <div key={d} style={{ fontSize: 11, color: "#888", fontWeight: 600, padding: "2px 0" }}>{d}</div>
@@ -1318,7 +1209,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                   onClick={() => setAddingSession({ date: new Date().toISOString().slice(0, 10), status: "cancelled", makeupDate: "", time: "", reason: "" })}
                   style={{ padding: "4px 12px", borderRadius: 6, fontSize: 13, border: "none", background: "#e74c3c", color: "#fff", cursor: "pointer" }}
                 >
-                   긴급 보충일 추가
+                  ⚡ 긴급 보충일 추가
                 </button>
               </div>
 
@@ -2121,6 +2012,10 @@ function AssignmentManager() {
   return (
     <div className="card">
       <h2>과제 관리</h2>
+      <p className="sub">
+        과제 유형은 최대 {MAX_ASSIGNMENT_TYPES}개까지 만들 수 있습니다 ({types.length}/
+        {MAX_ASSIGNMENT_TYPES}).
+      </p>
       {notice && <p className="muted">{notice}</p>}
       {errors.length > 0 && (
         <div className="errors">
@@ -2131,68 +2026,6 @@ function AssignmentManager() {
           </ul>
         </div>
       )}
-
-
-      <div style={{ marginBottom: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
-          <label>새 과제 이름</label>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: 모의고사 풀이" />
-          <label>지정 개수 (예: 3회)</label>
-          <input
-            type="number"
-            value={newTarget}
-            onChange={(e) => setNewTarget(e.target.value)}
-          />
-          <label>형식</label>
-          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-            모의고사형: 학생이 회차·점수·틀린문항을 직접 입력하고, 관리자가 켜두면 세부풀이시간도
-            입력. 일반과제: 회차 자동 계산 + 관리자가 정한 필드 3개.
-          </p>
-          <div className="chips">
-            <div
-              className={"chip" + (newKind === "mock_exam" ? " on" : "")}
-              onClick={() => setNewKind("mock_exam")}
-            >
-              모의고사형
-            </div>
-            <div
-              className={"chip" + (newKind === "general" ? " on" : "")}
-              onClick={() => setNewKind("general")}
-            >
-              일반과제
-            </div>
-          </div>
-
-          {newKind === "general" && (
-            <div style={{ marginTop: 10 }}>
-              <p className="muted" style={{ fontSize: 12 }}>
-                학생 화면에 보일 필드 이름을 정하세요 (비워두면 기본값 사용).
-              </p>
-              <label>필드1 이름 (기본: 분야명)</label>
-              <input
-                value={newItemLabel}
-                onChange={(e) => setNewItemLabel(e.target.value)}
-                placeholder="분야명"
-              />
-              <label>필드2 이름 (기본: 학습내용)</label>
-              <input
-                value={newScopeLabel}
-                onChange={(e) => setNewScopeLabel(e.target.value)}
-                placeholder="학습내용"
-              />
-              <label>필드3 이름 (기본: 완수여부)</label>
-              <input
-                value={newCompletedLabel}
-                onChange={(e) => setNewCompletedLabel(e.target.value)}
-                placeholder="완수여부"
-              />
-            </div>
-          )}
-
-          <div style={{ height: 10 }} />
-          <button className="btn" onClick={addType}>
-            과제 유형 추가
-          </button>
-        </div>
 
       <h3>과제 유형</h3>
       <div className="table-wrap">
@@ -2342,6 +2175,69 @@ function AssignmentManager() {
         </table>
       </div>
 
+      {types.length < MAX_ASSIGNMENT_TYPES && (
+        <div style={{ marginTop: 14, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+          <label>새 과제 이름</label>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: 모의고사 풀이" />
+          <label>지정 개수 (예: 3회)</label>
+          <input
+            type="number"
+            value={newTarget}
+            onChange={(e) => setNewTarget(e.target.value)}
+          />
+          <label>형식</label>
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            모의고사형: 학생이 회차·점수·틀린문항을 직접 입력하고, 관리자가 켜두면 세부풀이시간도
+            입력. 일반과제: 회차 자동 계산 + 관리자가 정한 필드 3개.
+          </p>
+          <div className="chips">
+            <div
+              className={"chip" + (newKind === "mock_exam" ? " on" : "")}
+              onClick={() => setNewKind("mock_exam")}
+            >
+              모의고사형
+            </div>
+            <div
+              className={"chip" + (newKind === "general" ? " on" : "")}
+              onClick={() => setNewKind("general")}
+            >
+              일반과제
+            </div>
+          </div>
+
+          {newKind === "general" && (
+            <div style={{ marginTop: 10 }}>
+              <p className="muted" style={{ fontSize: 12 }}>
+                학생 화면에 보일 필드 이름을 정하세요 (비워두면 기본값 사용).
+              </p>
+              <label>필드1 이름 (기본: 분야명)</label>
+              <input
+                value={newItemLabel}
+                onChange={(e) => setNewItemLabel(e.target.value)}
+                placeholder="분야명"
+              />
+              <label>필드2 이름 (기본: 학습내용)</label>
+              <input
+                value={newScopeLabel}
+                onChange={(e) => setNewScopeLabel(e.target.value)}
+                placeholder="학습내용"
+              />
+              <label>필드3 이름 (기본: 완수여부)</label>
+              <input
+                value={newCompletedLabel}
+                onChange={(e) => setNewCompletedLabel(e.target.value)}
+                placeholder="완수여부"
+              />
+            </div>
+          )}
+
+          <div style={{ height: 10 }} />
+          <button className="btn" onClick={addType}>
+            과제 유형 추가
+          </button>
+        </div>
+      )}
+
       <MockExamTimingSettings />
 
       <h3>학생별 과제 현황</h3>
@@ -2392,7 +2288,7 @@ function AssignmentManager() {
                         {warningRec && warningRec.count > 0 && (
                           <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
                             <span style={{ fontSize: 11, color: "var(--incorrect)" }}>
-                              누적경고 {warningRec.count}회{isNew ? " " : ""}
+                              누적경고 {warningRec.count}회{isNew ? " 🆕" : ""}
                             </span>
                             <button
                               className="btn ghost"
@@ -2585,6 +2481,15 @@ function AssignmentReviewManager() {
       reviewedAt: new Date().toISOString(),
       reviewNote: noteDrafts[submissionId] ?? "",
     });
+
+    // 과제 저장 시점으로 해당 학생의 lastAssignmentSavedAt 갱신 (승인/재제출 모두)
+    const stamped = roster.map((r) =>
+      r.studentCode === sub.studentCode
+        ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
+        : r,
+    );
+    setRoster(stamped);
+    await rosterStore.saveRoster(stamped);
 
     if (student) {
       const verdict = REVIEW_STATUS_LABELS[status];
@@ -2952,40 +2857,21 @@ function TeacherLogManager() {
   async function save() {
     if (!studentCode) return setNotice("학생을 먼저 선택하세요.");
     setSaving(true);
-    try {
-      const log = {
-        id: makeLogId(studentCode, date),
-        studentCode,
-        date,
-        rows,
-        examRecords,
-        notes,
-        nextPlan,
-        classContent,
-      };
-      await logStore.saveLog(log);
-
-      // lastAssignmentSavedAt 갱신 (실패해도 저장은 완료)
-      try {
-        const updatedRoster = roster.map((r) =>
-          r.studentCode === studentCode
-            ? { ...r, lastAssignmentSavedAt: new Date().toISOString() }
-            : r
-        );
-        setRoster(updatedRoster);
-        await rosterStore.saveRoster(updatedRoster);
-      } catch (e2) {
-        console.warn("lastAssignmentSavedAt 갱신 실패:", e2);
-      }
-
-      setNotice("저장되었습니다.");
-      const logs = await logStore.listLogsForStudent(studentCode);
-      setPastDates(logs.map((l) => l.date));
-    } catch (e) {
-      setNotice(`저장 실패: ${(e as Error).message}`);
-    } finally {
-      setSaving(false);
-    }
+    const log = {
+      id: makeLogId(studentCode, date),
+      studentCode,
+      date,
+      rows,
+      examRecords,
+      notes,
+      nextPlan,
+      classContent,
+    };
+    await logStore.saveLog(log);
+    setSaving(false);
+    setNotice("저장되었습니다.");
+    const logs = await logStore.listLogsForStudent(studentCode);
+    setPastDates(logs.map((l) => l.date));
   }
 
   const student = roster.find((r) => r.studentCode === studentCode);
@@ -3353,9 +3239,9 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
       </div>
       <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
         마지막 제출 후 경과일 &nbsp;·&nbsp;
-        <span style={{ color: "#2ecc71" }}></span> 당일 &nbsp;
-        <span style={{ color: "#f39c12" }}></span> 3일 이내 &nbsp;
-        <span style={{ color: "#e74c3c" }}></span> 4일 이상
+        <span style={{ color: "#2ecc71" }}>●</span> 당일 &nbsp;
+        <span style={{ color: "#f39c12" }}>●</span> 3일 이내 &nbsp;
+        <span style={{ color: "#e74c3c" }}>●</span> 4일 이상
       </p>
       {submitted.length === 0 ? (
         <p className="muted center">제출된 데이터가 없습니다.</p>
@@ -3398,7 +3284,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
 
       {/* ── 섹션 2: 미제출 학생 ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ color: "#e74c3c" }}><XCircle size={12} style={{verticalAlign:"middle",marginRight:3}} color="#ef4444"/> 미제출 학생 ({notSubmitted.length}명)</h2>
+        <h2 style={{ color: "#e74c3c" }}>❌ 미제출 학생 ({notSubmitted.length}명)</h2>
         <button className="btn" style={{ padding: "4px 12px", fontSize: 13 }}
           onClick={exportNotSubmittedCSV} disabled={notSubmitted.length === 0}>
           CSV 저장
@@ -3410,7 +3296,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
       </p>
       {notSubmitted.length === 0 ? (
         <p className="muted center" style={{ color: "#2ecc71", fontWeight: 600 }}>
-          {roster.length === 0 ? "명부가 비어 있습니다." : " 전원 제출 완료!"}
+          {roster.length === 0 ? "명부가 비어 있습니다." : "🎉 전원 제출 완료!"}
         </p>
       ) : (
         <div className="table-wrap">
@@ -3617,7 +3503,7 @@ function StudentAnalysisReport({ rows }: { rows: ExamResult[] }) {
 
           {/* 학생 헤더 */}
           <div style={{ background: "#2c3e50", color: "#fff", padding: "10px 18px", borderRadius: "11px 11px 0 0" }}>
-            <span style={{ fontSize: 18, fontWeight: 700 }}> {name}</span>
+            <span style={{ fontSize: 18, fontWeight: 700 }}>👤 {name}</span>
             <span style={{ marginLeft: 12, fontSize: 13, opacity: 0.7 }}>{months.length}개월 데이터</span>
           </div>
 
@@ -3627,7 +3513,7 @@ function StudentAnalysisReport({ rows }: { rows: ExamResult[] }) {
 
               {/* 월 헤더 */}
               <div style={{ background: "#ecf0f1", borderRadius: 8, padding: "6px 14px", marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 700, fontSize: 15 }}> {ym.replace("-", "년 ")}월</span>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>📅 {ym.replace("-", "년 ")}월</span>
                 <span style={{ fontSize: 13, color: "#666" }}>{submissions.length}회 제출</span>
               </div>
 
@@ -3838,93 +3724,291 @@ function ReportLinkButton({ studentCode, studentName }: { studentCode: string; s
 }
 
 // ═══════════════════════════════════════════════════
+// 예약 문자 발송 패널
+// ═══════════════════════════════════════════════════
+
+function ScheduledSmsPanel() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const smsProvider = useMemo(() => createSmsProvider(), []);
+  const [roster, setRoster] = useState<import("../../core/roster").RosterEntry[]>([]);
+  const [list, setList] = useState<ScheduledSms[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  // 새 예약 폼
+  const [targetMode, setTargetMode] = useState<"all" | "select" | "custom">("select");
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
+  const [customPhone, setCustomPhone] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [message, setMessage] = useState("");
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function refresh() {
+    const [r, s] = await Promise.all([rosterStore.listRoster(), listScheduledSms()]);
+    setRoster(r);
+    setList(s);
+    setLoading(false);
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  // 발송 시각 지난 pending 항목 자동 실행
+  async function runPending() {
+    setRunning(true);
+    setNotice("");
+    try {
+      const sent = await runScheduledSms(smsProvider);
+      setNotice(sent > 0 ? `✅ ${sent}건 발송 완료` : "발송할 항목이 없습니다.");
+      await refresh();
+    } catch (e) {
+      setNotice(`오류: ${(e as Error).message}`);
+    }
+    setRunning(false);
+  }
+
+  async function addReservation() {
+    if (!message.trim()) { setNotice("메시지를 입력하세요."); return; }
+    const targets: { phone: string; name: string }[] = [];
+
+    if (targetMode === "custom") {
+      if (!customPhone.trim()) { setNotice("전화번호를 입력하세요."); return; }
+      targets.push({ phone: customPhone.replace(/-/g, ""), name: customName || "직접입력" });
+    } else {
+      const src = targetMode === "all" ? roster : roster.filter((r) => selectedCodes.has(r.studentCode));
+      if (src.length === 0) { setNotice("대상을 선택하세요."); return; }
+      src.forEach((r) => targets.push({ phone: r.phone, name: r.name }));
+    }
+
+    setSaving(true);
+    setNotice("");
+    try {
+      for (const t of targets) {
+        await addScheduledSms({
+          created_by: "admin",
+          target_phone: t.phone,
+          target_name: t.name,
+          message: message.replace("{이름}", t.name),
+          scheduled_at: new Date(scheduledDate).toISOString(),
+        });
+      }
+      setNotice(`✅ ${targets.length}건 예약 완료`);
+      setMessage("");
+      setSelectedCodes(new Set());
+      await refresh();
+    } catch (e) {
+      setNotice(`저장 실패: ${(e as Error).message}`);
+    }
+    setSaving(false);
+  }
+
+  async function cancel(id: string) {
+    await cancelScheduledSms(id);
+    await refresh();
+  }
+
+  async function remove(id: string) {
+    if (!confirm("이 예약을 삭제할까요?")) return;
+    await deleteScheduledSms(id);
+    await refresh();
+  }
+
+  const pending = list.filter((s) => s.status === "pending");
+  const done    = list.filter((s) => s.status !== "pending");
+
+  const statusColor: Record<string, string> = {
+    pending: "#f39c12", sent: "#27ae60", failed: "#e74c3c", cancelled: "#aaa"
+  };
+  const statusLabel: Record<string, string> = {
+    pending: "대기", sent: "발송완료", failed: "실패", cancelled: "취소됨"
+  };
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <h2 style={{ margin: 0 }}>📅 예약 문자 발송</h2>
+        <button onClick={runPending} disabled={running || pending.length === 0}
+          style={{ padding: "8px 18px", borderRadius: 8, fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer",
+            background: "#8e44ad", color: "#fff", opacity: pending.length === 0 ? 0.4 : 1 }}>
+          {running ? "발송 중…" : `⚡ 지금 즉시 발송 (${pending.length}건)`}
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 13, marginBottom: 20 }}>
+        원하는 시각에 문자를 예약합니다. 앱이 열려 있을 때 발송 시각이 지나면 자동 발송됩니다.
+      </p>
+      {notice && <p style={{ fontWeight: 600, color: notice.startsWith("✅") ? "#27ae60" : "#e74c3c", marginBottom: 12 }}>{notice}</p>}
+
+      {/* ── 새 예약 폼 ── */}
+      <div style={{ border: "2px solid #8e44ad", borderRadius: 12, padding: 18, marginBottom: 24 }}>
+        <h3 style={{ margin: "0 0 14px", color: "#8e44ad" }}>새 예약 추가</h3>
+
+        {/* 대상 선택 방식 */}
+        <label style={{ fontWeight: 700 }}>발송 대상</label>
+        <div style={{ display: "flex", gap: 8, margin: "8px 0 12px" }}>
+          {(["all", "select", "custom"] as const).map((m) => (
+            <button key={m} onClick={() => setTargetMode(m)}
+              style={{ padding: "6px 14px", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: "pointer",
+                background: targetMode === m ? "#8e44ad" : "#f5f5f5",
+                color: targetMode === m ? "#fff" : "#555",
+                border: `1.5px solid ${targetMode === m ? "#8e44ad" : "#ddd"}` }}>
+              {m === "all" ? "전체 학생" : m === "select" ? "학생 선택" : "직접 입력"}
+            </button>
+          ))}
+        </div>
+
+        {targetMode === "select" && (
+          <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid #eee", borderRadius: 8, marginBottom: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <tbody>
+                {roster.map((r) => (
+                  <tr key={r.studentCode} onClick={() => {
+                    const next = new Set(selectedCodes);
+                    next.has(r.studentCode) ? next.delete(r.studentCode) : next.add(r.studentCode);
+                    setSelectedCodes(next);
+                  }} style={{ cursor: "pointer", background: selectedCodes.has(r.studentCode) ? "#f5f0ff" : "#fff", borderBottom: "1px solid #f5f5f5" }}>
+                    <td style={{ padding: "6px 10px", width: 32 }}>
+                      <input type="checkbox" readOnly checked={selectedCodes.has(r.studentCode)} style={{ width: 16, height: 16 }} />
+                    </td>
+                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>{r.name}</td>
+                    <td style={{ padding: "6px 10px", color: "#888" }}>{r.school}</td>
+                    <td style={{ padding: "6px 10px", color: "#aaa", fontSize: 12 }}>{r.phone}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {targetMode === "custom" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12 }}>이름 (선택)</label>
+              <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="홍길동" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12 }}>전화번호</label>
+              <input value={customPhone} onChange={(e) => setCustomPhone(e.target.value)} placeholder="01012345678" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          </div>
+        )}
+
+        {/* 발송 시각 */}
+        <label style={{ fontWeight: 700 }}>발송 예정 시각</label>
+        <input type="datetime-local" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)}
+          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1.5px solid #8e44ad", fontSize: 14, marginTop: 6, marginBottom: 12, boxSizing: "border-box" }} />
+
+        {/* 메시지 */}
+        <label style={{ fontWeight: 700 }}>메시지</label>
+        <p className="muted" style={{ fontSize: 12, marginTop: 2, marginBottom: 6 }}>
+          <code>{"{이름}"}</code> 입력 시 학생 이름으로 자동 치환됩니다.
+        </p>
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4}
+          placeholder="예) [L16] {이름} 학생, 이번 주 과제를 잊지 마세요!"
+          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1.5px solid #8e44ad", fontSize: 14, resize: "vertical", boxSizing: "border-box" }} />
+        <div style={{ fontSize: 12, color: "#aaa", textAlign: "right", marginBottom: 12 }}>{message.length}자</div>
+
+        <button onClick={addReservation} disabled={saving}
+          style={{ width: "100%", padding: 14, borderRadius: 10, fontWeight: 700, fontSize: 15, border: "none", cursor: "pointer", background: "#8e44ad", color: "#fff" }}>
+          {saving ? "예약 중…" : "📅 예약 등록"}
+        </button>
+      </div>
+
+      {/* ── 대기 중인 예약 ── */}
+      <h3 style={{ color: "#8e44ad" }}>⏳ 대기 중 ({pending.length}건)</h3>
+      {pending.length === 0 ? (
+        <p className="muted">예약된 문자가 없습니다.</p>
+      ) : (
+        <div className="table-wrap" style={{ marginBottom: 24 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>발송 예정</th>
+                <th>수신자</th>
+                <th>전화번호</th>
+                <th>메시지 미리보기</th>
+                <th>관리</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ whiteSpace: "nowrap", fontSize: 13, color: new Date(s.scheduled_at) < new Date() ? "#e74c3c" : "#333" }}>
+                    {new Date(s.scheduled_at).toLocaleString("ko-KR")}
+                    {new Date(s.scheduled_at) < new Date() && <span style={{ marginLeft: 4, fontSize: 11, color: "#e74c3c" }}>⚡ 발송 대기</span>}
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{s.target_name}</td>
+                  <td style={{ fontSize: 12, color: "#888" }}>{s.target_phone}</td>
+                  <td style={{ fontSize: 12, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.message}>{s.message}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button onClick={() => cancel(s.id)}
+                        style={{ padding: "3px 8px", fontSize: 11, borderRadius: 5, border: "1px solid #f39c12", color: "#f39c12", cursor: "pointer", background: "#fff" }}>취소</button>
+                      <button onClick={() => remove(s.id)}
+                        style={{ padding: "3px 8px", fontSize: 11, borderRadius: 5, border: "1px solid #e74c3c", color: "#e74c3c", cursor: "pointer", background: "#fff" }}>삭제</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── 발송 이력 ── */}
+      {done.length > 0 && (
+        <>
+          <h3>📋 발송 이력 ({done.length}건)</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>상태</th>
+                  <th>예정 시각</th>
+                  <th>실제 발송</th>
+                  <th>수신자</th>
+                  <th>메시지</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {done.slice(0, 50).map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                        background: statusColor[s.status] + "22", color: statusColor[s.status] }}>
+                        {statusLabel[s.status]}
+                      </span>
+                      {s.error_message && <div style={{ fontSize: 10, color: "#e74c3c", marginTop: 2 }}>{s.error_message}</div>}
+                    </td>
+                    <td style={{ fontSize: 12, color: "#888" }}>{new Date(s.scheduled_at).toLocaleString("ko-KR")}</td>
+                    <td style={{ fontSize: 12, color: "#888" }}>{s.sent_at ? new Date(s.sent_at).toLocaleString("ko-KR") : "-"}</td>
+                    <td style={{ fontWeight: 600 }}>{s.target_name}</td>
+                    <td style={{ fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.message}>{s.message}</td>
+                    <td>
+                      <button onClick={() => remove(s.id)}
+                        style={{ padding: "2px 6px", fontSize: 11, borderRadius: 4, border: "1px solid #ddd", cursor: "pointer", color: "#aaa" }}>삭제</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
 // 문자알림 코너
 // ═══════════════════════════════════════════════════
 
 type SmsMode = "urgent" | "regular" | "individual" | "parent";
 
-
-function AdminInputPanelLazy() {
-  const [Comp, setComp] = useState<React.ComponentType | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    import("./AdminInputPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
-  }, []);
-  if (err) return <div className="card"><p style={{color:"#ef4444"}}>로드 실패: {err}</p></div>;
-  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
-  return <Comp />;
-}
-
-function WWOrderPanelLazy() {
-  const [Comp, setComp] = useState<React.ComponentType | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    import("./WWOrderPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
-  }, []);
-  if (err) return <div className="card"><p style={{color:"#ef4444"}}>WW 의뢰 로드 실패: {err}</p></div>;
-  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
-  return <Comp />;
-}
-
-function RecordingPanelLazy() {
-  const [Comp, setComp] = useState<React.ComponentType | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    import("./RecordingPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
-  }, []);
-  if (err) return <div className="card"><p style={{color:"#ef4444"}}>녹음분석 로드 실패: {err}</p></div>;
-  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
-  return <Comp />;
-}
-
-function GrowthPanelLazy() {
-  const [Comp, setComp] = useState<React.ComponentType | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    import("./GrowthPanel")
-      .then(m => setComp(() => m.default))
-      .catch(e => {
-        console.error("GrowthPanel 로드 실패:", e);
-        setErr(String(e?.message ?? e));
-      });
-  }, []);
-  if (err) return (
-    <div className="card">
-      <p style={{color:"#ef4444", fontWeight:600}}>발전기록 로드 실패</p>
-      <pre style={{fontSize:11, color:"#64748b", whiteSpace:"pre-wrap"}}>{err}</pre>
-      <button onClick={() => { setErr(null); setComp(null);
-        import("./GrowthPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e))); }}
-        style={{marginTop:8, padding:"6px 14px", borderRadius:8, border:"none",
-          background:"#0f766e", color:"#fff", cursor:"pointer", fontWeight:600}}>
-        다시 시도
-      </button>
-    </div>
-  );
-  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
-  return <Comp />;
-}
-
-function ExamPlanPanelLazy() {
-  const [Comp, setComp] = useState<React.ComponentType | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    import("./ExamPlanPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
-  }, []);
-  if (err) return <div className="card"><p style={{color:"#ef4444"}}>로드 실패: {err}</p></div>;
-  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
-  return <Comp />;
-}
-
-function ExamPrepPanelLazy() {
-  const [Comp, setComp] = useState<React.ComponentType | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    import("./ExamPrepPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
-  }, []);
-  if (err) return <div className="card"><p style={{color:"#ef4444"}}>시험준비 로드 실패: {err}</p></div>;
-  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
-  return <Comp />;
-}
 function SmsCenterPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const smsProvider = useMemo(() => createSmsProvider(), []);
@@ -4150,30 +4234,4 @@ function SmsCenterPanel() {
       )}
     </div>
   );
-}
-
-// ═══════════════════════════════════════════════════
-// 수강확인 현황판
-// ═══════════════════════════════════════════════════
-
-function getWeeksInMonth(year: number, month: number): { start: Date; end: Date; label: string }[] {
-  const weeks: { start: Date; end: Date; label: string }[] = [];
-  const firstDay = new Date(year, month - 1, 1);
-  const lastDay = new Date(year, month, 0);
-  let cur = new Date(firstDay);
-  let weekNum = 1;
-  while (cur <= lastDay) {
-    const start = new Date(cur);
-    const end = new Date(cur);
-    end.setDate(end.getDate() + 6);
-    if (end > lastDay) end.setTime(lastDay.getTime());
-    weeks.push({
-      start,
-      end,
-      label: `${weekNum}주 (${month}/${start.getDate()}~${end.getDate()})`,
-    });
-    cur.setDate(cur.getDate() + 7);
-    weekNum++;
-  }
-  return weeks;
 }

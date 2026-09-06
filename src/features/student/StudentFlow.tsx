@@ -1,5 +1,5 @@
-import { Calendar } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { addScheduledSms } from "../../lib/scheduledSms";
 import type {
   DraftResult,
   ExamResult,
@@ -21,7 +21,6 @@ import { validatePendingRegistration } from "../../core/pendingRegistration";
 import type { PendingStore } from "../../lib/pendingStore";
 import { useStorage } from "../../lib/useStorage";
 import { OtpService } from "../../lib/otpService";
-import StudentExamRegister from "./StudentExamRegister";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
@@ -37,12 +36,8 @@ import {
   computeNextRound,
   isMockExamKind,
   getGeneralFieldLabels,
-  detectAnalysisCategory,
-  ANALYSIS_QUESTIONS,
   type AssignmentType,
   type AssignmentSubmission,
-  type AssignmentAnalysisAnswer,
-  type AssignmentAnalysisData,
 } from "../../core/assignment";
 import {
   evaluateStepTiming,
@@ -67,7 +62,7 @@ const EMPTY_DRAFT: DraftResult = {
   step: 0,
 };
 
-const STEPS = ["전화인증", "학생", "학교·학년", "시험", "풀이시간", "오답번호", "3점문항", "오답원인", "상세분석", "회고", "총점확인", "제출"];
+const STEPS = ["전화인증", "학생", "학교·학년", "시험", "총점", "풀이시간", "오답번호", "오답원인", "상세분석", "회고", "제출"];
 
 export default function StudentFlow({ previewMode = false }: { previewMode?: boolean }) {
   const storage = useStorage();
@@ -81,9 +76,8 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   const [phone, setPhone] = useState("");
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
-  const [rosterLoaded, setRosterLoaded] = useState(false);
   const [matched, setMatched] = useState(false);
-  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment" | "examregister">("select");
+  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment">("select");
 
   // 미리보기 모드 - 감아랑 학생으로 자동 설정
   useEffect(() => {
@@ -120,7 +114,6 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   function refreshRoster() {
     return rosterStore.listRoster().then((r) => {
       setRoster(r);
-      setRosterLoaded(true);
       return r;
     });
   }
@@ -134,8 +127,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   useEffect(() => {
     storage.loadDraft().then((d) => {
       if (d) {
-        // 항상 인증 단계(step 0)부터 시작 - 저장된 step 무시
-        setDraft({ ...d, step: 0 });
+        setDraft(d);
         if (d.phone) setPhone(d.phone);
       }
       setLoaded(true);
@@ -144,12 +136,11 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
 
   // 자동 저장 (변경 시마다)
   useEffect(() => {
-    if (loaded) storage.saveDraft({ ...draft, step: 0 }); // 항상 step 0으로 저장
+    if (loaded) storage.saveDraft(draft);
   }, [draft, loaded, storage]);
 
   function canProceedStep0(): boolean {
     if (!phoneVerified) return false;
-    if (!rosterLoaded) return false; // 명부 로딩 중에는 진행 불가
     if (roster.length === 0) return true; // 명부 미등록 상태 = 자유 진행 허용
     return matched;
   }
@@ -207,13 +198,10 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   }
 
   async function submit() {
-    let errs: string[] = [];
-    try { errs = validateStep(9, draft); } catch(e) { console.warn("validateStep 오류:", e); }
+    const errs = validateStep(9, draft);
     if (errs.length) return setErrors(errs);
     const result: ExamResult = {
-      id: (typeof crypto !== "undefined" && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: crypto.randomUUID(),
       student: draft.student as StudentInfo,
       exam: draft.exam as ExamInfo,
       teacher: draft.teacher,
@@ -221,7 +209,6 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
       score: draft.score ?? 0,
       wrongAnswers: draft.wrongAnswers,
       reflection: draft.reflection as Reflection,
-      questionDetails: draft.questionDetails ?? [],
       submittedAt: new Date().toISOString(),
     };
 
@@ -231,15 +218,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
       return;
     }
 
-    // 저장 시도 — 실패 시 오류 표시
-    try {
-      await storage.saveResult(result);
-    } catch(e: any) {
-      const msg = e?.message ?? e?.details ?? "저장 실패";
-      console.error("[Submit] Supabase 저장 오류:", e);
-      setErrors([`제출 중 오류가 발생했습니다: ${msg}\n잠시 후 다시 시도해주세요.`]);
-      return;
-    }
+    await storage.saveResult(result);
 
     // 관리자 SMS 알림 (실패해도 제출 자체는 완료)
     const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
@@ -288,7 +267,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
       }
     }
 
-    await storage.clearDraft().catch(() => {});
+    await storage.clearDraft();
     setDone(true);
   }
 
@@ -328,28 +307,6 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
         studentName={draft.student.name ?? ""}
         onDone={() => setMode("assignment")}
       />
-    );
-  }
-
-  if (mode === "examregister") {
-    const matchedEntry = roster.find(r => r.studentCode === draft.student.studentCode);
-    return (
-      <div>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"0 16px" }}>
-          <button onClick={() => setMode("select")}
-            style={{ padding:"6px 12px", borderRadius:8, border:"1px solid #e2e8f0",
-              background:"#fff", fontSize:13, cursor:"pointer" }}>
-            ← 뒤로
-          </button>
-          <h2 style={{ margin:0, fontSize:16, color:"#7c3aed" }}><Calendar size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록 / 상담</h2>
-        </div>
-        <div style={{ padding:"0 16px" }}>
-          <StudentExamRegister
-            studentCode={matchedEntry?.studentCode ?? draft.student.studentCode ?? ""}
-            studentName={matchedEntry?.name ?? draft.student.name ?? ""}
-          />
-        </div>
-      </div>
     );
   }
 
@@ -415,21 +372,19 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
               setMode("exam");
               next();
             }}
-            onChooseAssignment={() => setMode("assignment")}
-            onExamRegister={() => setMode("examregister")}
+            onChooseAssignment={() => setMode("examCheck")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
         {step === 2 && <StepSchool draft={draft} set={set} />}
         {step === 3 && <StepExam draft={draft} set={set} />}
-        {step === 4 && <StepSolvingTime draft={draft} set={set} />}
-        {step === 5 && <StepWrongNumbers draft={draft} set={set} />}
-        {step === 6 && <StepThreePoint draft={draft} set={set} />}
+        {step === 4 && <StepScore draft={draft} set={set} />}
+        {step === 5 && <StepSolvingTime draft={draft} set={set} />}
+        {step === 6 && <StepWrongNumbers draft={draft} set={set} />}
         {step === 7 && <StepWrongReasons draft={draft} set={set} />}
         {step === 8 && <StepQuestionDetail draft={draft} set={set} />}
         {step === 9 && <StepReflection draft={draft} set={set} />}
-        {step === 10 && <StepScoreConfirm draft={draft} set={set} />}
-        {step === 11 && <StepReview draft={draft} />}
+        {step === 10 && <StepReview draft={draft} />}
       </div>
 
       {step > 0 && (
@@ -468,25 +423,22 @@ function validateStep(step: number, d: DraftResult): string[] {
       }).filter((e) => e.includes("학교") || e.includes("학년"));
     case 3:
       return validateExamInfo(d.exam);
-    case 4: {
-      // 풀이시간
+    case 4:
+      return d.score == null || d.score < 0 ? ["총점을 입력하세요."] : [];
+    case 5: {
       const times = d.solvingTime as unknown as (number | null)[] | null;
       const arr = Array.isArray(times) ? times : [];
       const allOk = arr.length === 3 && arr.every((t) => t != null && t > 0);
-      return allOk ? [] : [" Step 1·2·3 풀이 시간을 모두 입력해야 다음으로 진행할 수 있습니다."];
+      return allOk ? [] : ["⚠️ Step 1·2·3 풀이 시간을 모두 입력해야 다음으로 진행할 수 있습니다."];
     }
-    case 5:
-      return []; // 오답번호 (만점 허용)
     case 6:
-      return []; // 3점문항 (선택)
+      return []; // 오답 0개 허용 (만점)
     case 7:
-      return []; // 오답원인
+      return [];
     case 8:
-      return []; // 상세분석 (선택)
+      return []; // 상세분석은 선택 입력
     case 9:
       return validateReflection(d.reflection);
-    case 10:
-      return d.score == null || d.score < 0 ? ["총점을 확인하세요."] : [];
     default:
       return [];
   }
@@ -509,7 +461,6 @@ function StepPhoneVerify({
   onCheckApproval,
   onChooseExam,
   onChooseAssignment,
-  onExamRegister,
 }: {
   otp: OtpService;
   pendingStore: PendingStore;
@@ -524,7 +475,6 @@ function StepPhoneVerify({
   onCheckApproval: () => Promise<RosterEntry[]>;
   onChooseExam: () => void;
   onChooseAssignment: () => void;
-  onExamRegister: () => void;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -618,22 +568,93 @@ function StepPhoneVerify({
   if (verified && matched) {
     return (
       <div>
-        <p className="muted">
-          <b>{phone}</b> 인증 완료
-        </p>
-        <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+        {/* 인증 완료 배지 */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          background: "var(--correct-tint)",
+          border: "1px solid var(--correct)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 16px",
+          marginBottom: 28,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%",
+            background: "var(--correct)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0, fontSize: 16,
+          }}>✓</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "var(--correct)" }}>{phone}</div>
+            <div style={{ fontSize: 12, color: "var(--correct)", opacity: 0.8 }}>인증 완료</div>
+          </div>
+        </div>
+
+        {/* 메뉴 선택 */}
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 14, marginTop: 0 }}>
           무엇을 하시겠어요?
         </p>
-        <button className="btn" onClick={onChooseExam} style={{ marginBottom: 10 }}>
-          시험 결과 제출하기
-        </button>
-        <button className="btn secondary" onClick={onChooseAssignment}>
-          과제 제출하기
-        </button>
-        <button className="btn secondary" onClick={onExamRegister}>
-          <Calendar size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록 / 상담
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* 주요 액션 — 강조 */}
+          <button
+            onClick={onChooseExam}
+            style={{
+              display: "flex", alignItems: "center", gap: 16,
+              padding: "18px 20px",
+              background: "var(--mark)",
+              border: "none",
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer",
+              textAlign: "left",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--mark-deep)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "var(--mark)")}
+          >
+            <div style={{
+              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+              background: "rgba(255,255,255,0.18)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20,
+            }}>📋</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>시험 결과 제출하기</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>모의고사 점수 및 오답 입력</div>
+            </div>
+            <div style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)", fontSize: 18 }}>›</div>
+          </button>
 
+          {/* 보조 액션 */}
+          <button
+            onClick={onChooseAssignment}
+            style={{
+              display: "flex", alignItems: "center", gap: 16,
+              padding: "18px 20px",
+              background: "var(--paper-raised)",
+              border: "1.5px solid var(--line-strong)",
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer",
+              textAlign: "left",
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--mark)"; e.currentTarget.style.background = "var(--mark-tint)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line-strong)"; e.currentTarget.style.background = "var(--paper-raised)"; }}
+          >
+            <div style={{
+              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+              background: "var(--mark-tint)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20,
+            }}>✅</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>과제 제출하기</div>
+              <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>완료한 과제 제출</div>
+            </div>
+            <div style={{ marginLeft: "auto", color: "var(--ink-faint)", fontSize: 18 }}>›</div>
+          </button>
+
+          {/* 문자 예약 신청 */}
+          <StudentSmsRequest phone={phone} roster={roster} />
+        </div>
       </div>
     );
   }
@@ -642,14 +663,47 @@ function StepPhoneVerify({
   if (verified && roster.length === 0) {
     return (
       <div>
-        <p className="muted">
-          <b>{phone}</b> 인증 완료
-        </p>
-        <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          background: "var(--correct-tint)",
+          border: "1px solid var(--correct)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 16px",
+          marginBottom: 28,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%",
+            background: "var(--correct)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0, fontSize: 16,
+          }}>✓</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "var(--correct)" }}>{phone}</div>
+            <div style={{ fontSize: 12, color: "var(--correct)", opacity: 0.8 }}>인증 완료</div>
+          </div>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 14, marginTop: 0 }}>
           시험 결과 제출을 진행하세요. (과제 제출은 명부 등록 후 이용 가능합니다.)
         </p>
-        <button className="btn" onClick={onChooseExam}>
-          시험 결과 제출하기
+        <button
+          onClick={onChooseExam}
+          style={{
+            display: "flex", alignItems: "center", gap: 16,
+            padding: "18px 20px", width: "100%",
+            background: "var(--mark)", border: "none",
+            borderRadius: "var(--radius-md)", cursor: "pointer", textAlign: "left",
+          }}
+        >
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+            background: "rgba(255,255,255,0.18)",
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+          }}>📋</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>시험 결과 제출하기</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>모의고사 점수 및 오답 입력</div>
+          </div>
+          <div style={{ marginLeft: "auto", color: "rgba(255,255,255,0.5)", fontSize: 18 }}>›</div>
         </button>
       </div>
     );
@@ -661,7 +715,7 @@ function StepPhoneVerify({
       return (
         <div>
           <p className="muted">
-             <b>{phone}</b> 등록 신청이 접수되었습니다.
+            ⏳ <b>{phone}</b> 등록 신청이 접수되었습니다.
           </p>
           <p className="muted" style={{ fontSize: 13 }}>
             선생님(관리자)의 승인 후 다음 단계로 진행할 수 있습니다. 시간이 걸릴 수 있으니
@@ -682,7 +736,7 @@ function StepPhoneVerify({
     return (
       <div>
         <p className="muted">
-          <b>{phone}</b> 전화번호 인증 완료 — 아직 등록된 학생이 아닙니다.
+          ✅ <b>{phone}</b> 전화번호 인증 완료 — 아직 등록된 학생이 아닙니다.
         </p>
         <p className="muted" style={{ fontSize: 13 }}>
           아래 정보를 입력해 등록을 신청하면 선생님(관리자) 승인 후 이용할 수 있습니다.
@@ -874,7 +928,7 @@ function StepScore({ draft, set }: StepProps) {
       <label>내 총점</label>
       {autoCalculated && (
         <p className="muted" style={{ fontSize: 13, color: "#27ae60", marginBottom: 6 }}>
-          오답 체크에서 자동 계산됨 — 직접 수정할 수 있습니다.
+          ✅ 오답 체크에서 자동 계산됨 — 직접 수정할 수 있습니다.
         </p>
       )}
       <input
@@ -967,7 +1021,7 @@ function StepSolvingTime({ draft, set }: StepProps) {
       {!allEntered && (
         <div style={{ padding: "14px 16px", borderRadius: 10, background: "#fdecea", border: "2px solid #e74c3c", marginBottom: 12 }}>
           <p style={{ margin: 0, fontWeight: 700, color: "#e74c3c", fontSize: 15 }}>
-             3개 Step 시간을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
+            ⛔ 3개 Step 시간을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
           </p>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "#888" }}>
             기억이 정확하지 않으면 대략적인 시간을 입력하세요.
@@ -1006,70 +1060,6 @@ function StepSolvingTime({ draft, set }: StepProps) {
           </p>
         </div>
       )}
-    </>
-  );
-}
-
-
-// ── 3점 문항 체크 단계 ──────────────────────────────
-function StepThreePoint({ draft, set }: StepProps) {
-  const maxScore = draft.exam.maxScore ?? 100;
-  const wrongNums = draft.wrongAnswers.map((w) => w.questionNo);
-
-  function toggleThree(n: number) {
-    const newWrong = draft.wrongAnswers.map((w) =>
-      w.questionNo === n ? { ...w, isThreePoint: !w.isThreePoint } : w
-    );
-    // 3점 문항 변경 시 자동 점수 재계산 (인라인)
-    const deduction = newWrong.reduce((s, w) => s + (w.isThreePoint ? 3 : 2), 0);
-    const autoScore = Math.max(0, maxScore - deduction);
-    set({ wrongAnswers: newWrong, score: autoScore });
-  }
-
-  if (wrongNums.length === 0) {
-    return (
-      <>
-        <p style={{ color: "#27ae60", fontWeight: 600, fontSize: 15 }}>
-          오답이 없습니다! 만점입니다.
-        </p>
-        <p className="muted">다음 단계로 진행하세요.</p>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <p className="muted" style={{ marginBottom: 12 }}>
-        오답 중 <strong>3점 문항</strong>에 체크하세요.<br />
-        체크하지 않은 문항은 2점으로 계산됩니다.
-      </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {wrongNums.map((n) => {
-          const isThree = draft.wrongAnswers.find((w) => w.questionNo === n)?.isThreePoint ?? false;
-          return (
-            <button
-              key={n}
-              onClick={() => toggleThree(n)}
-              style={{
-                padding: "10px 16px",
-                borderRadius: 10,
-                border: isThree ? "2px solid #e74c3c" : "2px solid #ddd",
-                background: isThree ? "#fdecea" : "#f8f9fa",
-                color: isThree ? "#e74c3c" : "#555",
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer",
-                minWidth: 56,
-              }}
-            >
-              {n}번{isThree ? " 3점" : ""}
-            </button>
-          );
-        })}
-      </div>
-      <p style={{ marginTop: 16, fontSize: 14, color: "#2980b9", fontWeight: 600 }}>
-        예상 점수: <strong>{draft.score ?? "?"}점</strong>
-      </p>
     </>
   );
 }
@@ -1431,52 +1421,6 @@ function StepReflection({ draft, set }: StepProps) {
   );
 }
 
-
-// ── 총점 확인 단계 (자동계산 후 확인) ──────────────
-function StepScoreConfirm({ draft, set }: StepProps) {
-  const autoScore = draft.score;
-  const wrongCount = draft.wrongAnswers.length;
-  const threeCount = draft.wrongAnswers.filter((w) => w.isThreePoint).length;
-  const twoCount = wrongCount - threeCount;
-  const deduction = threeCount * 3 + twoCount * 2;
-  const maxScore = draft.exam.maxScore ?? 100;
-
-  return (
-    <>
-      <div style={{
-        background: "#e8f8f5", border: "2px solid #27ae60", borderRadius: 12,
-        padding: 16, marginBottom: 16
-      }}>
-        <p style={{ fontSize: 13, color: "#27ae60", fontWeight: 600, marginBottom: 8 }}>
-          자동 계산 결과
-        </p>
-        <p style={{ fontSize: 13, color: "#555", marginBottom: 4 }}>
-          오답 {wrongCount}문항 (3점: {threeCount}개 × 3점 + 2점: {twoCount}개 × 2점 = -{deduction}점)
-        </p>
-        <p style={{ fontSize: 22, fontWeight: 700, color: "#27ae60" }}>
-          {maxScore}점 - {deduction}점 = <strong>{autoScore}점</strong>
-        </p>
-      </div>
-      <label style={{ fontSize: 14, color: "#555", marginBottom: 6, display: "block" }}>
-        점수가 다르면 직접 수정하세요
-      </label>
-      <input
-        type="number"
-        value={draft.score ?? ""}
-        placeholder="점수 직접 입력"
-        onChange={(e) => set({ score: e.target.value === "" ? null : Number(e.target.value) })}
-        style={{
-          width: "100%", padding: "12px 16px", borderRadius: 10,
-          border: "1.5px solid #ddd", fontSize: 18, fontWeight: 700, textAlign: "center"
-        }}
-      />
-      <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-        실제 채점 결과와 다를 경우 수정 후 다음으로 진행하세요.
-      </p>
-    </>
-  );
-}
-
 function StepReview({ draft }: { draft: DraftResult }) {
   const wrongNums = draft.wrongAnswers.map((w) => w.questionNo).join(", ") || "없음";
   return (
@@ -1527,7 +1471,6 @@ function AssignmentSubmitForm({
   const [step1Minutes, setStep1Minutes] = useState("");
   const [step2Minutes, setStep2Minutes] = useState("");
   const [step3Minutes, setStep3Minutes] = useState("");
-  const [analysisAnswers, setAnalysisAnswers] = useState<AssignmentAnalysisAnswer[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -1620,19 +1563,11 @@ function AssignmentSubmitForm({
     if (wasEditing) {
       await assignmentStore.updateSubmission(submissionId, finalPatch);
     } else {
-      const analysisCategory = selectedType ? detectAnalysisCategory(selectedType.name) : "reading";
-    const analysisDataToSave: AssignmentAnalysisData | undefined = analysisAnswers.length > 0 ? {
-      category: analysisCategory,
-      answers: analysisAnswers,
-      submittedAt: new Date().toISOString(),
-    } : undefined;
-
-    await assignmentStore.submit({
+      await assignmentStore.submit({
         id: submissionId,
         studentCode,
         typeId,
         submittedAt: new Date().toISOString(),
-        analysisData: analysisDataToSave,
         ...finalPatch,
       } as AssignmentSubmission);
     }
@@ -1916,79 +1851,6 @@ function AssignmentSubmitForm({
             </>
           )}
 
-          {/* 정밀 분석 질문 */}
-          {selectedType && (() => {
-            const cat = detectAnalysisCategory(selectedType.name);
-            const questions = ANALYSIS_QUESTIONS[cat];
-            const catLabel = cat === "vocabulary" ? "어휘" : cat === "grammar" ? "어법" :
-              cat === "essay" ? "서술형" : cat === "mockexam" ? "모의고사" : "독해";
-            function getAns(qid: string) { return analysisAnswers.find(a => a.questionId === qid); }
-            function setAns(qid: string, patch: Partial<AssignmentAnalysisAnswer>) {
-              setAnalysisAnswers(prev => {
-                const others = prev.filter(a => a.questionId !== qid);
-                return [...others, { questionId: qid, ...getAns(qid), ...patch }];
-              });
-            }
-            return (
-              <div style={{ marginTop:16, padding:"14px", background:"#f0fdf4",
-                borderRadius:10, border:"1px solid #86efac" }}>
-                <p style={{ fontSize:13, fontWeight:700, color:"#166534", marginBottom:12 }}>
-                  🔬 정밀 분석 — {catLabel}
-                </p>
-                <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-                  {questions.map(q => (
-                    <div key={q.id}>
-                      <p style={{ fontSize:12, fontWeight:600, color:"#374151", marginBottom:7 }}>{q.question}</p>
-                      {q.type === "rating" && (
-                        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                          {[1,2,3,4,5].map(n => (
-                            <button key={n} type="button"
-                              onClick={() => setAns(q.id, { rating: n })}
-                              style={{ width:38, height:38, borderRadius:8, border:"1.5px solid",
-                                borderColor: getAns(q.id)?.rating === n ? "#059669" : "#e2e8f0",
-                                background: getAns(q.id)?.rating === n ? "#059669" : "#fff",
-                                fontSize:18, cursor:"pointer" }}>
-                              {["😟","😕","😐","😊","😄"][n-1]}
-                            </button>
-                          ))}
-                          {getAns(q.id)?.rating && (
-                            <span style={{ fontSize:11, color:"#059669", fontWeight:600 }}>
-                              {["많이 어려워요","조금 어려워요","보통이에요","잘 됐어요","완벽해요"][(getAns(q.id)?.rating??1)-1]}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {q.type === "text" && (
-                        <textarea value={getAns(q.id)?.text ?? ""}
-                          onChange={e => setAns(q.id, { text: e.target.value })}
-                          placeholder="자유롭게 작성해보세요"
-                          rows={2}
-                          style={{ width:"100%", padding:"8px 10px", borderRadius:8,
-                            border:"1px solid #e2e8f0", fontSize:12, resize:"none" as const,
-                            boxSizing:"border-box" as const }} />
-                      )}
-                      {q.type === "choice" && (
-                        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                          {(q.choices ?? []).map(ch => (
-                            <button key={ch} type="button"
-                              onClick={() => setAns(q.id, { choice: ch })}
-                              style={{ padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:600,
-                                cursor:"pointer", border:"1.5px solid",
-                                borderColor: getAns(q.id)?.choice === ch ? "#059669" : "#e2e8f0",
-                                background: getAns(q.id)?.choice === ch ? "#059669" : "#fff",
-                                color: getAns(q.id)?.choice === ch ? "#fff" : "#64748b" }}>
-                              {ch}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
           <div style={{ height: 14 }} />
           <button className="btn" onClick={submit} disabled={submitting}>
             {submitting ? "제출 중…" : "제출하기"}
@@ -2018,9 +1880,7 @@ function ExamCompletionCheckScreen({
   async function answer(value: ExamCheckAnswer) {
     setSubmitting(true);
     await examCheckStore.submit({
-      id: (typeof crypto !== "undefined" && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: crypto.randomUUID(),
       studentCode,
       studentName,
       answer: value,
@@ -2044,6 +1904,135 @@ function ExamCompletionCheckScreen({
         </button>
         <button className="btn ghost" onClick={() => answer("na")} disabled={submitting}>
           {EXAM_CHECK_ANSWER_LABELS.na}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── 학생용 문자 예약 신청 컴포넌트 ─────────────────────────
+function StudentSmsRequest({
+  phone,
+  roster,
+}: {
+  phone: string;
+  roster: import("../../core/roster").RosterEntry[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+
+  const student = roster.find((r) => r.phone === phone);
+  const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
+
+  async function submit() {
+    if (!message.trim()) { setError("메시지를 입력하세요."); return; }
+    if (!adminPhone) { setError("관리자 번호가 설정되지 않았습니다."); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await addScheduledSms({
+        created_by: student?.studentCode ?? phone,
+        target_phone: adminPhone.replace(/-/g, ""),
+        target_name: "선생님",
+        message: `[L16 학생문자] ${student?.name ?? phone}: ${message}`,
+        scheduled_at: new Date(scheduledDate).toISOString(),
+      });
+      setDone(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setSaving(false);
+  }
+
+  if (done) {
+    return (
+      <div style={{
+        padding: "14px 16px",
+        background: "#e8f8f5",
+        border: "1px solid #27ae60",
+        borderRadius: "var(--radius-md)",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: 20, marginBottom: 4 }}>✅</div>
+        <div style={{ fontWeight: 700, color: "#27ae60", fontSize: 14 }}>문자 예약 완료</div>
+        <div style={{ fontSize: 12, color: "#555", marginTop: 4 }}>
+          {new Date(scheduledDate).toLocaleString("ko-KR")}에 선생님께 발송됩니다.
+        </div>
+        <button onClick={() => { setDone(false); setMessage(""); setOpen(false); }}
+          style={{ marginTop: 10, padding: "6px 18px", borderRadius: 8, border: "none", background: "#27ae60", color: "#fff", fontSize: 13, cursor: "pointer" }}>
+          확인
+        </button>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          display: "flex", alignItems: "center", gap: 16,
+          padding: "18px 20px",
+          background: "var(--paper-raised)",
+          border: "1.5px solid var(--line-strong)",
+          borderRadius: "var(--radius-md)",
+          cursor: "pointer",
+          textAlign: "left",
+          width: "100%",
+        }}
+      >
+        <div style={{
+          width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+          background: "#f5f0ff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 20,
+        }}>📅</div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>문자 예약 신청</div>
+          <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>선생님께 예약 문자 보내기</div>
+        </div>
+        <div style={{ marginLeft: "auto", color: "var(--ink-faint)", fontSize: 18 }}>›</div>
+      </button>
+    );
+  }
+
+  return (
+    <div style={{
+      padding: "18px 16px",
+      background: "#faf5ff",
+      border: "1.5px solid #8e44ad",
+      borderRadius: "var(--radius-md)",
+    }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: "#8e44ad", marginBottom: 12 }}>📅 문자 예약 신청</div>
+
+      <label style={{ fontSize: 13, fontWeight: 600 }}>발송 시각</label>
+      <input type="datetime-local" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)}
+        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1.5px solid #8e44ad", fontSize: 14, marginTop: 4, marginBottom: 12, boxSizing: "border-box" }} />
+
+      <label style={{ fontSize: 13, fontWeight: 600 }}>선생님께 전할 내용</label>
+      <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
+        placeholder="예) 이번 주 상담 요청드립니다. / 과제 관련 문의입니다."
+        style={{ width: "100%", padding: 10, borderRadius: 8, border: "1.5px solid #8e44ad", fontSize: 14, resize: "none", boxSizing: "border-box", marginTop: 4, marginBottom: 8 }} />
+
+      {error && <p style={{ color: "#e74c3c", fontSize: 13, margin: "0 0 8px" }}>{error}</p>}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={submit} disabled={saving}
+          style={{ flex: 1, padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer", background: "#8e44ad", color: "#fff" }}>
+          {saving ? "예약 중…" : "예약 등록"}
+        </button>
+        <button onClick={() => setOpen(false)}
+          style={{ flex: 1, padding: "12px", borderRadius: 10, fontSize: 14, border: "1px solid #ddd", cursor: "pointer", background: "#fff", color: "#555" }}>
+          취소
         </button>
       </div>
     </div>
