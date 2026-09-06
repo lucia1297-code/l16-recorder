@@ -40,13 +40,13 @@ export class SupabaseRosterStore implements RosterStore {
       paused_reason: e.pausedReason ?? null,
     }));
     const { error } = await sb.from("students").upsert(rows, { onConflict: "student_code" });
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
   async listRoster(): Promise<RosterEntry[]> {
     const sb = getClient();
     const { data, error } = await sb.from("students").select("*").order("student_code");
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
     return (data ?? []).map((r: any) => ({
       studentCode: r.student_code,
       name: r.name,
@@ -107,6 +107,6 @@ export class SupabaseRosterStore implements RosterStore {
   async clearRoster(): Promise<void> {
     const sb = getClient();
     const { error } = await sb.from("students").delete().neq("student_code", "");
-    if (error) throw error;
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 }
