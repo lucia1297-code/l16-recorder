@@ -462,14 +462,24 @@ function RosterManager() {
       ...e,
       registeredAt: e.registeredAt ?? existingMap.get(e.studentCode) ?? undefined,
     }));
-    await rosterStore.saveRoster(stamped);
-    const all = await rosterStore.listRoster();
-    setRoster(all);
-    setSaving(false);
-    setNotice(`${preview.length}명 등록 완료.`);
-    setPreview([]);
-    setParseErrors([]);
-    setFileName("");
+    const t = setTimeout(() => {
+      setSaving(false);
+      setNotice("요청 시간이 초과됐습니다. 다시 시도해주세요.");
+    }, 15000);
+    try {
+      await rosterStore.saveRoster(stamped);
+      const all = await rosterStore.listRoster();
+      setRoster(all);
+      setNotice(`✅ ${preview.length}명 등록 완료.`);
+      setPreview([]);
+      setParseErrors([]);
+      setFileName("");
+    } catch(e: any) {
+      setNotice(`등록 실패: ${e?.message ?? "알 수 없는 오류"}`);
+    } finally {
+      clearTimeout(t);
+      setSaving(false);
+    }
   }
 
   async function clearAll() {
