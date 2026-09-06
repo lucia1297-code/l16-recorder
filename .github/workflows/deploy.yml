@@ -1,4 +1,4 @@
-name: Build and Deploy to Surge
+﻿name: Build and Deploy to Surge
 
 on:
   push:
@@ -32,10 +32,6 @@ jobs:
           VITE_SOLAPI_API_SECRET: ${{ secrets.VITE_SOLAPI_API_SECRET }}
           VITE_SOLAPI_SENDER: ${{ secrets.VITE_SOLAPI_SENDER }}
           VITE_NEON_DATABASE_URL: ${{ secrets.VITE_NEON_DATABASE_URL }}
-          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
 
       - name: Deploy to Surge
-        run: npx surge dist l16-academy.surge.sh
-        env:
-          SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
-          SURGE_LOGIN: lucia1297@gmail.com
+        run: npx surge dist --domain l16-academy.surge.sh --token ${{ secrets.SURGE_TOKEN }}
