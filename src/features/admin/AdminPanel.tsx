@@ -131,57 +131,79 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="admin-shell">
-      <div className="tabs admin-rail">
+      <nav className="tabs admin-rail">
+
+        {/* ── 모의고사 ── */}
+        <div className="rail-group-label">모의고사</div>
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
-          모의고사 제출목록
+          📊 제출목록
         </button>
-        <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}
-          style={{ background: tab === "admininput" ? "#7c3aed" : "", color: tab === "admininput" ? "#fff" : "", fontWeight:700 }}>
-          직접 입력
+        <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}>
+          ✏️ 직접 입력
         </button>
         <button className={tab === "dash" ? "on" : ""} onClick={() => setTab("dash")}>
-          대시보드
-        </button>
-        <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
-          명부 관리
-        </button>
-        <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
-          과제 관리
-        </button>
-        <button className={tab === "review" ? "on" : ""} onClick={() => setTab("review")}>
-          과제 점검
-        </button>
-        <button className={tab === "teacherlog" ? "on" : ""} onClick={() => setTab("teacherlog")}>
-          학생별 과제입력
-        </button>
-        <button className={tab === "submit" ? "on" : ""} onClick={() => setTab("submit")}>
-          제출 현황
+          📈 대시보드
         </button>
         <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>
-          학생 분석
+          🔍 학생 분석
         </button>
-        <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")} style={{ background: tab === "sms" ? "#e74c3c" : "", color: tab === "sms" ? "#fff" : "" }}>
-          문자알림
-        </button>
-        <button className={tab === "growth" ? "on" : ""} onClick={() => setTab("growth")} style={{ background: tab === "growth" ? "#0f766e" : "", color: tab === "growth" ? "#fff" : "" }}>
-          발전기록
-        </button>
-        <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")} style={{ background: tab === "recording" ? "#0891b2" : "", color: tab === "recording" ? "#fff" : "" }}>
-           녹음분석
-        </button>
-        <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")} style={{ background: tab === "examprep" ? "#7c3aed" : "", color: tab === "examprep" ? "#fff" : "" }}>
-          시험일정조사
-        </button>
-        <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")} style={{ background: tab === "examplan" ? "#7c3aed" : "", color: tab === "examplan" ? "#fff" : "" }}>
-          시험대비 계획
+
+        {/* ── 학생 관리 ── */}
+        <div className="rail-divider"/>
+        <div className="rail-group-label">학생 관리</div>
+        <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
+          👥 명부 관리
         </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
-          등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
+          📝 등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
-        <button className="btn ghost" onClick={onLogout}>
-          로그아웃
+
+        {/* ── 과제 ── */}
+        <div className="rail-divider"/>
+        <div className="rail-group-label">과제</div>
+        <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
+          📋 과제 관리
         </button>
-      </div>
+        <button className={tab === "review" ? "on" : ""} onClick={() => setTab("review")}>
+          ✅ 과제 점검
+        </button>
+        <button className={tab === "teacherlog" ? "on" : ""} onClick={() => setTab("teacherlog")}>
+          🖊 과제 입력
+        </button>
+        <button className={tab === "submit" ? "on" : ""} onClick={() => setTab("submit")}>
+          📌 제출 현황
+        </button>
+
+        {/* ── 수업 ── */}
+        <div className="rail-divider"/>
+        <div className="rail-group-label">수업</div>
+        <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")}>
+          🎙 녹음분석
+        </button>
+        <button className={tab === "growth" ? "on" : ""} onClick={() => setTab("growth")}>
+          💬 발전기록
+        </button>
+        <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")}>
+          📱 문자알림
+        </button>
+
+        {/* ── 시험 ── */}
+        <div className="rail-divider"/>
+        <div className="rail-group-label">시험</div>
+        <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")}>
+          📅 시험일정
+        </button>
+        <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")}>
+          📆 시험계획
+        </button>
+
+        {/* ── 기타 ── */}
+        <div className="rail-divider"/>
+        <button className="btn ghost" onClick={onLogout} style={{ marginTop:4 }}>
+          🔓 로그아웃
+        </button>
+
+      </nav></div>
       <div className="admin-content" key={tab}>
         {tab === "list" && <ResultList rows={rows} />}
         {tab === "dash" && <DashboardView rows={rows} />}
