@@ -2768,8 +2768,10 @@ function todayISO(): string {
 function TeacherLogManager() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const logStore = useMemo(() => createTeacherLogStore(), []);
+  const assignmentStore = useMemo(() => createAssignmentStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [studentCode, setStudentCode] = useState("");
+  const [nameQuery, setNameQuery] = useState("");
   const [date, setDate] = useState(todayISO());
   const [rows, setRows] = useState<TeacherLogRow[]>(createEmptyRows());
   const [examRecords, setExamRecords] = useState<ExamScoreRecord[]>([]);
@@ -2779,10 +2781,43 @@ function TeacherLogManager() {
   const [pastDates, setPastDates] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [assignmentTypes, setAssignmentTypes] = useState<AssignmentType[]>([]);
+  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
 
   useEffect(() => {
     rosterStore.listRoster().then(setRoster);
-  }, [rosterStore]);
+    assignmentStore.listTypes().then(setAssignmentTypes);
+    assignmentStore.listSubmissions().then(setSubmissions);
+  }, [rosterStore, assignmentStore]);
+
+  // 이름 검색으로 학생 필터
+  const filteredRoster = useMemo(() => {
+    if (!nameQuery.trim()) return roster;
+    return roster.filter((r) =>
+      r.name.includes(nameQuery.trim()) || r.school.includes(nameQuery.trim())
+    );
+  }, [roster, nameQuery]);
+
+  // 선택 학생의 과제 유형별 최신 제출
+  const latestByType = useMemo(() => {
+    const map = new Map<string, AssignmentSubmission>();
+    for (const s of submissions) {
+      if (s.studentCode !== studentCode) continue;
+      const prev = map.get(s.typeId);
+      if (!prev || s.submittedAt > prev.submittedAt) map.set(s.typeId, s);
+    }
+    return map;
+  }, [submissions, studentCode]);
+
+  // 과제 유형별 제출 횟수
+  const countByType = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of submissions) {
+      if (s.studentCode !== studentCode) continue;
+      map.set(s.typeId, (map.get(s.typeId) ?? 0) + 1);
+    }
+    return map;
+  }, [submissions, studentCode]);
 
   async function loadForStudentAndDate(code: string, d: string) {
     if (!code) return;
@@ -2887,23 +2922,79 @@ function TeacherLogManager() {
       </p>
       {notice && <p className="muted">{notice}</p>}
 
-      <div className="row">
-        <div>
-          <label>학생 선택</label>
-          <select value={studentCode} onChange={(e) => selectStudent(e.target.value)}>
-            <option value="">선택하세요</option>
-            {roster.map((r) => (
-              <option key={r.studentCode} value={r.studentCode}>
-                {r.name} ({r.school})
-              </option>
-            ))}
-          </select>
+      {/* ── 학생 이름 검색 + 날짜 ── */}
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <div style={{ flex: 2 }}>
+          <label>학생 이름 검색</label>
+          <input
+            value={nameQuery}
+            onChange={(e) => setNameQuery(e.target.value)}
+            placeholder="이름 또는 학교 입력"
+            style={{ width: "100%" }}
+          />
+          {nameQuery.trim() && (
+            <div style={{ border: "1px solid #ddd", borderRadius: 8, background: "#fff",
+              maxHeight: 180, overflowY: "auto", marginTop: 2, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
+              {filteredRoster.length === 0 ? (
+                <div style={{ padding: "10px 14px", color: "#aaa", fontSize: 13 }}>검색 결과 없음</div>
+              ) : filteredRoster.map((r) => (
+                <div key={r.studentCode}
+                  onClick={() => { selectStudent(r.studentCode); setNameQuery(r.name); }}
+                  style={{ padding: "10px 14px", cursor: "pointer", fontSize: 14,
+                    background: studentCode === r.studentCode ? "#eaf4fb" : "#fff",
+                    borderBottom: "1px solid #f5f5f5", fontWeight: studentCode === r.studentCode ? 700 : 400 }}>
+                  {r.name}
+                  <span style={{ fontSize: 12, color: "#888", marginLeft: 8 }}>{r.school} {r.grade}학년</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <label>날짜</label>
           <input type="date" value={date} onChange={(e) => selectDate(e.target.value)} />
         </div>
       </div>
+
+      {/* ── 선택된 학생의 최종 과제 현황 ── */}
+      {studentCode && assignmentTypes.length > 0 && (
+        <div style={{ margin: "16px 0", padding: 14, background: "#f8f9ff",
+          border: "2px solid #2980b9", borderRadius: 12 }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: 14, color: "#2980b9" }}>
+            📋 {student?.name} 최종 과제 현황
+          </h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {assignmentTypes.map((t) => {
+              const cnt = countByType.get(t.id) ?? 0;
+              const latest = latestByType.get(t.id);
+              const status = computeAssignmentStatus(cnt, t.targetCount);
+              const statusColor = status === "good" ? "#27ae60" : status === "not_bad" ? "#f39c12" : status === "warning" ? "#e74c3c" : "#aaa";
+              const statusLabel = status === "good" ? "달성" : status === "not_bad" ? "진행중" : status === "warning" ? "부족" : "미시작";
+              return (
+                <div key={t.id} style={{ background: "#fff", border: `2px solid ${statusColor}`,
+                  borderRadius: 10, padding: "10px 14px", minWidth: 130 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{t.name}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: statusColor }}>
+                    {cnt}<span style={{ fontSize: 12, color: "#aaa" }}>/{t.targetCount}회</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{statusLabel}</div>
+                  {latest && (
+                    <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
+                      최근: {new Date(latest.submittedAt).toLocaleDateString("ko-KR")}
+                      {latest.reviewStatus && (
+                        <span style={{ marginLeft: 4,
+                          color: latest.reviewStatus === "pass" ? "#27ae60" : latest.reviewStatus === "fail" ? "#e74c3c" : "#aaa" }}>
+                          [{latest.reviewStatus === "pass" ? "승인" : latest.reviewStatus === "fail" ? "재제출" : "대기"}]
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {studentCode && (
         <>
