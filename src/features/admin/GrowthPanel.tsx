@@ -117,7 +117,7 @@ export default function GrowthPanel() {
   const [loading, setLoading] = useState(true);
   const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
-  const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message">("compare");
+  const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message" | "summary8all">("compare");
   const mountedRef = useRef(true);
   const [messages, setMessages] = useState<GrowthMessage[]>([]);
   useEffect(() => {
@@ -451,6 +451,53 @@ ${monthLabel} 학습 상담 평가서
     setReportModal(null);
   }
 
+  // ── 전체 요약평가 인쇄 ────────────────────────────────────────
+  function printAllSummary8(
+    generated: {student: typeof active[0]; msg: GrowthMessage | undefined}[],
+    missing:   {student: typeof active[0]; msg: GrowthMessage | undefined}[],
+    monthLabel: string
+  ) {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const css = [
+      "@page{size:A4;margin:18mm}",
+      "*{box-sizing:border-box;margin:0;padding:0;font-family:'Malgun Gothic',sans-serif}",
+      "body{color:#1e293b}",
+      ".card{border:1px solid #e2e8f0;border-radius:10px;padding:18px 20px;margin-bottom:18px;break-inside:avoid}",
+      ".sname{font-size:17px;font-weight:700;color:#0f766e;margin-bottom:4px}",
+      ".sinfo{font-size:12px;color:#64748b;margin-bottom:12px}",
+      ".line{font-size:13px;line-height:2;color:#1e293b}",
+      ".hdr{font-size:20px;font-weight:700;color:#7c3aed;border-bottom:3px solid #7c3aed;padding-bottom:8px;margin-bottom:20px}",
+      ".ftr{font-size:11px;color:#94a3b8;text-align:right;margin-top:4px}",
+      "@media print{button{display:none}}",
+    ].join("\n");
+    const cards = generated.map(({student: s, msg: m}) => {
+      const sentStr = m!.sentAt
+        ? "✅ 발송완료 " + new Date(m!.sentAt).toLocaleDateString("ko-KR")
+        : "미발송";
+      const lines = m!.content.replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>");
+      return [
+        '<div class="card">',
+        '<div class="sname">' + s.name + '</div>',
+        '<div class="sinfo">' + s.school + " " + s.grade + "학년 · " + s.phone + '</div>',
+        '<div class="line">' + lines + '</div>',
+        '<div class="ftr">' + sentStr + '</div>',
+        '</div>',
+      ].join("");
+    }).join("");
+    const missingHtml = missing.length > 0
+      ? '<div class="card"><div class="sname" style="color:#94a3b8">미생성 학생</div><div style="color:#94a3b8;font-style:italic">'
+        + missing.map(x => x.student.name).join(", ") + '</div></div>'
+      : "";
+    const html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'
+      + monthLabel + ' 상담 요약평가_8줄</title><style>' + css + '</style></head><body>'
+      + '<div class="hdr">L16 ' + monthLabel + ' 상담 요약평가_8줄</div>'
+      + cards + missingHtml + '</body></html>';
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => w.print();
+  }
+
   // ── 전체 학생 일괄 생성 ─────────────────────────────────────
   async function bulkGenerateAll(month: string) {
     const students = active;
@@ -695,9 +742,10 @@ ${monthLabel} 학습 상담 평가서
           </select>
           <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
             {([
-              { key:"compare",  label:"비교 분석" },
-              { key:"analysis", label:"정밀 분석" },
-              { key:"message",  label:"처방 메시지" },
+              { key:"compare",     label:"비교 분석" },
+              { key:"analysis",    label:"정밀 분석" },
+              { key:"message",     label:"처방 메시지" },
+              { key:"summary8all", label:"📋 전체 요약평가" },
             ] as const).map(t => (
               <button key={t.key} onClick={() => setViewTab(t.key)}
                 style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
@@ -1131,6 +1179,156 @@ ${monthLabel} 학습 상담 평가서
           )}
         </div>
       )}
+
+      {/* ══ 전체 요약평가 탭 ══ */}
+      {viewTab === "summary8all" && (() => {
+        const [y, mo] = reportMonth.split("-").map(Number);
+        const monthLabel = `${y}년 ${mo}월`;
+        // 해당 월의 summary8 메시지만 추출, 학생 순으로 정렬
+        const sum8List = active.map(s => {
+          const msg = messages.find(m =>
+            m.studentCode === s.studentCode &&
+            m.type === "summary8" &&
+            m.reportMonth === reportMonth
+          );
+          return { student: s, msg };
+        });
+        const generated = sum8List.filter(x => x.msg);
+        const missing   = sum8List.filter(x => !x.msg);
+
+        return (
+          <div>
+            {/* 상단 컨트롤 */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16,
+              padding:"12px 16px", background:"#faf5ff", borderRadius:10, border:"1px solid #e9d5ff",
+              flexWrap:"wrap" }}>
+              <span style={{ fontWeight:700, fontSize:14, color:"#7c3aed" }}>
+                📋 {monthLabel} 상담 요약평가_8줄
+              </span>
+              <input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)}
+                style={{ padding:"5px 10px", borderRadius:7, border:"1.5px solid #a78bfa", fontSize:13 }} />
+              <button onClick={() => bulkGenerateAll(reportMonth)} disabled={bulkGenerating}
+                style={{ padding:"8px 18px", borderRadius:8, border:"none",
+                  background: bulkGenerating ? "#c4b5fd" : "#7c3aed",
+                  color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+                {bulkGenerating ? "생성 중..." : `⚡ 전체 ${active.length}명 일괄 생성`}
+              </button>
+              {bulkProgress && <span style={{ fontSize:13, color:"#7c3aed", fontWeight:600 }}>{bulkProgress}</span>}
+              <span style={{ marginLeft:"auto", fontSize:13, color:"#6b7280" }}>
+                완료 {generated.length}/{active.length}명
+                {missing.length > 0 && <span style={{ color:"#ef4444", marginLeft:6 }}>({missing.length}명 미생성)</span>}
+              </span>
+            </div>
+
+            {/* 인쇄 버튼 */}
+            <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+              <button onClick={() => printAllSummary8(generated, missing, monthLabel)}
+                style={{ padding:"8px 18px", borderRadius:8, border:"1px solid #e2e8f0",
+                  background:"#fff", fontSize:13, cursor:"pointer", fontWeight:600 }}>
+                🖨️ 전체 인쇄
+              </button>
+              <button onClick={async () => {
+                const lines = generated.map(({student:s, msg:m}) =>
+                  "\u25a3 " + s.name + " (" + s.school + " " + s.grade + "\ud559\ub144)\n" + m!.content + "\n"
+                ).join("\n" + "\u2500".repeat(30) + "\n\n");
+                await navigator.clipboard.writeText(lines);
+                alert(`${generated.length}명 평가서가 클립보드에 복사됐습니다.`);
+              }}
+                style={{ padding:"8px 18px", borderRadius:8, border:"1px solid #e2e8f0",
+                  background:"#fff", fontSize:13, cursor:"pointer", fontWeight:600 }}>
+                📋 전체 복사
+              </button>
+            </div>
+
+            {/* 미생성 학생 경고 */}
+            {missing.length > 0 && (
+              <div style={{ padding:"10px 14px", background:"#fef2f2", border:"1px solid #fecaca",
+                borderRadius:8, marginBottom:14, fontSize:13, color:"#dc2626" }}>
+                ⚠️ 미생성: {missing.map(x => x.student.name).join(", ")}
+                <button onClick={() => bulkGenerateAll(reportMonth)}
+                  style={{ marginLeft:12, padding:"3px 10px", borderRadius:6, border:"none",
+                    background:"#dc2626", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700 }}>
+                  지금 생성
+                </button>
+              </div>
+            )}
+
+            {/* 학생별 카드 */}
+            {generated.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                <p style={{ fontSize:16, marginBottom:12 }}>아직 생성된 평가서가 없습니다.</p>
+                <button onClick={() => bulkGenerateAll(reportMonth)}
+                  style={{ padding:"12px 24px", borderRadius:10, border:"none",
+                    background:"#7c3aed", color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer" }}>
+                  ⚡ 지금 전체 생성
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                {generated.map(({student:s, msg:m}) => (
+                  <div key={s.studentCode} style={{ border:"1.5px solid #e9d5ff",
+                    borderRadius:12, padding:"16px 18px", background:"#faf5ff" }}>
+                    {/* 학생 헤더 */}
+                    <div style={{ display:"flex", justifyContent:"space-between",
+                      alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
+                      <div>
+                        <span style={{ fontWeight:700, fontSize:16, color:"#7c3aed" }}>{s.name}</span>
+                        <span style={{ fontSize:12, color:"#6b7280", marginLeft:8 }}>
+                          {s.school} {s.grade}학년
+                        </span>
+                        {m!.sentAt && (
+                          <span style={{ marginLeft:8, fontSize:11, color:"#059669",
+                            background:"#d1fae5", padding:"1px 6px", borderRadius:4, fontWeight:600 }}>
+                            ✅ 발송완료
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display:"flex", gap:6 }}>
+                        <button onClick={() => generateSummary8(s.studentCode, reportMonth)}
+                          style={{ padding:"4px 10px", borderRadius:6, border:"none",
+                            background:"#7c3aed", color:"#fff", fontSize:11, cursor:"pointer", fontWeight:600 }}>
+                          재생성
+                        </button>
+                        <button onClick={async () => {
+                          const phone = s.parentPhone || s.phone;
+                          if (!phone) { alert("전화번호가 없습니다."); return; }
+                          try {
+                            await sendSMS(phone.replace(/-/g,""), m!.content);
+                            saveMsgs(messages.map(msg =>
+                              msg.id === m!.id ? {...msg, sentAt: new Date().toISOString()} : msg
+                            ));
+                            setNotice(`${s.name} 발송 완료`);
+                            setTimeout(() => setNotice(""), 3000);
+                          } catch(e) { alert("발송 실패: " + (e as Error).message); }
+                        }}
+                          style={{ padding:"4px 10px", borderRadius:6, border:"none",
+                            background: m!.sentAt ? "#94a3b8" : "#059669",
+                            color:"#fff", fontSize:11, cursor:"pointer", fontWeight:600 }}>
+                          {m!.sentAt ? "재발송" : "📱 발송"}
+                        </button>
+                        <button onClick={() => navigator.clipboard.writeText(m!.content)}
+                          style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #d8b4fe",
+                            background:"#fff", fontSize:11, cursor:"pointer", color:"#7c3aed", fontWeight:600 }}>
+                          복사
+                        </button>
+                      </div>
+                    </div>
+                    {/* 8줄 내용 */}
+                    <div style={{ fontSize:13, lineHeight:2, color:"#1e293b",
+                      whiteSpace:"pre-wrap", background:"#fff", borderRadius:8,
+                      padding:"12px 14px", border:"1px solid #e9d5ff" }}>
+                      {m!.content}
+                    </div>
+                    <div style={{ fontSize:11, color:"#94a3b8", marginTop:6, textAlign:"right" }}>
+                      생성: {new Date(m!.createdAt).toLocaleString("ko-KR")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── 상담평가서 작성 모달 ── */}
       {reportModal && (
