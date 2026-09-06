@@ -537,17 +537,32 @@ function RosterManager() {
     }
     setAdding(true);
     setAddErrors([]);
-    await rosterStore.saveRoster([{ ...entry, registeredAt: new Date().toISOString() }]);
-    const all = await rosterStore.listRoster();
-    setRoster(all);
-    setAdding(false);
-    setNotice(`${entry.name} 학생을 등록했습니다. (코드: ${entry.studentCode})`);
-    setAddCode("");
-    setAddName("");
-    setAddSchool("");
-    setAddGrade("");
-    setAddPhone("");
-    setAddTeacher("");
+
+    // 10초 타임아웃 — 멈춤 방지
+    const timeout = setTimeout(() => {
+      setAdding(false);
+      setAddErrors(["요청 시간이 초과됐습니다. 인터넷 연결을 확인하고 다시 시도해주세요."]);
+    }, 10000);
+
+    try {
+      await rosterStore.saveRoster([{ ...entry, registeredAt: new Date().toISOString() }]);
+      const all = await rosterStore.listRoster();
+      setRoster(all);
+      setNotice(`✅ ${entry.name} 학생 등록 완료 (코드: ${entry.studentCode})`);
+      setAddCode("");
+      setAddName("");
+      setAddSchool("");
+      setAddGrade("");
+      setAddPhone("");
+      setAddTeacher("");
+      setShowAddForm(false);
+    } catch(e: any) {
+      const msg = e?.message ?? e?.details ?? "알 수 없는 오류";
+      setAddErrors([`등록 실패: ${msg}`]);
+    } finally {
+      clearTimeout(timeout);
+      setAdding(false);
+    }
   }
 
   function exportExcel() {
