@@ -151,17 +151,41 @@ export default function RecordingPanel() {
   }, []);
 
   async function loadRecordings() {
-    setLoading(true);
+    if (mountedRef.current) setLoading(true);
     try {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/lesson_recordings?order=recorded_at.desc`,
         { headers: SB_H }
-      );
-      if (!res.ok) throw new Error(`목록 로드 실패 (${res.status})`);
+      ).catch(() => null);
+
+      if (!res) {
+        if (mountedRef.current) setNotice("네트워크 오류 — 인터넷 연결을 확인해주세요.");
+        return;
+      }
+      if (res.status === 403 || res.status === 401) {
+        if (mountedRef.current) setNotice("접근 권한 오류 (403) — Supabase RLS 정책을 확인해주세요.");
+        return;
+      }
+      if (res.status === 404 || res.status === 406) {
+        if (mountedRef.current) setNotice("lesson_recordings 테이블이 없습니다 — Supabase SQL Editor에서 테이블을 생성해주세요.");
+        return;
+      }
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        if (mountedRef.current) setNotice(`목록 로드 실패 (${res.status}): ${errText.slice(0,80)}`);
+        return;
+      }
       const rdata = await res.json().catch(() => []);
-      if (mountedRef.current) setRecordings(Array.isArray(rdata) ? rdata : []);
-    } catch(e) { console.warn('loadRecordings 오류:', e); }
-    if (mountedRef.current) setLoading(false);
+      if (mountedRef.current) {
+        setRecordings(Array.isArray(rdata) ? rdata : []);
+        setNotice(""); // 성공 시 오류 메시지 초기화
+      }
+    } catch(e: any) {
+      console.warn("[RecordingPanel] loadRecordings 오류:", e);
+      if (mountedRef.current) setNotice("녹음 목록을 불러오지 못했습니다: " + (e?.message ?? "알 수 없는 오류"));
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
   }
 
   async function startRecording() {
