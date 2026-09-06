@@ -140,7 +140,7 @@ export default function App() {
             </div>
           </div>
           <button
-            onClick={() => { updateServiceWorker(true); setShowUpdate(false); }}
+            onClick={() => { updateServiceWorker(true); setTimeout(() => window.location.reload(), 500); }}
             style={{
               padding:"8px 22px", borderRadius:10,
               border:"2px solid #fff", background:"#fff", color:"#1a56db",
