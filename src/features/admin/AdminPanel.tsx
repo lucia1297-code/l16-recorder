@@ -131,34 +131,6 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="admin-shell">
-      {/* 모바일 전용 상단 빠른 접근 버튼바 */}
-      <div style={{
-        display:"flex", gap:6, padding:"8px 12px",
-        background:"#f8fafc", borderBottom:"1px solid #e2e8f0",
-        overflowX:"auto", WebkitOverflowScrolling:"touch",
-        position:"sticky", top:0, zIndex:50,
-      }} className="mobile-quickbar">
-        {([
-          { key:"admininput", label:"✏️ 직접 입력", bg:"#7c3aed", color:"#fff" },
-          { key:"list",       label:"📋 제출목록",  bg:"#1e40af", color:"#fff" },
-          { key:"growth",     label:"📈 발전기록",  bg:"#0f766e", color:"#fff" },
-          { key:"recording",  label:"🎙 녹음",      bg:"#0891b2", color:"#fff" },
-          { key:"examplan",   label:"📅 시험계획",  bg:"#7c3aed", color:"#fff" },
-        ] as const).map(b => (
-          <button key={b.key} onClick={() => setTab(b.key)}
-            style={{
-              padding:"7px 14px", borderRadius:20, border:"none",
-              background: tab === b.key ? b.bg : "#e2e8f0",
-              color: tab === b.key ? b.color : "#475569",
-              fontWeight:700, fontSize:12, cursor:"pointer",
-              whiteSpace:"nowrap", flexShrink:0,
-              boxShadow: tab === b.key ? "0 2px 8px rgba(0,0,0,0.15)" : "none",
-            }}>
-            {b.label}
-          </button>
-        ))}
-      </div>
-
       <div className="tabs admin-rail">
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
           모의고사 제출목록
