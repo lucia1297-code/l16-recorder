@@ -36,9 +36,15 @@ export default function App() {
   }, []);
 
   // PWA 업데이트 감지
+  const [showUpdate, setShowUpdate] = useState(false);
   const { needRefresh, updateServiceWorker } = useRegisterSW({
-    onRegistered(r) { console.log("[PWA] 등록:", r?.scope); },
+    onRegistered(r) {
+      console.log("[PWA] 등록:", r?.scope);
+      // 1분마다 새 버전 체크
+      if (r) setInterval(() => r.update(), 60 * 1000);
+    },
     onRegisterError(e) { console.warn("[PWA] 오류:", e); },
+    onNeedRefresh() { setShowUpdate(true); },
   });
   const [previewMode, setPreviewMode] = useState(false); // 관리자가 학생 화면 미리보기
   const [showGatePrompt, setShowGatePrompt] = useState(false);
@@ -115,23 +121,31 @@ export default function App() {
   return (
     <div className="app">
       {/* PWA 업데이트 알림 배너 */}
-      {needRefresh[0] && (
+      {(showUpdate || needRefresh[0]) && (
         <div style={{
           position:"fixed", top:0, left:0, right:0, zIndex:9999,
-          background:"#0f766e", color:"#fff",
-          padding:"10px 16px",
+          background:"linear-gradient(90deg,#1a56db,#1e40af)",
+          color:"#fff",
+          padding:"12px 20px",
           display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:10, fontSize:14, fontWeight:600,
-          boxShadow:"0 2px 12px rgba(0,0,0,0.3)"
+          gap:12, fontSize:14, fontWeight:600,
+          boxShadow:"0 2px 16px rgba(0,0,0,0.35)",
+          animation:"slideDown 0.3s ease"
         }}>
-          <span>새 버전이 있습니다. 업데이트해주세요.</span>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:20 }}>🆕</span>
+            <div>
+              <div style={{ fontWeight:700, fontSize:15 }}>새 버전이 업데이트됐습니다</div>
+              <div style={{ fontSize:12, opacity:0.85, marginTop:1 }}>버튼을 눌러 최신 버전으로 전환하세요.</div>
+            </div>
+          </div>
           <button
-            onClick={() => updateServiceWorker(true)}
+            onClick={() => { updateServiceWorker(true); setShowUpdate(false); }}
             style={{
-              padding:"6px 18px", borderRadius:8,
-              border:"none", background:"#fff", color:"#0f766e",
-              fontWeight:700, fontSize:13, cursor:"pointer",
-              flexShrink:0
+              padding:"8px 22px", borderRadius:10,
+              border:"2px solid #fff", background:"#fff", color:"#1a56db",
+              fontWeight:800, fontSize:14, cursor:"pointer",
+              flexShrink:0, letterSpacing:"0.02em"
             }}>
             지금 업데이트
           </button>
