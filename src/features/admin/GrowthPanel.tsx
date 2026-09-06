@@ -18,8 +18,9 @@ interface GrowthMessage {
   createdAt: string;
   sentAt: string | null;
   adminEdited: boolean;
-  type: "prescription" | "monthly_report"; // 주간처방 | 월간상담평가서
+  type: "prescription" | "monthly_report" | "summary8"; // 주간처방 | 월간상담평가서 | 상담요약평가8줄
   reportMonth?: string; // "2026-08" 형식
+  summary8Lines?: string; // 8줄 요약
 }
 
 const REASON_KO: Record<string, string> = {
@@ -449,6 +450,175 @@ ${monthLabel} 학습 상담 평가서
     setReportModal(null);
   }
 
+  // ── 전체 학생 일괄 생성 ─────────────────────────────────────
+  async function bulkGenerateAll(month: string) {
+    const students = active;
+    if (students.length === 0) return;
+    if (!confirm(`${students.length}명 학생의 상담 요약평가_8줄을 일괄 생성합니까?\n(기존 항목은 덮어씁니다)`)) return;
+    setBulkGenerating(true);
+    for (let i = 0; i < students.length; i++) {
+      const s = students[i];
+      setBulkProgress(`${i+1}/${students.length} — ${s.name} 처리 중...`);
+      await generateSummary8(s.studentCode, month);
+      await new Promise(r => setTimeout(r, 800)); // API rate limit 방지
+    }
+    setBulkProgress("✅ 전체 생성 완료!");
+    setBulkGenerating(false);
+    setTimeout(() => setBulkProgress(""), 3000);
+  }
+
+  // ── 상담 요약평가_8줄 AI 자동 생성 ─────────────────────────
+  async function generateSummary8(code: string, month: string) {
+    const student = roster.find(r => r.studentCode === code);
+    if (!student) return;
+
+    const [y, mo] = month.split("-").map(Number);
+    const prevMonth = mo === 1 ? `${y-1}-12` : `${y}-${String(mo-1).padStart(2,"0")}`;
+    const nextMonth = `${y}-${String(mo).padStart(2,"0")}`;
+
+    // 해당 월 + 전월 시험 데이터 수집
+    const allRows = byStudent.get(code) ?? [];
+    const periodRows = allRows.filter(r =>
+      r.date >= prevMonth && r.date <= nextMonth + "-05"
+    );
+    if (periodRows.length === 0) {
+      alert("해당 기간의 시험 데이터가 없습니다.");
+      return;
+    }
+
+    // 오답 원인 집계
+    const cnt: Record<string, number> = {};
+    periodRows.forEach(r => (r.wrongAnswers ?? []).forEach((w: any) =>
+      (w.reasons || []).forEach((rs: string) => { cnt[rs] = (cnt[rs] || 0) + 1; })
+    ));
+    const top3 = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    const scores = periodRows.map(r => r.score);
+    const avg = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+    const latest = periodRows[periodRows.length-1];
+    const prev = periodRows[periodRows.length-2];
+    const trend = prev ? latest.score - prev.score : 0;
+    const refs = periodRows.map(r => (r.reflection as any) || {});
+    const goals = refs.map(r => r.nextGoal).filter(Boolean).join(", ");
+    const hards = refs.map(r => r.hardestReason).filter(Boolean).join(" / ");
+    const grade = avg >= 90 ? "1등급권" : avg >= 80 ? "2등급권" : avg >= 70 ? "3등급권" : avg >= 60 ? "4등급권" : "5등급권";
+
+    // 과제 제출 현황
+    const myAssignSubs = assignmentSubs.filter(s =>
+      s.studentCode === code &&
+      s.submittedAt >= prevMonth && s.submittedAt <= nextMonth + "-05T23:59:59"
+    );
+    const assignCount = myAssignSubs.length;
+    const passCount = myAssignSubs.filter(s => s.reviewStatus === "pass").length;
+
+    const OPENAI_KEY = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+    let summary8 = "";
+
+    if (OPENAI_KEY) {
+      const prompt = `당신은 30년 경력의 고3 영어 전문 강사입니다.
+아래 데이터를 바탕으로 학부모 상담용 "상담 요약평가" 8줄을 작성하세요.
+각 줄은 1~2문장, 총 8줄이며 각 줄 앞에 ① ~ ⑧ 번호를 붙이세요.
+
+【작성 순서】
+① 현재 수준 및 등급 판정
+② 이번 기간 점수 흐름과 추세
+③ 주요 오답 원인 1위 분석
+④ 주요 오답 원인 2~3위 및 복합적 취약점
+⑤ 학생 자가 인식 (목표·어려움)
+⑥ 과제 성실도 및 태도 평가
+⑦ 강사 핵심 처방 및 지도 방향
+⑧ 다음 달 목표 및 학부모 당부
+
+【학생 데이터】
+- 학생명: ${student.name}, 학교: ${student.school} ${student.grade}학년
+- 기간: ${prevMonth} ~ ${nextMonth}-05
+- 시험 횟수: ${periodRows.length}회, 평균: ${avg}점, 최근: ${latest.score}점, 직전 대비: ${trend > 0 ? "+" : ""}${trend}점
+- 등급: ${grade}
+- 오답 원인 Top3: ${top3.map(([k,v]) => `${k}(${v}회)`).join(", ")}
+- 학생 목표: ${goals || "미기재"}
+- 어려웠던 점: ${hards || "미기재"}
+- 과제 제출: ${assignCount}건 / 점검 통과: ${passCount}건
+
+전문적이되 따뜻하고 구체적으로 작성하세요. 각 줄은 완결된 문장으로 작성하세요.`;
+
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": OPENAI_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 800,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          summary8 = data.content?.[0]?.text ?? "";
+        }
+      } catch(e) {
+        console.warn("AI 생성 실패, 로컬 생성으로 대체:", e);
+      }
+    }
+
+    // AI 실패시 로컬 생성
+    if (!summary8) {
+      const REASON_DESC: Record<string,string> = {
+        Vocabulary:"어휘력", Reading:"독해력", Inference:"추론력", Logic:"논리력",
+        Grammar:"어법", Time:"시간관리", Careless:"부주의", Guess:"찍기습관", DidntKnow:"개념부족"
+      };
+      const REASON_FIX: Record<string,string> = {
+        Vocabulary:"수능 빈출 어휘 주제별 암기 강화",
+        Reading:"단락별 핵심어 파악 훈련",
+        Inference:"근거 문장 확정 후 선지 소거 훈련",
+        Logic:"접속어·지시어 중심 논리 추적",
+        Grammar:"핵심 어법 5유형 반복 정리",
+        Time:"구간별 목표시간 설정 실전 훈련",
+        Careless:"30초 검토 습관 형성",
+        Guess:"확신도 향상을 위한 어휘·독해 기반 강화",
+        DidntKnow:"기초 개념 단계적 보완"
+      };
+      const t1 = top3[0]?.[0] ?? ""; const t2 = top3[1]?.[0] ?? ""; const t3 = top3[2]?.[0] ?? "";
+      const trendStr = trend > 3 ? `${trend}점 상승` : trend < -3 ? `${Math.abs(trend)}점 하락` : "안정 유지";
+      summary8 = [
+        `① ${student.name} 학생은 현재 ${grade}(기간 평균 ${avg}점)에 해당하며, ${periodRows.length}회 시험 데이터를 바탕으로 평가합니다.`,
+        `② 이번 기간 점수 흐름은 ${trendStr} 추세로, 최근 시험에서 ${latest.score}점을 기록하였습니다.`,
+        `③ 누적 오답 원인 1위는 ${REASON_DESC[t1]??t1}으로, 이 영역에서의 집중 보완이 가장 시급합니다.`,
+        `④ ${t2 ? (REASON_DESC[t2]??t2)+"와 "+(t3 ? (REASON_DESC[t3]??"")+"이" : "") : "전반적인 취약점"}도 함께 관리가 필요하며, 복합적 원인 분석이 진행 중입니다.`,
+        `⑤ 학생 스스로는 "${hards || "전반적 어려움"}"을 주요 어려움으로 인식하고 있으며, "${goals || "성적 향상"}"을 목표로 삼고 있습니다.`,
+        `⑥ 이번 기간 과제 제출 ${assignCount}건 중 ${passCount}건이 점검을 통과하였으며, ${assignCount >= 3 ? "성실한 학습 참여" : "과제 성실도 향상"}이 필요합니다.`,
+        `⑦ 단기 처방으로 ${REASON_FIX[t1]??"기초 보완"}을 집중 진행하고 있으며${t2 ? `, ${REASON_FIX[t2]??""} 훈련도 병행`:""}하고 있습니다.`,
+        `⑧ 다음 달 목표는 ${avg + 3}점 이상 달성이며, 가정에서의 지속적인 격려와 관심이 성장에 큰 힘이 됩니다.`
+      ].join("\n");
+    }
+
+    // 저장
+    const existing = messages.find(m => m.studentCode === code && m.reportMonth === month && m.type === "summary8");
+    if (existing) {
+      saveMsgs(messages.map(m => m.id === existing.id ? { ...m, summary8Lines: summary8, content: summary8, adminEdited: false } : m));
+      setEditingId(existing.id);
+      setEditText(summary8);
+    } else {
+      const msg: GrowthMessage = {
+        id: Math.random().toString(36).slice(2),
+        studentCode: code, studentName: student.name,
+        content: summary8,
+        summary8Lines: summary8,
+        createdAt: new Date().toISOString(),
+        sentAt: null, adminEdited: false,
+        type: "summary8",
+        reportMonth: month,
+      };
+      saveMsgs([msg, ...messages]);
+      setEditingId(msg.id);
+      setEditText(summary8);
+    }
+    setViewTab("message");
+    setReportModal(null);
+  }
+
   async function sendMsg(msg: GrowthMessage) {
     if (!SUPABASE_URL || !SUPABASE_KEY) { setNotice("설정 오류"); return; }
     const s = roster.find(r => r.studentCode === msg.studentCode);
@@ -498,7 +668,7 @@ ${monthLabel} 학습 상담 평가서
   return (
     <div className="card">
       {/* 헤더 */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, flexWrap:"wrap", gap:10 }}>
         <h2 style={{ margin:0, color:"#0f766e" }}>발전 기록</h2>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <select value={selected} onChange={e => setSelected(e.target.value)}
@@ -521,6 +691,23 @@ ${monthLabel} 학습 상담 평가서
             ))}
           </div>
         </div>
+      </div>
+      {/* ── 일괄 생성 컨트롤 바 ── */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12,
+        padding:"10px 14px", background:"#faf5ff", borderRadius:10, border:"1px solid #e9d5ff", flexWrap:"wrap" }}>
+        <span style={{ fontSize:13, fontWeight:700, color:"#7c3aed" }}>✨ 상담 요약평가_8줄</span>
+        <input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)}
+          style={{ padding:"5px 10px", borderRadius:7, border:"1.5px solid #a78bfa", fontSize:13 }} />
+        <button onClick={() => bulkGenerateAll(reportMonth)} disabled={bulkGenerating}
+          style={{ padding:"7px 16px", borderRadius:8, border:"none",
+            background: bulkGenerating ? "#c4b5fd" : "#7c3aed",
+            color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+          {bulkGenerating ? "생성 중..." : "전체 학생 일괄 생성"}
+        </button>
+        {bulkProgress && <span style={{ fontSize:13, color:"#7c3aed", fontWeight:600 }}>{bulkProgress}</span>}
+        <span style={{ fontSize:12, color:"#94a3b8", marginLeft:"auto" }}>
+          개별 생성: 학생 카드의 📅 상담평가서 → ✨ AI 자동생성
+        </span>
       </div>
       {notice && <p style={{ color:"#0f766e", fontWeight:600, marginBottom:10 }}>{notice}</p>}
 
@@ -969,14 +1156,20 @@ ${monthLabel} 학습 상담 평가서
             <p style={{ fontSize:12, color:"#94a3b8", marginBottom:16 }}>
               ※ 매월 10일경 학부모님께 발송 권장
             </p>
-            <div style={{ display:"flex", gap:8 }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <button onClick={() => generateSummary8(reportModal.code, reportMonth)}
+                style={{ width:"100%", padding:13, borderRadius:8, border:"none",
+                  background:"linear-gradient(90deg,#7c3aed,#6d28d9)",
+                  color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer" }}>
+                ✨ 상담 요약평가_8줄 AI 자동생성
+              </button>
               <button onClick={() => createMonthlyReport(reportModal.code, reportMonth)}
-                style={{ flex:1, padding:11, borderRadius:8, border:"none", background:"#0f766e",
+                style={{ width:"100%", padding:11, borderRadius:8, border:"none", background:"#0f766e",
                   color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
-                작성 시작
+                📝 장문 상담평가서 작성
               </button>
               <button onClick={() => setReportModal(null)}
-                style={{ flex:1, padding:11, borderRadius:8, border:"1px solid #e2e8f0",
+                style={{ width:"100%", padding:11, borderRadius:8, border:"1px solid #e2e8f0",
                   background:"#fff", fontSize:14, cursor:"pointer" }}>
                 취소
               </button>
@@ -1122,6 +1315,9 @@ interface AnalysisProps {
 }
 
 function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: AnalysisProps) {
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
+
   const [detailStudent, setDetailStudent] = useState<string | null>(null);
 
   // 전체 정밀조사 데이터 수집
