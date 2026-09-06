@@ -1,3 +1,4 @@
+// v2 — 상담요약평가_8줄 AI자동생성
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp, BarChart2, Microscope, Mail, Pill, FileText, Calendar, AlertTriangle, Repeat, FileEdit, Bookmark, User, BookOpen, Send, CheckCircle, Pencil, Printer } from "lucide-react";
 import type { ExamResult } from "../../core/types";
