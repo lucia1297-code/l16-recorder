@@ -462,9 +462,25 @@ ${monthLabel} 학습 상담 평가서
       await generateSummary8(s.studentCode, month);
       await new Promise(r => setTimeout(r, 800)); // API rate limit 방지
     }
-    setBulkProgress("✅ 전체 생성 완료!");
+    setBulkProgress("✅ 전체 생성 완료! 관리자에게 SMS 발송 중...");
     setBulkGenerating(false);
-    setTimeout(() => setBulkProgress(""), 3000);
+
+    // 관리자에게 완료 SMS 발송
+    const adminPhone = import.meta.env.VITE_ADMIN_PHONE as string | undefined;
+    if (adminPhone) {
+      const [y, mo] = month.split("-").map(Number);
+      const msg = `[L16] ${y}년 ${mo}월 상담 요약평가_8줄 생성 완료\n대상: ${students.length}명\n발송 준비가 됐습니다.`;
+      try {
+        await sendSMS(adminPhone.replace(/-/g, ""), msg);
+        setBulkProgress("✅ 전체 생성 완료! 관리자 SMS 발송됨");
+      } catch(e) {
+        console.warn("관리자 SMS 실패:", e);
+        setBulkProgress("✅ 전체 생성 완료! (SMS 발송 실패)");
+      }
+    } else {
+      setBulkProgress("✅ 전체 생성 완료!");
+    }
+    setTimeout(() => setBulkProgress(""), 5000);
   }
 
   // ── 상담 요약평가_8줄 AI 자동 생성 ─────────────────────────
