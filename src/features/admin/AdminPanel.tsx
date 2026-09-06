@@ -203,7 +203,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
           🔓 로그아웃
         </button>
 
-      </nav></div>
+      </nav>
       <div className="admin-content" key={tab}>
         {tab === "list" && <ResultList rows={rows} />}
         {tab === "dash" && <DashboardView rows={rows} />}
