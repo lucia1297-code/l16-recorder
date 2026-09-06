@@ -4372,3 +4372,85 @@ function SmsCenterPanel() {
     </div>
   );
 }
+
+function AdminInputPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./AdminInputPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function WWOrderPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./WWOrderPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>WW 의뢰 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function RecordingPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./RecordingPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>녹음분석 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function GrowthPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./GrowthPanel")
+      .then(m => setComp(() => m.default))
+      .catch(e => {
+        console.error("GrowthPanel 로드 실패:", e);
+        setErr(String(e?.message ?? e));
+      });
+  }, []);
+  if (err) return (
+    <div className="card">
+      <p style={{color:"#ef4444", fontWeight:600}}>발전기록 로드 실패</p>
+      <pre style={{fontSize:11, color:"#64748b", whiteSpace:"pre-wrap"}}>{err}</pre>
+      <button onClick={() => { setErr(null); setComp(null);
+        import("./GrowthPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e))); }}
+        style={{marginTop:8, padding:"6px 14px", borderRadius:8, border:"none",
+          background:"#0f766e", color:"#fff", cursor:"pointer", fontWeight:600}}>
+        다시 시도
+      </button>
+    </div>
+  );
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function ExamPlanPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./ExamPlanPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function ExamPrepPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./ExamPrepPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>시험준비 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
