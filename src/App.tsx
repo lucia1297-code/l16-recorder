@@ -1,4 +1,6 @@
 import { useRef, useState, useEffect } from "react";
+import { createSmsProvider } from "./lib/smsFactory";
+import { runScheduledSms } from "./lib/scheduledSms";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import StudentFlow from "./features/student/StudentFlow";
 import ExamPaperUpload from "./features/student/ExamPaperUpload";
@@ -14,6 +16,15 @@ const TAP_WINDOW_MS = 2000;
 
 export default function App() {
   const [role, setRole] = useState<"student" | "admin">("student");
+
+  // ── 예약 문자 자동 발송: 앱 켜지면 즉시 + 1분마다 pending 체크 ──
+  useEffect(() => {
+    const provider = createSmsProvider();
+    const check = () => runScheduledSms(provider).catch(console.warn);
+    check();
+    const timer = setInterval(check, 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // 전역 Promise 오류 캐치 (네트워크 오류 등 미처리 Promise)
   useEffect(() => {
