@@ -1,4 +1,4 @@
-name: Build and Deploy
+name: Build and Deploy to Surge
 
 on:
   push:
@@ -19,12 +19,4 @@ jobs:
           VITE_ADMIN_ACCESS_CODE: ${{ secrets.VITE_ADMIN_ACCESS_CODE }}
           VITE_ADMIN_PASSWORD: ${{ secrets.VITE_ADMIN_PASSWORD }}
           VITE_ADMIN_PHONE: ${{ secrets.VITE_ADMIN_PHONE }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_SOLAPI_API_KEY: ${{ secrets.VITE_SOLAPI_API_KEY }}
-          VITE_SOLAPI_API_SECRET: ${{ secrets.VITE_SOLAPI_API_SECRET }}
-          VITE_SOLAPI_SENDER: ${{ secrets.VITE_SOLAPI_SENDER }}
-          VITE_NEON_DATABASE_URL: ${{ secrets.VITE_NEON_DATABASE_URL }}
-          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
-      - name: Deploy to Cloudflare Pages
-        uses:
+          VITE_SUPABASE_URL:
