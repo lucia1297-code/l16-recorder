@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
+
+// GitHub 버전 assignment.ts에 없는 상수 — 직접 정의
+const MAX_ASSIGNMENT_TYPES = 10;
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
@@ -28,7 +31,6 @@ import {
   type ScheduledSms,
 } from "../../lib/scheduledSms";
 import {
-  MAX_ASSIGNMENT_TYPES,
   computeAssignmentStatus,
   countSubmissionsForType,
   validateAssignmentTypeInput,
