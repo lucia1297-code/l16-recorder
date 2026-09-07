@@ -705,6 +705,9 @@ function StepPhoneVerify({
             </div>
             <span style={{color:"#fde047", fontSize:18}}>›</span>
           </button>
+
+          {/* 질문 보내기 — 연보라 */}
+          <StudentQuestionButton phone={phone} />
         </div>
       </div>
     );
@@ -2116,6 +2119,89 @@ function ExamCompletionCheckScreen({
         </button>
         <button className="btn ghost" onClick={() => answer("na")} disabled={submitting}>
           {EXAM_CHECK_ANSWER_LABELS.na}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── 학생용 질문 보내기 컴포넌트 ──────────────────────────────
+function StudentQuestionButton({ phone }: { phone: string }) {
+  const [open, setOpen] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+
+  const adminPhone = (import.meta.env.VITE_ADMIN_PHONE as string ?? "").replace(/-/g, "");
+
+  async function send() {
+    if (!msg.trim()) { setErr("내용을 입력하세요."); return; }
+    if (!adminPhone) { setErr("관리자 번호가 설정되지 않았습니다."); return; }
+    setSending(true); setErr("");
+    try {
+      const { addScheduledSms } = await import("../../lib/scheduledSms");
+      await addScheduledSms({
+        created_by: phone,
+        target_phone: adminPhone,
+        target_name: "선생님",
+        message: `[L16 학생질문] ${phone}\n${msg}`,
+        scheduled_at: new Date().toISOString(), // 즉시 발송
+      });
+      setDone(true);
+    } catch (e) { setErr((e as Error).message); }
+    setSending(false);
+  }
+
+  if (done) return (
+    <div style={{ padding:"14px 16px", background:"#f3e8ff", border:"1px solid #c4b5fd", borderRadius:13, textAlign:"center" }}>
+      <div style={{ fontSize:22, marginBottom:4 }}>📨</div>
+      <div style={{ fontWeight:700, color:"#6d28d9", fontSize:14 }}>질문이 전송됐습니다!</div>
+      <div style={{ fontSize:11, color:"#8b5cf6", marginTop:4 }}>선생님이 확인 후 답변해 드립니다.</div>
+      <button onClick={() => { setDone(false); setMsg(""); setOpen(false); }}
+        style={{ marginTop:10, padding:"6px 18px", borderRadius:8, border:"none", background:"#7c3aed", color:"#fff", fontSize:13, cursor:"pointer", fontWeight:600 }}>
+        확인
+      </button>
+    </div>
+  );
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{
+      display:"flex", alignItems:"center", gap:13,
+      padding:"14px 16px", borderRadius:13,
+      background:"#f3e8ff", border:"1px solid #c4b5fd",
+      cursor:"pointer", textAlign:"left", width:"100%",
+      boxShadow:"0 2px 10px rgba(124,58,237,.1), inset 0 1px 0 rgba(255,255,255,.6)"
+    }}>
+      <div style={{ width:38, height:38, borderRadius:10, flexShrink:0, background:"#7c3aed",
+        display:"flex", alignItems:"center", justifyContent:"center", fontSize:18,
+        boxShadow:"0 3px 8px rgba(124,58,237,.4)" }}>💬</div>
+      <div style={{ flex:1 }}>
+        <div style={{ fontWeight:700, fontSize:14, color:"#4c1d95" }}>선생님께 질문하기</div>
+        <div style={{ fontSize:11, color:"#7c3aed", marginTop:2 }}>궁금한 점을 문자로 보내세요</div>
+      </div>
+      <span style={{ color:"#c4b5fd", fontSize:18 }}>›</span>
+    </button>
+  );
+
+  return (
+    <div style={{ padding:"16px", background:"#faf5ff", border:"1.5px solid #8b5cf6", borderRadius:13 }}>
+      <div style={{ fontWeight:700, fontSize:14, color:"#6d28d9", marginBottom:12 }}>💬 선생님께 질문하기</div>
+      <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={4}
+        placeholder="궁금한 점, 모르는 문제, 상담 요청 등 자유롭게 적어주세요."
+        style={{ width:"100%", padding:10, borderRadius:8, border:"1.5px solid #8b5cf6",
+          fontSize:13, resize:"none" as const, boxSizing:"border-box" as const, marginBottom:8 }} />
+      {err && <p style={{ color:"#e74c3c", fontSize:12, margin:"0 0 8px" }}>{err}</p>}
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={send} disabled={sending}
+          style={{ flex:1, padding:12, borderRadius:10, fontWeight:700, fontSize:14,
+            border:"none", cursor:"pointer", background:"#7c3aed", color:"#fff" }}>
+          {sending ? "전송 중…" : "📨 질문 전송"}
+        </button>
+        <button onClick={() => setOpen(false)}
+          style={{ flex:1, padding:12, borderRadius:10, fontSize:13,
+            border:"1px solid #ddd", cursor:"pointer", background:"#fff", color:"#555" }}>
+          취소
         </button>
       </div>
     </div>

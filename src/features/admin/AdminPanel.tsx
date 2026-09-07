@@ -1,5 +1,6 @@
 import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic} from "lucide-react";
 import { useEffect, useMemo, useState, Fragment } from "react";
+import { addScheduledSms, listScheduledSms, cancelScheduledSms, deleteScheduledSms, type ScheduledSms } from "../../lib/scheduledSms";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
 import { computeDashboard, toCSV, percentScore } from "../../core/logic";
@@ -116,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -186,6 +187,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")}>
           📱 문자알림
         </button>
+        <button className={tab === "scheduled" ? "on" : ""} onClick={() => setTab("scheduled")}>
+          📅 예약발송
+        </button>
 
         {/* ── 시험 ── */}
         <div className="rail-divider"/>
@@ -215,6 +219,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "submit" && <SubmissionStatus rows={rows} />}
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
+        {tab === "scheduled" && <ScheduledSmsPanel />}
         {tab === "examprep" && <ExamPrepPanelLazy />}
         {tab === "examplan" && <ExamPlanPanelLazy />}
         {tab === "growth" && <GrowthPanelLazy />}
@@ -4176,4 +4181,210 @@ function getWeeksInMonth(year: number, month: number): { start: Date; end: Date;
     weekNum++;
   }
   return weeks;
+}
+
+// ═══════════════════════════════════════════════════════
+// 📅 예약 문자 발송 패널
+// ═══════════════════════════════════════════════════════
+function ScheduledSmsPanel() {
+  const rosterStore = useMemo(() => createRosterStore(), []);
+  const smsFactory = useMemo(() => createSmsProvider(), []);
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [list, setList] = useState<ScheduledSms[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  // 폼 상태
+  const [targetMode, setTargetMode] = useState<"all" | "select" | "self">("select");
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
+  const [includeSelf, setIncludeSelf] = useState(false);
+  const [message, setMessage] = useState("");
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+
+  const adminPhone = (import.meta.env.VITE_ADMIN_PHONE as string ?? "").replace(/-/g, "");
+
+  async function refresh() {
+    const [r, s] = await Promise.all([rosterStore.listRoster(), listScheduledSms()]);
+    setRoster(r); setList(s); setLoading(false);
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function addReservation() {
+    if (!message.trim()) { setNotice("메시지를 입력하세요."); return; }
+    const targets: { phone: string; name: string }[] = [];
+
+    if (targetMode === "self") {
+      if (!adminPhone) { setNotice("관리자 전화번호가 설정되지 않았습니다."); return; }
+      targets.push({ phone: adminPhone, name: "관리자(본인)" });
+    } else {
+      const src = targetMode === "all" ? roster : roster.filter(r => selectedCodes.has(r.studentCode));
+      if (src.length === 0) { setNotice("대상 학생을 선택하세요."); return; }
+      src.forEach(r => targets.push({ phone: r.phone, name: r.name }));
+      if (includeSelf && adminPhone) targets.push({ phone: adminPhone, name: "관리자(본인)" });
+    }
+
+    setSaving(true); setNotice("");
+    try {
+      for (const t of targets) {
+        await addScheduledSms({
+          created_by: "admin",
+          target_phone: t.phone,
+          target_name: t.name,
+          message: message.replace("{이름}", t.name),
+          scheduled_at: new Date(scheduledDate).toISOString(),
+        });
+      }
+      setNotice(`✅ ${targets.length}건 예약 완료`);
+      setMessage(""); setSelectedCodes(new Set());
+      await refresh();
+    } catch (e) { setNotice(`저장 실패: ${(e as Error).message}`); }
+    setSaving(false);
+  }
+
+  const pending = list.filter(s => s.status === "pending");
+  const done    = list.filter(s => s.status !== "pending");
+  const statusColor: Record<string,string> = { pending:"#f39c12", sent:"#27ae60", failed:"#e74c3c", cancelled:"#aaa" };
+  const statusLabel: Record<string,string> = { pending:"대기", sent:"발송완료", failed:"실패", cancelled:"취소됨" };
+
+  return (
+    <div className="card">
+      <h2 style={{ margin:"0 0 4px" }}>📅 예약 문자 발송</h2>
+      <p className="muted" style={{ fontSize:13, marginBottom:20 }}>
+        지정 시각에 자동 발송됩니다. 관리자 본인에게도 보낼 수 있습니다.
+      </p>
+      {notice && <p style={{ fontWeight:600, color: notice.startsWith("✅") ? "#27ae60" : "#e74c3c", marginBottom:12 }}>{notice}</p>}
+
+      {/* ── 새 예약 폼 ── */}
+      <div style={{ border:"2px solid #8e44ad", borderRadius:12, padding:18, marginBottom:24 }}>
+        <h3 style={{ margin:"0 0 14px", color:"#8e44ad" }}>새 예약 작성</h3>
+
+        {/* 대상 선택 */}
+        <label style={{ fontWeight:700, fontSize:13 }}>발송 대상</label>
+        <div style={{ display:"flex", gap:8, margin:"8px 0 14px", flexWrap:"wrap" }}>
+          {([["select","학생 선택"],["all","전체 학생"],["self","본인만"]] as const).map(([m, lbl]) => (
+            <button key={m} onClick={() => setTargetMode(m)}
+              style={{ padding:"7px 16px", borderRadius:8, fontWeight:600, fontSize:13, cursor:"pointer",
+                background: targetMode === m ? "#8e44ad" : "#f5f5f5",
+                color: targetMode === m ? "#fff" : "#555",
+                border: `1.5px solid ${targetMode === m ? "#8e44ad" : "#ddd"}` }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {/* 학생 선택 목록 */}
+        {targetMode === "select" && (
+          <>
+            <div style={{ maxHeight:180, overflowY:"auto", border:"1px solid #eee", borderRadius:8, marginBottom:10 }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                <tbody>
+                  {roster.map(r => (
+                    <tr key={r.studentCode} onClick={() => {
+                      const n = new Set(selectedCodes);
+                      n.has(r.studentCode) ? n.delete(r.studentCode) : n.add(r.studentCode);
+                      setSelectedCodes(n);
+                    }} style={{ cursor:"pointer", background: selectedCodes.has(r.studentCode) ? "#f5f0ff" : "#fff", borderBottom:"1px solid #f5f5f5" }}>
+                      <td style={{ padding:"6px 10px", width:32 }}>
+                        <input type="checkbox" readOnly checked={selectedCodes.has(r.studentCode)} style={{ width:16, height:16 }} />
+                      </td>
+                      <td style={{ padding:"6px 10px", fontWeight:600 }}>{r.name}</td>
+                      <td style={{ padding:"6px 10px", color:"#888" }}>{r.school}</td>
+                      <td style={{ padding:"6px 10px", color:"#aaa", fontSize:12 }}>{r.phone}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, marginBottom:12, cursor:"pointer" }}>
+              <input type="checkbox" checked={includeSelf} onChange={e => setIncludeSelf(e.target.checked)} style={{ width:16, height:16 }} />
+              <span>관리자 본인에게도 함께 발송</span>
+              <span style={{ fontSize:11, color:"#888" }}>({adminPhone || "번호 미설정"})</span>
+            </label>
+          </>
+        )}
+
+        {targetMode === "all" && (
+          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, marginBottom:12, cursor:"pointer" }}>
+            <input type="checkbox" checked={includeSelf} onChange={e => setIncludeSelf(e.target.checked)} style={{ width:16, height:16 }} />
+            <span>관리자 본인에게도 함께 발송</span>
+          </label>
+        )}
+
+        {/* 발송 시각 */}
+        <label style={{ fontWeight:700, fontSize:13 }}>발송 예정 시각</label>
+        <input type="datetime-local" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}
+          style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1.5px solid #8e44ad", fontSize:14, marginTop:6, marginBottom:14, boxSizing:"border-box" as const }} />
+
+        {/* 메시지 */}
+        <label style={{ fontWeight:700, fontSize:13 }}>메시지</label>
+        <p className="muted" style={{ fontSize:12, marginTop:2, marginBottom:6 }}>
+          <code>{"{이름}"}</code> 입력 시 학생 이름으로 자동 치환됩니다.
+        </p>
+        <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4}
+          placeholder="예) [L16] {이름} 학생, 내신 대비 특강 안내드립니다."
+          style={{ width:"100%", padding:10, borderRadius:8, border:"1.5px solid #8e44ad", fontSize:14, resize:"vertical" as const, boxSizing:"border-box" as const }} />
+        <div style={{ fontSize:12, color:"#aaa", textAlign:"right" as const, marginBottom:12 }}>{message.length}자</div>
+        <button onClick={addReservation} disabled={saving}
+          style={{ width:"100%", padding:14, borderRadius:10, fontWeight:700, fontSize:15, border:"none", cursor:"pointer", background:"#8e44ad", color:"#fff" }}>
+          {saving ? "예약 중…" : "📅 예약 등록"}
+        </button>
+      </div>
+
+      {/* ── 대기 중 ── */}
+      <h3 style={{ color:"#8e44ad" }}>⏳ 대기 중 ({pending.length}건)</h3>
+      {pending.length === 0 ? <p className="muted">예약된 문자가 없습니다.</p> : (
+        <div className="table-wrap" style={{ marginBottom:24 }}>
+          <table>
+            <thead><tr><th>발송 예정</th><th>수신자</th><th>전화번호</th><th>메시지</th><th>관리</th></tr></thead>
+            <tbody>
+              {pending.map(s => (
+                <tr key={s.id}>
+                  <td style={{ fontSize:13 }}>{new Date(s.scheduled_at).toLocaleString("ko-KR")}</td>
+                  <td style={{ fontWeight:600 }}>{s.target_name}</td>
+                  <td style={{ fontSize:12, color:"#888" }}>{s.target_phone}</td>
+                  <td style={{ fontSize:12, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }} title={s.message}>{s.message}</td>
+                  <td>
+                    <div style={{ display:"flex", gap:4 }}>
+                      <button onClick={() => cancelScheduledSms(s.id).then(refresh)}
+                        style={{ padding:"3px 8px", fontSize:11, borderRadius:5, border:"1px solid #f39c12", color:"#f39c12", cursor:"pointer", background:"#fff" }}>취소</button>
+                      <button onClick={() => deleteScheduledSms(s.id).then(refresh)}
+                        style={{ padding:"3px 8px", fontSize:11, borderRadius:5, border:"1px solid #e74c3c", color:"#e74c3c", cursor:"pointer", background:"#fff" }}>삭제</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── 이력 ── */}
+      {done.length > 0 && (
+        <>
+          <h3>📋 발송 이력 ({done.length}건)</h3>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>상태</th><th>예정</th><th>발송</th><th>수신자</th><th>메시지</th></tr></thead>
+              <tbody>
+                {done.slice(0,30).map(s => (
+                  <tr key={s.id}>
+                    <td><span style={{ padding:"2px 8px", borderRadius:6, fontSize:12, fontWeight:700, background: statusColor[s.status]+"22", color: statusColor[s.status] }}>{statusLabel[s.status]}</span></td>
+                    <td style={{ fontSize:12, color:"#888" }}>{new Date(s.scheduled_at).toLocaleString("ko-KR")}</td>
+                    <td style={{ fontSize:12, color:"#888" }}>{s.sent_at ? new Date(s.sent_at).toLocaleString("ko-KR") : "-"}</td>
+                    <td style={{ fontWeight:600 }}>{s.target_name}</td>
+                    <td style={{ fontSize:12, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }} title={s.message}>{s.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
