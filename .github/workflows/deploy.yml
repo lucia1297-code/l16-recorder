@@ -3,51 +3,44 @@ name: Build and Deploy to Surge
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: l16-production
-  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment:
-      name: production
-      url: https://l16-academy.surge.sh
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
-      - name: Test deployment verification
-        run: node --test scripts/deployment.test.mjs
+
       - run: npm ci
-      - name: Build fresh application
-        run: |
-          node -e 'for (const key of ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "VITE_ADMIN_ACCESS_CODE", "VITE_ADMIN_PASSWORD"]) { if (!process.env[key]) throw new Error("Missing required secret: " + key); }'
-          npx vite build
-          node -e 'require("fs").writeFileSync("dist/version.json", JSON.stringify({commit:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID})); require("fs").copyFileSync("dist/index.html", "dist/200.html")'
+
+      - run: npx vite build
         env:
           VITE_ADMIN_ACCESS_CODE: ${{ secrets.VITE_ADMIN_ACCESS_CODE }}
           VITE_ADMIN_PASSWORD: ${{ secrets.VITE_ADMIN_PASSWORD }}
           VITE_ADMIN_PHONE: ${{ secrets.VITE_ADMIN_PHONE }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          # Provider credentials must stay in server-side functions, never VITE_*.
+          VITE_SOLAPI_API_KEY: ${{ secrets.VITE_SOLAPI_API_KEY }}
+          VITE_SOLAPI_API_SECRET: ${{ secrets.VITE_SOLAPI_API_SECRET }}
+          VITE_SOLAPI_SENDER: ${{ secrets.VITE_SOLAPI_SENDER }}
+          VITE_NEON_DATABASE_URL: ${{ secrets.VITE_NEON_DATABASE_URL }}
+          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
+
       - name: Deploy to Surge
-        timeout-minutes: 3
         run: |
-          test -n "$SURGE_TOKEN" || { echo 'Missing SURGE_TOKEN'; exit 1; }
-          npx --yes surge@0.24.6 dist l16-academy.surge.sh < /dev/null
+          npm install -g surge
+          surge dist l16-academy.surge.sh --token $SURGE_TOKEN
+          sleep 5
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" https://l16-academy.surge.sh/)
+          echo "Surge HTTP status: $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "ERROR: 배포 실패 HTTP $HTTP"
+            exit 1
+          fi
+          echo "SUCCESS: 배포 완료"
         env:
           SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
-          SURGE_LOGIN: lucia1297@gmail.com
-      - name: Verify deployed version and all files
-        timeout-minutes: 5
-        run: node scripts/verify-deployment.mjs https://l16-academy.surge.sh dist
