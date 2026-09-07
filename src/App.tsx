@@ -120,7 +120,7 @@ export default function App() {
   return (
     <div className="app">
       {/* PWA 업데이트 알림 배너 */}
-      {(showUpdate || needRefresh[0]) && (
+      {(showUpdate || (needRefresh[0] && !window.__updateDismissed)) && (
         <div style={{
           position:"fixed", top:0, left:0, right:0, zIndex:9999,
           background:"linear-gradient(135deg,#d1fae5,#fef9c3)",
@@ -145,7 +145,7 @@ export default function App() {
             </div>
           </div>
           <button
-            onClick={() => { updateServiceWorker(true); setShowUpdate(false); setTimeout(() => window.location.reload(), 500); }}
+            onClick={() => { updateServiceWorker(true); setShowUpdate(false); (window as any).__updateDismissed = true; setTimeout(() => window.location.reload(), 600); }}
             style={{
               padding:"9px 20px", borderRadius:10,
               border:"2px solid #065f46",

@@ -116,6 +116,7 @@ export default function GrowthPanel() {
   const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
   const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message" | "summary8">("compare");
+  const [summary8Map, setSummary8Map] = useState<Map<string,string>>(new Map());
   const mountedRef = useRef(true);
   const [messages, setMessages] = useState<GrowthMessage[]>([]);
   useEffect(() => {
@@ -865,6 +866,8 @@ ${monthLabel} 학습 상담 평가서
           roster={active.filter(r => (r.studentStatus ?? "active") !== "withdrawn")}
           results={results}
           assignmentSubs={assignmentSubs}
+          summary8Map={summary8Map}
+          setSummary8Map={setSummary8Map}
         />
       )}
       {viewTab === "message" && (
@@ -1586,10 +1589,12 @@ function makeSummary8(student: RosterEntry, rows: ExamResult[]): string {
   ].join("\n");
 }
 
-function Summary8Panel({ roster, results, assignmentSubs }: {
+function Summary8Panel({ roster, results, assignmentSubs, summary8Map, setSummary8Map }: {
   roster: RosterEntry[];
   results: ExamResult[];
   assignmentSubs: AssignmentSubmission[];
+  summary8Map: Map<string,string>;
+  setSummary8Map: React.Dispatch<React.SetStateAction<Map<string,string>>>;
 }) {
   const byStudent = useMemo(() => {
     const m = new Map<string,ExamResult[]>();
@@ -1601,9 +1606,10 @@ function Summary8Panel({ roster, results, assignmentSubs }: {
     return m;
   }, [results]);
 
-  const [period, setPeriod] = useState("3"); // 최근 N개월
+  const [period, setPeriod] = useState("3");
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
-  const [summaries, setSummaries] = useState<Map<string,string>>(new Map());
+  const summaries = summary8Map;
+  const setSummaries = setSummary8Map;
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState("");
 
