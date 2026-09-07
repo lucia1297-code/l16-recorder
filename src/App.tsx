@@ -1,6 +1,4 @@
 import { useRef, useState, useEffect } from "react";
-import { createSmsProvider } from "./lib/smsFactory";
-import { runScheduledSms } from "./lib/scheduledSms";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import StudentFlow from "./features/student/StudentFlow";
 import ExamPaperUpload from "./features/student/ExamPaperUpload";
@@ -16,15 +14,6 @@ const TAP_WINDOW_MS = 2000;
 
 export default function App() {
   const [role, setRole] = useState<"student" | "admin">("student");
-
-  // ── 예약 문자 자동 발송: 앱 켜지면 즉시 + 1분마다 pending 체크 ──
-  useEffect(() => {
-    const provider = createSmsProvider();
-    const check = () => runScheduledSms(provider).catch(console.warn);
-    check();
-    const timer = setInterval(check, 60 * 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // 전역 Promise 오류 캐치 (네트워크 오류 등 미처리 Promise)
   useEffect(() => {
@@ -47,15 +36,9 @@ export default function App() {
   }, []);
 
   // PWA 업데이트 감지
-  const [showUpdate, setShowUpdate] = useState(false);
   const { needRefresh, updateServiceWorker } = useRegisterSW({
-    onRegistered(r) {
-      console.log("[PWA] 등록:", r?.scope);
-      // 1분마다 새 버전 체크
-      if (r) setInterval(() => r.update(), 60 * 1000);
-    },
+    onRegistered(r) { console.log("[PWA] 등록:", r?.scope); },
     onRegisterError(e) { console.warn("[PWA] 오류:", e); },
-    onNeedRefresh() { setShowUpdate(true); },
   });
   const [previewMode, setPreviewMode] = useState(false); // 관리자가 학생 화면 미리보기
   const [showGatePrompt, setShowGatePrompt] = useState(false);
@@ -132,31 +115,23 @@ export default function App() {
   return (
     <div className="app">
       {/* PWA 업데이트 알림 배너 */}
-      {(showUpdate || needRefresh[0]) && (
+      {needRefresh[0] && (
         <div style={{
           position:"fixed", top:0, left:0, right:0, zIndex:9999,
-          background:"linear-gradient(90deg,#1a56db,#1e40af)",
-          color:"#fff",
-          padding:"12px 20px",
+          background:"#0f766e", color:"#fff",
+          padding:"10px 16px",
           display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, fontSize:14, fontWeight:600,
-          boxShadow:"0 2px 16px rgba(0,0,0,0.35)",
-          animation:"slideDown 0.3s ease"
+          gap:10, fontSize:14, fontWeight:600,
+          boxShadow:"0 2px 12px rgba(0,0,0,0.3)"
         }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ fontSize:20 }}>🆕</span>
-            <div>
-              <div style={{ fontWeight:700, fontSize:15 }}>새 버전이 업데이트됐습니다</div>
-              <div style={{ fontSize:12, opacity:0.85, marginTop:1 }}>버튼을 눌러 최신 버전으로 전환하세요.</div>
-            </div>
-          </div>
+          <span>새 버전이 있습니다. 업데이트해주세요.</span>
           <button
-            onClick={() => { updateServiceWorker(true); setTimeout(() => window.location.reload(), 500); }}
+            onClick={() => updateServiceWorker(true)}
             style={{
-              padding:"8px 22px", borderRadius:10,
-              border:"2px solid #fff", background:"#fff", color:"#1a56db",
-              fontWeight:800, fontSize:14, cursor:"pointer",
-              flexShrink:0, letterSpacing:"0.02em"
+              padding:"6px 18px", borderRadius:8,
+              border:"none", background:"#fff", color:"#0f766e",
+              fontWeight:700, fontSize:13, cursor:"pointer",
+              flexShrink:0
             }}>
             지금 업데이트
           </button>

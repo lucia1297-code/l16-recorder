@@ -349,8 +349,3 @@ tbody tr:nth-child(even):hover { background: var(--mark-tint); }
 .center { text-align: center; }
 
 h3 { font-family: var(--font-display); font-weight: 600; font-size: 16px; color: var(--ink); margin: 22px 0 10px; }
-
-@keyframes slideDown {
-  from { transform: translateY(-100%); opacity: 0; }
-  to   { transform: translateY(0);     opacity: 1; }
-}
