@@ -618,22 +618,94 @@ function StepPhoneVerify({
   if (verified && matched) {
     return (
       <div>
-        <p className="muted">
-          <b>{phone}</b> 인증 완료
-        </p>
-        <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+        {/* 인증 완료 배지 */}
+        <div style={{
+          display:"flex", alignItems:"center", gap:10,
+          background:"#d1fae5", border:"1px solid #6ee7b7",
+          borderRadius:12, padding:"11px 14px", marginBottom:20,
+        }}>
+          <div style={{
+            width:28, height:28, borderRadius:"50%",
+            background:"#10b981", display:"flex",
+            alignItems:"center", justifyContent:"center", flexShrink:0,
+            boxShadow:"0 2px 8px rgba(16,185,129,.35)"
+          }}>
+            <span style={{color:"#fff", fontSize:14, fontWeight:700}}>✓</span>
+          </div>
+          <div>
+            <div style={{fontWeight:700, fontSize:14, color:"#065f46"}}>{phone}</div>
+            <div style={{fontSize:11, color:"#059669", marginTop:1}}>인증 완료</div>
+          </div>
+        </div>
+
+        <p style={{fontSize:12, color:"#6b7280", marginBottom:12, letterSpacing:".04em"}}>
           무엇을 하시겠어요?
         </p>
-        <button className="btn" onClick={onChooseExam} style={{ marginBottom: 10 }}>
-          시험 결과 제출하기
-        </button>
-        <button className="btn secondary" onClick={onChooseAssignment}>
-          과제 제출하기
-        </button>
-        <button className="btn secondary" onClick={onExamRegister}>
-          <Calendar size={13} style={{verticalAlign:"middle",marginRight:4}}/> 시험 등록 / 상담
-        </button>
 
+        <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          {/* 시험 결과 — 민트 */}
+          <button onClick={onChooseExam} style={{
+            display:"flex", alignItems:"center", gap:13,
+            padding:"14px 16px", borderRadius:13,
+            background:"#d1fae5", border:"1px solid #6ee7b7",
+            cursor:"pointer", textAlign:"left", width:"100%",
+            boxShadow:"0 2px 10px rgba(16,185,129,.15), inset 0 1px 0 rgba(255,255,255,.6)"
+          }}>
+            <div style={{
+              width:38, height:38, borderRadius:10, flexShrink:0,
+              background:"#10b981", display:"flex", alignItems:"center",
+              justifyContent:"center", fontSize:18,
+              boxShadow:"0 3px 8px rgba(16,185,129,.4)"
+            }}>📋</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700, fontSize:14, color:"#065f46"}}>시험 결과 제출하기</div>
+              <div style={{fontSize:11, color:"#059669", marginTop:2}}>모의고사 점수 및 오답 입력</div>
+            </div>
+            <span style={{color:"#6ee7b7", fontSize:18}}>›</span>
+          </button>
+
+          {/* 과제 제출 — 코랄 */}
+          <button onClick={onChooseAssignment} style={{
+            display:"flex", alignItems:"center", gap:13,
+            padding:"14px 16px", borderRadius:13,
+            background:"#ffe4e6", border:"1px solid #fda4af",
+            cursor:"pointer", textAlign:"left", width:"100%",
+            boxShadow:"0 2px 10px rgba(244,63,94,.12), inset 0 1px 0 rgba(255,255,255,.6)"
+          }}>
+            <div style={{
+              width:38, height:38, borderRadius:10, flexShrink:0,
+              background:"#f43f5e", display:"flex", alignItems:"center",
+              justifyContent:"center", fontSize:18,
+              boxShadow:"0 3px 8px rgba(244,63,94,.4)"
+            }}>✅</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700, fontSize:14, color:"#881337"}}>과제 제출하기</div>
+              <div style={{fontSize:11, color:"#e11d48", marginTop:2}}>완료한 과제 제출</div>
+            </div>
+            <span style={{color:"#fda4af", fontSize:18}}>›</span>
+          </button>
+
+          {/* 시험 등록 — 레몬 */}
+          <button onClick={onExamRegister} style={{
+            display:"flex", alignItems:"center", gap:13,
+            padding:"14px 16px", borderRadius:13,
+            background:"#fef9c3", border:"1px solid #fde047",
+            cursor:"pointer", textAlign:"left", width:"100%",
+            boxShadow:"0 2px 10px rgba(234,179,8,.12), inset 0 1px 0 rgba(255,255,255,.6)"
+          }}>
+            <div style={{
+              width:38, height:38, borderRadius:10, flexShrink:0,
+              background:"#eab308", display:"flex", alignItems:"center",
+              justifyContent:"center", fontSize:18,
+              boxShadow:"0 3px 8px rgba(234,179,8,.4)"
+            }}>📅</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700, fontSize:14, color:"#713f12"}}>시험 등록 / 상담</div>
+              <div style={{fontSize:11, color:"#ca8a04", marginTop:2}}>내신 일정 등록 및 상담 신청</div>
+            </div>
+            <span style={{color:"#fde047", fontSize:18}}>›</span>
+          </button>
+        </div>
       </div>
     );
   }

@@ -36,9 +36,14 @@ export default function App() {
   }, []);
 
   // PWA 업데이트 감지
+  const [showUpdate, setShowUpdate] = useState(false);
   const { needRefresh, updateServiceWorker } = useRegisterSW({
-    onRegistered(r) { console.log("[PWA] 등록:", r?.scope); },
+    onRegistered(r) {
+      console.log("[PWA] 등록:", r?.scope);
+      if (r) setInterval(() => r.update(), 60 * 1000);
+    },
     onRegisterError(e) { console.warn("[PWA] 오류:", e); },
+    onNeedRefresh() { setShowUpdate(true); },
   });
   const [previewMode, setPreviewMode] = useState(false); // 관리자가 학생 화면 미리보기
   const [showGatePrompt, setShowGatePrompt] = useState(false);
@@ -115,23 +120,38 @@ export default function App() {
   return (
     <div className="app">
       {/* PWA 업데이트 알림 배너 */}
-      {needRefresh[0] && (
+      {(showUpdate || needRefresh[0]) && (
         <div style={{
           position:"fixed", top:0, left:0, right:0, zIndex:9999,
-          background:"#0f766e", color:"#fff",
-          padding:"10px 16px",
+          background:"linear-gradient(135deg,#d1fae5,#fef9c3)",
+          borderBottom:"2px solid #10b981",
+          padding:"12px 20px",
           display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:10, fontSize:14, fontWeight:600,
-          boxShadow:"0 2px 12px rgba(0,0,0,0.3)"
+          gap:12, boxShadow:"0 4px 20px rgba(16,185,129,.25)",
+          animation:"slideDown 0.3s ease"
         }}>
-          <span>새 버전이 있습니다. 업데이트해주세요.</span>
+          <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <div style={{
+              width:32, height:32, borderRadius:"50%",
+              background:"#10b981", display:"flex",
+              alignItems:"center", justifyContent:"center",
+              boxShadow:"0 2px 8px rgba(16,185,129,.4)"
+            }}>
+              <span style={{color:"#fff", fontSize:16}}>↑</span>
+            </div>
+            <div>
+              <div style={{fontWeight:700, fontSize:14, color:"#065f46"}}>새 버전이 업데이트됐습니다</div>
+              <div style={{fontSize:11, color:"#059669"}}>버튼을 눌러 최신 버전으로 전환하세요</div>
+            </div>
+          </div>
           <button
-            onClick={() => updateServiceWorker(true)}
+            onClick={() => { updateServiceWorker(true); setShowUpdate(false); setTimeout(() => window.location.reload(), 500); }}
             style={{
-              padding:"6px 18px", borderRadius:8,
-              border:"none", background:"#fff", color:"#0f766e",
+              padding:"9px 20px", borderRadius:10,
+              border:"2px solid #065f46",
+              background:"#10b981", color:"#fff",
               fontWeight:700, fontSize:13, cursor:"pointer",
-              flexShrink:0
+              flexShrink:0, boxShadow:"0 3px 8px rgba(16,185,129,.4)"
             }}>
             지금 업데이트
           </button>
