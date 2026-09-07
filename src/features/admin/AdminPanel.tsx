@@ -294,7 +294,7 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
             <thead>
               <tr>
                 <th>코드</th>
-                <th>이름</th>
+                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
                 <th>학교</th>
                 <th>학년</th>
                 <th>시험</th>
@@ -308,7 +308,7 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
               {filtered.map((r) => (
                 <tr key={r.id}>
                   <td>{r.student.studentCode}</td>
-                  <td>{r.student.name}</td>
+                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{r.student.name}</td>
                   <td>{r.student.school}</td>
                   <td>{r.student.grade}</td>
                   <td>{r.exam.examName} ({r.exam.month}월)</td>
@@ -763,7 +763,7 @@ function RosterManager() {
               <thead>
                 <tr>
                   <th>코드</th>
-                  <th>이름</th>
+                  <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
                   <th>학교</th>
                   <th>학년</th>
                   <th>전화번호</th>
@@ -773,7 +773,7 @@ function RosterManager() {
                 {preview.slice(0, 10).map((e) => (
                   <tr key={e.studentCode}>
                     <td>{e.studentCode}</td>
-                    <td>{e.name}</td>
+                    <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{e.name}</td>
                     <td>{e.school}</td>
                     <td>{e.grade}</td>
                     <td>{e.phone}</td>
@@ -1729,7 +1729,7 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
             <table>
               <thead>
                 <tr>
-                  <th>이름</th>
+                  <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
                   <th>등급</th>
                   <th>시수</th>
                   <th>학교</th>
@@ -1742,7 +1742,7 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
               <tbody>
                 {[...autoTargets, ...otherTargets].map((s) => (
                   <tr key={s.studentCode}>
-                    <td style={{ fontWeight: 700 }}>{s.name}</td>
+                    <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{s.name}</td>
                     <td>
                       {s.studentType && (
                         <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700,
@@ -1992,7 +1992,7 @@ function PendingManager() {
           <table>
             <thead>
               <tr>
-                <th>이름</th>
+                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
                 <th>학교</th>
                 <th>학년</th>
                 <th>전화번호</th>
@@ -2003,7 +2003,7 @@ function PendingManager() {
             <tbody>
               {pending.map((p) => (
                 <tr key={p.phone}>
-                  <td>{p.name}</td>
+                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{p.name}</td>
                   <td>{p.school}</td>
                   <td>{p.grade}</td>
                   <td>{p.phone}</td>
@@ -2418,7 +2418,7 @@ function AssignmentManager() {
             <tbody>
               {roster.map((student) => (
                 <tr key={student.studentCode}>
-                  <td>{student.name}</td>
+                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{student.name}</td>
                   {types.map((t) => {
                     const count = countSubmissionsForType(submissions, student.studentCode, t.id);
                     const status = computeAssignmentStatus(count, t.targetCount);
@@ -2715,7 +2715,7 @@ function AssignmentReviewManager() {
                 const status = sub.reviewStatus ?? "pending";
                 return (
                   <tr key={sub.id}>
-                    <td>{student?.name ?? sub.studentCode}</td>
+                    <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{student?.name ?? sub.studentCode}</td>
                     <td>{type?.name ?? "-"}</td>
                     <td>{sub.round}</td>
                     <td style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>
@@ -2873,7 +2873,7 @@ function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
           <thead>
             <tr>
               <th></th>
-              <th>이름</th>
+              <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
               <th>학교</th>
               <th>남은 계도기간</th>
             </tr>
@@ -2888,7 +2888,7 @@ function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
                     onChange={() => toggle(s.studentCode)}
                   />
                 </td>
-                <td>{s.name}</td>
+                <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{s.name}</td>
                 <td>{s.school}</td>
                 <td>D-{gracePeriodDaysRemaining(s.registeredAt, now)}</td>
               </tr>
@@ -3420,7 +3420,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
             <thead>
               <tr>
                 <th>경과일</th>
-                <th>이름</th>
+                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
                 <th>학교</th>
                 <th>학년</th>
                 <th>총제출</th>
@@ -3432,7 +3432,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
               {submitted.map((s) => (
                 <tr key={s.code}>
                   <td>{dayBadge(s.days)}</td>
-                  <td style={{ fontWeight: 600 }}>{s.name}</td>
+                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{s.name}</td>
                   <td>{s.school}</td>
                   <td>{s.grade}</td>
                   <td style={{ textAlign: "center" }}>{s.count}회</td>
@@ -3473,7 +3473,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
             <thead>
               <tr>
                 <th>#</th>
-                <th>이름</th>
+                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
                 <th>학생코드</th>
                 <th>학교</th>
                 <th>학년</th>
@@ -3484,7 +3484,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
               {notSubmitted.map((s, i) => (
                 <tr key={s.studentCode}>
                   <td style={{ color: "#aaa" }}>{i + 1}</td>
-                  <td style={{ fontWeight: 700, color: "#e74c3c" }}>{s.name}</td>
+                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, color:"#e74c3c", whiteSpace:"nowrap" as const }}>{s.name}</td>
                   <td style={{ fontSize: 12, color: "#888" }}>{s.studentCode}</td>
                   <td>{s.school}</td>
                   <td>{s.grade}</td>
