@@ -487,6 +487,47 @@ function RosterManager() {
     }
   }
 
+  async function deleteStudent(entry: RosterEntry) {
+    const msg = `【${entry.name}】 학생과 관련된 모든 데이터를 삭제합니다.
+
+` +
+      `· 시험 제출 기록
+· 과제 제출 기록
+· 상담 메시지
+· 수업 기록
+
+` +
+      `이 작업은 되돌릴 수 없습니다. 정말 삭제하시겠습니까?`;
+    if (!confirm(msg)) return;
+
+    // 한 번 더 확인
+    const confirm2 = prompt(`삭제를 확인하려면 학생 이름 "${entry.name}"을 입력하세요:`);
+    if (confirm2?.trim() !== entry.name) {
+      setNotice("이름이 일치하지 않아 삭제가 취소됐습니다.");
+      return;
+    }
+
+    setNotice("");
+    try {
+      // students 삭제 → CASCADE로 모든 관련 데이터 자동 삭제
+      const { createClient } = await import("@supabase/supabase-js");
+      const sb = createClient(
+        import.meta.env.VITE_SUPABASE_URL as string,
+        import.meta.env.VITE_SUPABASE_ANON_KEY as string
+      );
+      const { error } = await sb
+        .from("students")
+        .delete()
+        .eq("student_code", entry.studentCode);
+      if (error) throw error;
+
+      setRoster(prev => prev.filter(r => r.studentCode !== entry.studentCode));
+      setNotice(`✅ ${entry.name} 학생 및 관련 데이터 삭제 완료`);
+    } catch (e) {
+      setNotice(`삭제 실패: ${(e as Error).message}`);
+    }
+  }
+
   async function clearAll() {
     if (!confirm("전체 명부를 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
     await rosterStore.clearRoster();
@@ -928,6 +969,13 @@ function RosterManager() {
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(e)}>번호수정</button>
                           <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => sendCode(e)}>코드전송</button>
+                          <button
+                            onClick={() => deleteStudent(e)}
+                            style={{ padding: "4px 10px", fontSize: 12, borderRadius: 6,
+                              border: "1px solid #ef4444", color: "#ef4444",
+                              background: "#fff", cursor: "pointer", fontWeight: 600 }}>
+                            🗑 삭제
+                          </button>
                         </div>
                       )}
                     </td>
