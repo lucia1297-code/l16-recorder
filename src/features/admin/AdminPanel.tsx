@@ -117,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -203,6 +203,10 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
 
         {/* ── 기타 ── */}
         <div className="rail-divider"/>
+        <button className={tab === "memo" ? "on" : ""} onClick={() => setTab("memo")}>
+          📝 메모장
+        </button>
+        <div className="rail-divider"/>
         <button className="btn ghost" onClick={onLogout} style={{ marginTop:4 }}>
           🔓 로그아웃
         </button>
@@ -226,6 +230,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "recording" && <RecordingPanelLazy />}
         {tab === "wworder" && <WWOrderPanelLazy />}
         {tab === "admininput" && <AdminInputPanelLazy />}
+        {tab === "memo" && <MemoPanelLazy />}
       </div>
     </div>
   );
@@ -4437,4 +4442,15 @@ function ScheduledSmsPanel() {
       )}
     </div>
   );
+}
+
+function MemoPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./MemoPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>메모장 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
 }
