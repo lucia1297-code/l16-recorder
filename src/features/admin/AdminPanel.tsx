@@ -807,7 +807,7 @@ function RosterManager() {
             <thead>
               <tr>
                 <th>코드</th>
-                <th>이름</th>
+                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg, #f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)" }}>이름</th>
                 <th>학교</th>
                 <th>전화번호</th>
                 <th>등급</th>
@@ -826,7 +826,9 @@ function RosterManager() {
                 return (
                   <tr key={e.studentCode} style={{ background: isEditing ? "#f8f9ff" : "transparent" }}>
                     <td style={{ fontSize: 12, color: "#666" }}>{e.studentCode}</td>
-                    <td style={{ fontWeight: 600 }}>
+                    <td style={{ fontWeight: 600, position:"sticky", left:0, zIndex:1,
+                      background: isEditing ? "#f8f9ff" : "#fff",
+                      boxShadow:"2px 0 4px rgba(0,0,0,0.06)", minWidth:80 }}>
                       {e.name}
                       {e.registeredAt && (Date.now()-new Date(e.registeredAt).getTime())/86400000 <= 30 && (
                         <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
