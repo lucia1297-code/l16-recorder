@@ -310,7 +310,7 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
     const latest = sorted[sorted.length-1];
     const ref = (latest?.reflection as any) || {};
     const cnt: Record<string,number> = {};
-    sorted.forEach(r => (r.wrongAnswers??[]).forEach((w:any) =>
+    sorted.forEach(r => ((r.wrongAnswers??(r as any).wrong_answers)??[]).forEach((w:any) =>
       (w.reasons||[]).forEach((rs:string) => { cnt[rs]=(cnt[rs]||0)+1; })));
     const top3 = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([r])=>REASON_KO[r]??r);
     const avg = sorted.length ? Math.round(sorted.reduce((s,r)=>s+r.score,0)/sorted.length) : 0;
@@ -862,7 +862,7 @@ ${monthLabel} 학습 상담 평가서
       {/* ══ 처방 메시지 ══ */}
       {viewTab === "summary8" && (
         <Summary8Panel
-          roster={active}
+          roster={active.filter(r => (r.studentStatus ?? "active") !== "withdrawn")}
           results={results}
           assignmentSubs={assignmentSubs}
         />
@@ -1593,7 +1593,11 @@ function Summary8Panel({ roster, results, assignmentSubs }: {
 }) {
   const byStudent = useMemo(() => {
     const m = new Map<string,ExamResult[]>();
-    results.forEach(r => { const a = m.get(r.studentCode)??[]; a.push(r); m.set(r.studentCode,a); });
+    results.forEach(r => {
+      const code = r.student?.studentCode ?? (r as any).studentCode ?? "";
+      if (!code) return;
+      const a = m.get(code)??[]; a.push(r); m.set(code,a);
+    });
     return m;
   }, [results]);
 
