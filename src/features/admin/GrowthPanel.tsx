@@ -115,7 +115,7 @@ export default function GrowthPanel() {
   const [loading, setLoading] = useState(true);
   const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
-  const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message">("compare");
+  const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message" | "summary8">("compare");
   const mountedRef = useRef(true);
   const [messages, setMessages] = useState<GrowthMessage[]>([]);
   useEffect(() => {
@@ -511,6 +511,7 @@ ${monthLabel} 학습 상담 평가서
               { key:"compare",  label:"비교 분석" },
               { key:"analysis", label:"정밀 분석" },
               { key:"message",  label:"처방 메시지" },
+              { key:"summary8", label:"📋 상담요약 8줄" },
             ] as const).map(t => (
               <button key={t.key} onClick={() => setViewTab(t.key)}
                 style={{ padding:"5px 14px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
@@ -859,6 +860,13 @@ ${monthLabel} 학습 상담 평가서
       )}
 
       {/* ══ 처방 메시지 ══ */}
+      {viewTab === "summary8" && (
+        <Summary8Panel
+          roster={active}
+          results={results}
+          assignmentSubs={assignmentSubs}
+        />
+      )}
       {viewTab === "message" && (
         <div>
           {messages.filter(m => !selected || m.studentCode === selected).length === 0 ? (
@@ -1511,6 +1519,332 @@ function AnalysisView({ results, roster, byStudent, selected, assignmentSubs }: 
                 );
               });
             })()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 📋 상담요약 8줄 패널
+// ═══════════════════════════════════════════════════════════════
+const REASON_KO_S8: Record<string,string> = {
+  Vocabulary:"어휘력", Reading:"독해력", Inference:"추론력", Logic:"논리력",
+  Grammar:"어법", Time:"시간관리", Careless:"부주의", Guess:"찍기습관", DidntKnow:"개념부족"
+};
+const REASON_FIX_S8: Record<string,string> = {
+  Vocabulary:"수능 빈출 어휘 주제별 암기 강화",
+  Reading:"단락 핵심어 파악 및 전후 문맥 훈련",
+  Inference:"근거 문장 확정 후 선지 소거 훈련",
+  Logic:"접속어·지시어 중심 논리 추적 훈련",
+  Grammar:"핵심 어법 5유형 반복 정리",
+  Time:"구간별 목표 시간 설정 실전 훈련",
+  Careless:"30초 검토 습관 형성",
+  Guess:"어휘·독해 기반 강화로 확신도 향상",
+  DidntKnow:"기초 개념 단계별 보완"
+};
+
+interface S8Student {
+  student: RosterEntry;
+  canGenerate: boolean;
+  reason?: string;
+  examCount: number;
+  avgScore: number;
+  summary?: string;
+}
+
+function makeSummary8(student: RosterEntry, rows: ExamResult[]): string {
+  const sorted = [...rows].sort((a,b) => a.date.localeCompare(b.date));
+  const scores = sorted.map(r => r.score);
+  const avg = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+  const latest = sorted[sorted.length-1];
+  const prev = sorted[sorted.length-2];
+  const trend = prev ? latest.score - prev.score : 0;
+  const trendStr = trend > 3 ? `${trend}점 상승` : trend < -3 ? `${Math.abs(trend)}점 하락` : "보합세";
+  const grade = avg >= 90 ? "1등급권" : avg >= 80 ? "2등급권" : avg >= 70 ? "3등급권" : avg >= 60 ? "4등급권" : "5등급권";
+
+  const cnt: Record<string,number> = {};
+  sorted.forEach(r => (r.wrongAnswers??[]).forEach((w:any) =>
+    (w.reasons||[]).forEach((rs:string) => { cnt[rs]=(cnt[rs]||0)+1; })));
+  const top3 = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const t1 = top3[0]?.[0]??""; const t2 = top3[1]?.[0]??""; const t3 = top3[2]?.[0]??"";
+
+  const reflections = sorted.map(r => (r as any).reflection).filter(Boolean);
+  const goals = reflections.map((r:any)=>r.nextGoal).filter(Boolean).slice(-2).join(", ");
+  const hards = reflections.map((r:any)=>r.hardestReason).filter(Boolean).slice(-2).join(" / ");
+
+  return [
+    `① ${student.name} 학생의 현재 영어 수준은 ${grade}(기간 평균 ${avg}점)으로, 총 ${rows.length}회 시험 데이터를 바탕으로 평가합니다.`,
+    `② 이번 기간 점수 흐름은 ${trendStr}이며, 최근 시험에서 ${latest.score}점을 기록하였습니다.`,
+    `③ 누적 오답 원인 1위는 '${REASON_KO_S8[t1]??t1}'으로, ${REASON_FIX_S8[t1]??"집중 보완이 진행 중"}입니다.`,
+    `④ ${t2 ? `'${REASON_KO_S8[t2]??t2}'` : "부수적 취약 영역"}${t3 ? `과 '${REASON_KO_S8[t3]??t3}'` : ""}도 함께 관리 중이며, 복합적 원인 분석을 진행하고 있습니다.`,
+    `⑤ 학생 스스로는 "${hards||"전반적 어려움"}"을 주요 어려움으로 인식하고 있으며, "${goals||"성적 향상"}"을 목표로 삼고 있습니다.`,
+    `⑥ 이번 기간 제출 데이터 ${rows.length}건을 검토한 결과, ${avg >= 80 ? "성실한 학습 참여" : avg >= 65 ? "꾸준한 참여가 확인되나 심화 훈련 필요" : "과제 성실도 향상과 기초 보완이 시급"}합니다.`,
+    `⑦ 단기 처방으로 ${REASON_FIX_S8[t1]??"기초 보완"}을 집중 진행${t2 ? `, ${REASON_FIX_S8[t2]??"추가 훈련"} 병행` : ""}하고 있습니다.`,
+    `⑧ 다음 달 목표는 ${Math.min(avg+5, 100)}점 이상이며, 가정에서의 지속적인 격려와 학습 환경 지원이 성장에 큰 힘이 됩니다.`,
+  ].join("\n");
+}
+
+function Summary8Panel({ roster, results, assignmentSubs }: {
+  roster: RosterEntry[];
+  results: ExamResult[];
+  assignmentSubs: AssignmentSubmission[];
+}) {
+  const byStudent = useMemo(() => {
+    const m = new Map<string,ExamResult[]>();
+    results.forEach(r => { const a = m.get(r.studentCode)??[]; a.push(r); m.set(r.studentCode,a); });
+    return m;
+  }, [results]);
+
+  const [period, setPeriod] = useState("3"); // 최근 N개월
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
+  const [summaries, setSummaries] = useState<Map<string,string>>(new Map());
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState("");
+
+  const MIN_EXAMS = 2;
+  const cutoff = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - parseInt(period));
+    return d.toISOString().slice(0,10);
+  }, [period]);
+
+  const studentList = useMemo<S8Student[]>(() => {
+    return roster.map(s => {
+      const allRows = byStudent.get(s.studentCode) ?? [];
+      const rows = allRows.filter(r => r.date >= cutoff);
+      const canGenerate = rows.length >= MIN_EXAMS;
+      return {
+        student: s,
+        canGenerate,
+        reason: !canGenerate ? `시험 데이터 ${rows.length}건 (최소 ${MIN_EXAMS}건 필요)` : undefined,
+        examCount: rows.length,
+        avgScore: rows.length ? Math.round(rows.reduce((a,b)=>a+b.score,0)/rows.length) : 0,
+      };
+    });
+  }, [roster, byStudent, cutoff]);
+
+  const canList = studentList.filter(s => s.canGenerate);
+  const cantList = studentList.filter(s => !s.canGenerate);
+
+  function toggleAll() {
+    if (selectedCodes.size === canList.length) setSelectedCodes(new Set());
+    else setSelectedCodes(new Set(canList.map(s => s.student.studentCode)));
+  }
+
+  async function generateAll() {
+    if (selectedCodes.size === 0) { alert("대상 학생을 선택하세요."); return; }
+    setGenerating(true);
+    const newMap = new Map(summaries);
+    const targets = canList.filter(s => selectedCodes.has(s.student.studentCode));
+    for (let i=0; i<targets.length; i++) {
+      const s = targets[i];
+      setProgress(`${i+1}/${targets.length} — ${s.student.name} 생성 중...`);
+      const rows = (byStudent.get(s.student.studentCode)??[]).filter(r => r.date >= cutoff);
+      newMap.set(s.student.studentCode, makeSummary8(s.student, rows));
+      setSummaries(new Map(newMap));
+      await new Promise(r => setTimeout(r, 100));
+    }
+    setProgress("✅ 생성 완료!");
+    setGenerating(false);
+    setTimeout(() => setProgress(""), 3000);
+  }
+
+  function downloadTxt() {
+    const lines: string[] = [`[L16] 상담요약 8줄 — ${new Date().toLocaleDateString("ko-KR")} 기준\n`];
+    canList.filter(s => summaries.has(s.student.studentCode)).forEach(s => {
+      lines.push(`${"=".repeat(40)}`);
+      lines.push(`【${s.student.name}】 ${s.student.school} ${s.student.grade}학년`);
+      lines.push(`평균: ${s.avgScore}점 / 시험: ${s.examCount}회`);
+      lines.push("");
+      lines.push(summaries.get(s.student.studentCode)!);
+      lines.push("");
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `상담요약_${new Date().toISOString().slice(0,10)}.txt`;
+    a.click();
+  }
+
+  async function downloadDocx() {
+    // docx 라이브러리 없이 HTML → Blob으로 Word 호환 파일 생성
+    const rows = canList.filter(s => summaries.has(s.student.studentCode));
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>
+<head><meta charset='utf-8'><style>
+body{font-family:'맑은 고딕',sans-serif;font-size:12pt;margin:2cm}
+h1{font-size:16pt;color:#0f766e;border-bottom:2pt solid #0f766e;padding-bottom:6pt}
+h2{font-size:13pt;color:#1e40af;margin-top:18pt;margin-bottom:4pt}
+.meta{font-size:10pt;color:#64748b;margin-bottom:8pt}
+.line{margin:4pt 0;font-size:11pt;line-height:1.8}
+.divider{border:none;border-top:1pt solid #e2e8f0;margin:14pt 0}
+</style></head><body>
+<h1>L16 학생 상담요약 8줄</h1>
+<p style='font-size:10pt;color:#64748b'>생성일: ${new Date().toLocaleDateString("ko-KR")} · 대상: ${rows.length}명</p>
+${rows.map(s => `
+<hr class='divider'/>
+<h2>${s.student.name}</h2>
+<p class='meta'>${s.student.school} ${s.student.grade}학년 · 평균 ${s.avgScore}점 · 시험 ${s.examCount}회</p>
+${(summaries.get(s.student.studentCode)!).split("\n").map(l=>`<p class='line'>${l}</p>`).join("")}
+`).join("")}
+</body></html>`;
+    const blob = new Blob(["\ufeff" + html], { type: "application/msword;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `상담요약_${new Date().toISOString().slice(0,10)}.doc`;
+    a.click();
+  }
+
+  const generatedCount = canList.filter(s => summaries.has(s.student.studentCode)).length;
+
+  return (
+    <div>
+      {/* ── 상단 컨트롤 ── */}
+      <div style={{ background:"#f0fdf4", border:"1.5px solid #6ee7b7", borderRadius:12, padding:"16px 18px", marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+          <span style={{ fontWeight:700, fontSize:15, color:"#065f46" }}>📋 상담요약 8줄 일괄 생성</span>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <label style={{ fontSize:13, color:"#374151" }}>기준 기간</label>
+            <select value={period} onChange={e => { setPeriod(e.target.value); setSummaries(new Map()); setSelectedCodes(new Set()); }}
+              style={{ padding:"5px 10px", borderRadius:7, border:"1px solid #6ee7b7", fontSize:13 }}>
+              <option value="1">최근 1개월</option>
+              <option value="2">최근 2개월</option>
+              <option value="3">최근 3개월</option>
+              <option value="6">최근 6개월</option>
+              <option value="12">최근 1년</option>
+            </select>
+          </div>
+          {generatedCount > 0 && (
+            <div style={{ display:"flex", gap:8, marginLeft:"auto" }}>
+              <button onClick={downloadTxt}
+                style={{ padding:"7px 14px", borderRadius:8, border:"1px solid #0f766e", background:"#fff", color:"#0f766e", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                📄 TXT 저장
+              </button>
+              <button onClick={downloadDocx}
+                style={{ padding:"7px 14px", borderRadius:8, border:"none", background:"#1d4ed8", color:"#fff", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                📝 DOC 저장
+              </button>
+            </div>
+          )}
+        </div>
+        {progress && <p style={{ marginTop:8, fontSize:13, fontWeight:600, color:"#0f766e" }}>{progress}</p>}
+      </div>
+
+      {/* ── 생성 가능 학생 ── */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+          <h3 style={{ margin:0, color:"#065f46" }}>✅ 생성 가능 ({canList.length}명)</h3>
+          <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, cursor:"pointer" }}>
+            <input type="checkbox" checked={selectedCodes.size === canList.length && canList.length > 0}
+              onChange={toggleAll} style={{ width:15, height:15 }} />
+            전체 선택
+          </label>
+          <button onClick={generateAll} disabled={generating || selectedCodes.size === 0}
+            style={{ marginLeft:"auto", padding:"8px 18px", borderRadius:9, border:"none",
+              background: selectedCodes.size === 0 ? "#e5e7eb" : "#10b981",
+              color: selectedCodes.size === 0 ? "#9ca3af" : "#fff",
+              fontWeight:700, fontSize:13, cursor: selectedCodes.size === 0 ? "not-allowed" : "pointer" }}>
+            {generating ? "생성 중..." : `⚡ 선택 ${selectedCodes.size}명 일괄 생성`}
+          </button>
+        </div>
+
+        <div style={{ border:"1px solid #d1fae5", borderRadius:10, overflow:"hidden" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr style={{ background:"#ecfdf5" }}>
+                <th style={{ padding:"8px 12px", textAlign:"left", fontWeight:600, color:"#065f46", width:36 }}></th>
+                <th style={{ padding:"8px 12px", textAlign:"left", fontWeight:600, color:"#065f46" }}>학생</th>
+                <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#065f46" }}>시험</th>
+                <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#065f46" }}>평균</th>
+                <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#065f46" }}>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {canList.map((s, i) => {
+                const hasSummary = summaries.has(s.student.studentCode);
+                return (
+                  <tr key={s.student.studentCode} style={{ borderTop:"1px solid #d1fae5", background: i%2===0 ? "#fff" : "#f0fdf4" }}>
+                    <td style={{ padding:"8px 12px" }}>
+                      <input type="checkbox" checked={selectedCodes.has(s.student.studentCode)}
+                        onChange={() => {
+                          const n = new Set(selectedCodes);
+                          n.has(s.student.studentCode) ? n.delete(s.student.studentCode) : n.add(s.student.studentCode);
+                          setSelectedCodes(n);
+                        }} style={{ width:15, height:15 }} />
+                    </td>
+                    <td style={{ padding:"8px 12px" }}>
+                      <span style={{ fontWeight:600 }}>{s.student.name}</span>
+                      <span style={{ fontSize:11, color:"#6b7280", marginLeft:6 }}>{s.student.school}</span>
+                    </td>
+                    <td style={{ padding:"8px 12px", textAlign:"center" }}>{s.examCount}회</td>
+                    <td style={{ padding:"8px 12px", textAlign:"center", fontWeight:600,
+                      color: s.avgScore>=80 ? "#059669" : s.avgScore>=65 ? "#d97706" : "#dc2626" }}>
+                      {s.avgScore}점
+                    </td>
+                    <td style={{ padding:"8px 12px", textAlign:"center" }}>
+                      {hasSummary
+                        ? <span style={{ background:"#d1fae5", color:"#065f46", padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700 }}>완료</span>
+                        : <span style={{ background:"#f3f4f6", color:"#9ca3af", padding:"2px 8px", borderRadius:6, fontSize:11 }}>대기</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── 생성 불가 학생 ── */}
+      {cantList.length > 0 && (
+        <div style={{ marginBottom:24 }}>
+          <h3 style={{ margin:"0 0 10px", color:"#9ca3af" }}>⚠️ 생성 불가 ({cantList.length}명) — 데이터 부족</h3>
+          <div style={{ border:"1px solid #fee2e2", borderRadius:10, overflow:"hidden" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+              <thead>
+                <tr style={{ background:"#fef2f2" }}>
+                  <th style={{ padding:"8px 12px", textAlign:"left", fontWeight:600, color:"#991b1b" }}>학생</th>
+                  <th style={{ padding:"8px 12px", textAlign:"left", fontWeight:600, color:"#991b1b" }}>생성 불가 사유</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cantList.map((s, i) => (
+                  <tr key={s.student.studentCode} style={{ borderTop:"1px solid #fee2e2", background: i%2===0 ? "#fff" : "#fff7f7" }}>
+                    <td style={{ padding:"8px 12px", fontWeight:600 }}>{s.student.name}
+                      <span style={{ fontSize:11, color:"#6b7280", marginLeft:6 }}>{s.student.school}</span>
+                    </td>
+                    <td style={{ padding:"8px 12px", color:"#dc2626", fontSize:12 }}>{s.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── 생성된 요약 전체 보기 ── */}
+      {generatedCount > 0 && (
+        <div>
+          <h3 style={{ margin:"0 0 14px", color:"#1e40af" }}>📄 생성된 상담요약 ({generatedCount}명)</h3>
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {canList.filter(s => summaries.has(s.student.studentCode)).map(s => (
+              <div key={s.student.studentCode} style={{ border:"1.5px solid #bfdbfe", borderRadius:12, padding:"16px 18px", background:"#eff6ff" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
+                  <div>
+                    <span style={{ fontWeight:700, fontSize:15, color:"#1e40af" }}>{s.student.name}</span>
+                    <span style={{ fontSize:12, color:"#6b7280", marginLeft:8 }}>{s.student.school} {s.student.grade}학년</span>
+                    <span style={{ fontSize:12, color:"#1e40af", marginLeft:8 }}>평균 {s.avgScore}점 · {s.examCount}회</span>
+                  </div>
+                  <button onClick={() => navigator.clipboard.writeText(summaries.get(s.student.studentCode)!)}
+                    style={{ padding:"4px 12px", borderRadius:7, border:"1px solid #93c5fd", background:"#fff", color:"#1d4ed8", fontSize:12, cursor:"pointer", fontWeight:600 }}>
+                    복사
+                  </button>
+                </div>
+                <div style={{ fontSize:13, lineHeight:2, color:"#1e293b", whiteSpace:"pre-wrap", background:"#fff", borderRadius:8, padding:"12px 14px", border:"1px solid #bfdbfe" }}>
+                  {summaries.get(s.student.studentCode)}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
