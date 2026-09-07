@@ -1785,7 +1785,7 @@ ${(summaries.get(s.student.studentCode)!).split("\n").map(l=>`<p class='line'>${
                     </td>
                     <td style={{ padding:"8px 12px" }}>
                       <span style={{ fontWeight:600 }}>{s.student.name}</span>
-                      <span style={{ fontSize:11, color:"#6b7280", marginLeft:6 }}>{s.student.school}</span>
+                      <span style={{ fontSize:11, color:"#6b7280", marginLeft:6 }}>{s.student.school} {s.student.grade}학년</span>
                     </td>
                     <td style={{ padding:"8px 12px", textAlign:"center" }}>{s.examCount}회</td>
                     <td style={{ padding:"8px 12px", textAlign:"center", fontWeight:600,
@@ -1821,7 +1821,7 @@ ${(summaries.get(s.student.studentCode)!).split("\n").map(l=>`<p class='line'>${
                 {cantList.map((s, i) => (
                   <tr key={s.student.studentCode} style={{ borderTop:"1px solid #fee2e2", background: i%2===0 ? "#fff" : "#fff7f7" }}>
                     <td style={{ padding:"8px 12px", fontWeight:600 }}>{s.student.name}
-                      <span style={{ fontSize:11, color:"#6b7280", marginLeft:6 }}>{s.student.school}</span>
+                      <span style={{ fontSize:11, color:"#6b7280", marginLeft:6 }}>{s.student.school} {s.student.grade}학년</span>
                     </td>
                     <td style={{ padding:"8px 12px", color:"#dc2626", fontSize:12 }}>{s.reason}</td>
                   </tr>
