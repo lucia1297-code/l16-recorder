@@ -18,7 +18,7 @@ const system = `당신은 수능 영어 전문 강사(30년 경력)의 수업 �
 【다음 수업 지도 방향】
 • 구체적인 지도 제안 (유형별)
 
-전문적이고 간결하게 작성하세요.`;
+전사 내용에 실제로 나타난 발화와 지도 흐름을 근거로 매우 구체적으로 작성하세요. 학생의 이해한 부분과 오해를 구분하고, 교사의 설명·질문·교정 과정을 구체적으로 정리하세요. 각 항목에 최소 3개 이상의 관찰 문장을 쓰고, 마지막에는 다음 수업에서 사용할 활동을 단계별로 제안하세요. 전사에 없는 내용은 추정하지 마세요.`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -31,7 +31,7 @@ Deno.serve(async (req: Request) => {
     const transcript = String(payload.transcript ?? "").trim();
     if (!transcript) return new Response(JSON.stringify({ error: "transcript required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     const trimmed = transcript.length > 8000 ? transcript.slice(0, 8000) + "\n...(이하 생략)" : transcript;
-    const response = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 1500, messages: [{ role: "system", content: system }, { role: "user", content: `${studentName} 학생 수업 녹음입니다:\n\n${trimmed}` }] }) });
+    const response = await fetch("https://api.openai.com/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 3000, messages: [{ role: "system", content: system }, { role: "user", content: `${studentName} 학생 수업 녹음입니다:\n\n${trimmed}` }] }) });
     const data = await response.json();
     if (!response.ok) return new Response(JSON.stringify({ error: data.error?.message ?? `OpenAI HTTP ${response.status}` }), { status: response.status, headers: { ...cors, "Content-Type": "application/json" } });
     const analysis = data.choices?.[0]?.message?.content ?? "분석 결과를 가져오지 못했습니다.";
