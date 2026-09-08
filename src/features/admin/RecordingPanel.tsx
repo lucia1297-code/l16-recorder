@@ -110,6 +110,7 @@ export default function RecordingPanel() {
   const [elapsed,   setElapsed]   = useState(0);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState<string|null>(null);
+  const [processResult, setProcessResult] = useState<Record<string,string>>({});
   const [notice, setNotice] = useState("");
   const [filterStudent, setFilterStudent] = useState("");
   const [expandId, setExpandId] = useState<string|null>(null);
@@ -440,18 +441,19 @@ export default function RecordingPanel() {
 
   async function reAnalyze(rec: Recording) {
     setProcessing(rec.id);
+    setProcessResult(prev => ({ ...prev, [rec.id]: `${rec.student_name} 재분석 시작…` }));
     setNotice(`${rec.student_name} 재분석 중…`);
     let stage = "녹음 접근 확인";
     try {
-      const signedUrl = await getSignedUrl(rec.audio_url);
-      stage = "녹음 다운로드";
-      setNotice(`${rec.student_name} 녹음 다운로드 중…`);
-      const audioRes = await fetch(signedUrl);
-      if (!audioRes.ok) throw new Error(`오디오 다운로드 실패 (${audioRes.status})`);
-      const blob = await audioRes.blob();
-      if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
       let transcript = rec.transcript?.trim() ?? "";
       if (!transcript) {
+        const signedUrl = await getSignedUrl(rec.audio_url);
+        stage = "녹음 다운로드";
+        setNotice(`${rec.student_name} 녹음 다운로드 중…`);
+        const audioRes = await fetch(signedUrl);
+        if (!audioRes.ok) throw new Error(`오디오 다운로드 실패 (${audioRes.status})`);
+        const blob = await audioRes.blob();
+        if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
         stage = "Whisper 전사";
         transcript = await transcribeRecording(blob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
       } else {
@@ -468,9 +470,14 @@ export default function RecordingPanel() {
       });
       if (!saved.ok) throw new Error(`저장 실패 (HTTP ${saved.status})`);
       setNotice(`${rec.student_name} 재분석 완료`);
+      setProcessResult(prev => ({ ...prev, [rec.id]: `${rec.student_name} 재분석 완료` }));
       setTimeout(() => setNotice(""), 4000);
       await loadRecordings();
-    } catch(e) { setNotice(`${stage} 실패: ${(e as Error).message}`); }
+    } catch(e) {
+      const message = `${stage} 실패: ${(e as Error).message}`;
+      setNotice(message);
+      setProcessResult(prev => ({ ...prev, [rec.id]: message }));
+    }
     finally { setProcessing(null); }
   }
 
@@ -913,9 +920,9 @@ export default function RecordingPanel() {
                           <RefreshCw size={11}/>
                           {processing===rec.id ? "재분석 중…" : "재분석"}
                         </button>
-                      {processing===rec.id && (
+                      {(processing===rec.id || processResult[rec.id]) && (
                         <span style={{ fontSize:10, color:"#f59e0b", alignSelf:"center" }}>
-                          {notice}
+                          {processing===rec.id ? notice : processResult[rec.id]}
                         </span>
                       )}
                     </div>
