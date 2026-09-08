@@ -45,7 +45,9 @@ export async function transcribeRecording(blob: Blob, key: string, options: {req
     const form=new FormData();
     form.append('file',part,name); form.append('model','whisper-1'); form.append('language','ko');
     if (proxy) form.append('action','transcribe');
-    const data=await call('Whisper 전사',proxy ?? 'https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:proxy ? options.proxyHeaders : {Authorization:`Bearer ${key.trim()}`},body:form},180000);
+    // Long phone recordings can take several minutes even after upload; keep the
+    // client waiting long enough for the server-side Whisper request to finish.
+    const data=await call('Whisper 전사',proxy ?? 'https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:proxy ? options.proxyHeaders : {Authorization:`Bearer ${key.trim()}`},body:form},600000);
     if (typeof data.text!=='string' || !data.text.trim()) throw new Error('Whisper 전사 결과가 비어있습니다.');
     return data.text as string;
   };
