@@ -881,8 +881,7 @@ export default function RecordingPanel() {
                       </div>
                     )}
                     <div style={{ padding:"10px 14px", display:"flex", gap:8, flexWrap:"wrap" }}>
-                      {rec.status !== "done" && (
-                        <button onClick={() => reAnalyze(rec)}
+                      <button onClick={() => reAnalyze(rec)}
                           disabled={processing===rec.id}
                           style={{ display:"flex", alignItems:"center", gap:6,
                             padding:"6px 14px", borderRadius:8, border:"none",
@@ -893,7 +892,6 @@ export default function RecordingPanel() {
                           <RefreshCw size={11}/>
                           {processing===rec.id ? "재분석 중…" : "재분석"}
                         </button>
-                      )}
                       {processing===rec.id && (
                         <span style={{ fontSize:10, color:"#f59e0b", alignSelf:"center" }}>
                           {notice}
