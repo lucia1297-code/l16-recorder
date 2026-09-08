@@ -197,13 +197,20 @@ export default function SchedulePanel() {
     (!filterStatus || e.status === filterStatus)
   );
 
-  // 달력용 날짜별 이벤트 맵
+  // 달력용 날짜별 이벤트 맵 — 기간 일정은 시작~종료 모든 날짜에 표시
   const eventByDate = useMemo(() => {
     const m: Record<string, ScheduleEvent[]> = {};
     filtered.forEach(e => {
-      const k = e.event_date;
-      if (!m[k]) m[k] = [];
-      m[k].push(e);
+      const start = new Date(e.event_date);
+      const end   = e.end_date ? new Date(e.end_date) : start;
+      const cur   = new Date(start);
+      while (cur <= end) {
+        const k = cur.toISOString().slice(0, 10);
+        if (!m[k]) m[k] = [];
+        // 같은 이벤트 중복 방지
+        if (!m[k].find(x => x.id === e.id)) m[k].push(e);
+        cur.setDate(cur.getDate() + 1);
+      }
     });
     return m;
   }, [filtered]);
@@ -262,12 +269,21 @@ export default function SchedulePanel() {
                 <div style={{ display:"flex",flexDirection:"column",gap:1 }}>
                   {dayEvents.slice(0,3).map(ev => {
                     const cat = CATEGORIES.find(c => c.label === ev.category);
+                    const isMultiDay = ev.end_date && ev.end_date !== ev.event_date;
+                    const isStart = key === ev.event_date;
+                    const isEnd   = key === ev.end_date;
+                    const borderR = isMultiDay && !isEnd   ? 0 : 3;
+                    const borderL = isMultiDay && !isStart ? 0 : 3;
+                    const prefix  = isStart && isMultiDay ? "▶ " : isEnd ? "■ " : isMultiDay ? "── " : "";
                     return (
                       <div key={ev.id} title={`${ev.student_name||"공통"} · ${ev.title}`}
-                        style={{ fontSize:9,padding:"1px 4px",borderRadius:3,fontWeight:600,
+                        style={{ fontSize:9,padding:"1px 4px",fontWeight:600,
                           background:cat?.bg??"#f1f5f9",color:cat?.color??"#374151",
-                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
-                        {ev.student_name ? `${ev.student_name[0]} ` : ""}{ev.title}
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                          borderRadius:`${borderL}px ${borderR}px ${borderR}px ${borderL}px`,
+                          marginLeft: !isStart&&isMultiDay ? -2 : 0,
+                          marginRight: !isEnd&&isMultiDay ? -2 : 0 }}>
+                        {prefix}{ev.student_name ? `${ev.student_name[0]} ` : ""}{isStart||!isMultiDay?ev.title:""}
                       </div>
                     );
                   })}
@@ -447,13 +463,36 @@ export default function SchedulePanel() {
               })}
             </div>
           </div>
-          {/* 설명 */}
+          {/* 설명 — 직접 입력 */}
           <div style={{ gridColumn:"1/-1" }}>
-            <label style={{ fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:5 }}>설명 (선택)</label>
-            <textarea value={fDesc} onChange={e => setFDesc(e.target.value)} rows={2}
-              placeholder="추가 설명"
-              style={{ width:"100%",padding:"8px 10px",borderRadius:8,border:"1.5px solid #6ee7b7",
-                fontSize:13,fontFamily:"inherit",resize:"none" as const,boxSizing:"border-box" as const }} />
+            <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap" }}>
+              <label style={{ fontSize:12,fontWeight:700,color:"#374151" }}>내용 / 메모</label>
+              <span style={{ fontSize:11,color:"#94a3b8" }}>빠른 입력:</span>
+              {["상담완료","전화연락","자료전달","수업내용:","숙제:","특이사항:","다음수업:","준비물:"].map(t => (
+                <button key={t} type="button"
+                  onClick={() => setFDesc(prev => prev ? prev + "
+" + t + " " : t + " ")}
+                  style={{ padding:"2px 8px",borderRadius:5,border:"1px solid #6ee7b7",
+                    background:"#f0fdf4",color:"#065f46",fontSize:11,cursor:"pointer",fontWeight:600 }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <textarea value={fDesc} onChange={e => setFDesc(e.target.value)} rows={5}
+              placeholder={"내용을 자유롭게 입력하세요.
+
+예)
+• 상담내용: 수능 대비 전략 논의
+• 학부모 요청사항: 수학 병행 요청
+• 다음수업: 빈칸추론 집중"}
+              style={{ width:"100%",padding:"10px 12px",borderRadius:8,border:"1.5px solid #6ee7b7",
+                fontSize:13,fontFamily:"inherit",resize:"vertical" as const,
+                boxSizing:"border-box" as const,lineHeight:1.7 }} />
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4 }}>
+              <span style={{ fontSize:11,color:"#94a3b8" }}>{fDesc.length}자</span>
+              {fDesc && <button type="button" onClick={() => setFDesc("")}
+                style={{ fontSize:11,color:"#dc2626",background:"none",border:"none",cursor:"pointer" }}>지우기</button>}
+            </div>
           </div>
         </div>
         <div style={{ display:"flex",gap:8,marginTop:14 }}>
