@@ -104,6 +104,21 @@ function cleanTranscriptForAnalysis(text: string): string {
   return text.replace(/(?:\b\d{1,3}번\s*){20,}/g, "\n[연속 번호 낭독 구간 생략]\n").trim();
 }
 
+function downloadTranscript(rec: Recording, format: "txt" | "doc") {
+  const safeName = rec.student_name.replace(/[\\/:*?"<>|]/g, "_");
+  const title = `${rec.student_name} 수업 전사`;
+  const text = rec.transcript?.trim() || "전사 내용이 없습니다.";
+  const blob = format === "txt"
+    ? new Blob(["\\uFEFF", `${title}\\n\\n${text}`], { type: "text/plain;charset=utf-8" })
+    : new Blob([`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1><pre style="white-space:pre-wrap;font-family:맑은 고딕,Arial">${text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</pre></body></html>`], { type: "application/msword" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${safeName}-transcript.${format}`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export default function RecordingPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -915,6 +930,16 @@ export default function RecordingPanel() {
                       </div>
                     )}
                     <div style={{ padding:"10px 14px", display:"flex", gap:8, flexWrap:"wrap" }}>
+                      {rec.transcript && <>
+                        <button onClick={() => downloadTranscript(rec, "txt")}
+                          style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 10px", borderRadius:8, border:"1px solid #334155", background:"#172033", color:"#cbd5e1", fontSize:10, fontWeight:700, cursor:"pointer" }}>
+                          <FileText size={11}/> TXT 출력
+                        </button>
+                        <button onClick={() => downloadTranscript(rec, "doc")}
+                          style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 10px", borderRadius:8, border:"1px solid #334155", background:"#172033", color:"#cbd5e1", fontSize:10, fontWeight:700, cursor:"pointer" }}>
+                          <FileText size={11}/> DOC 출력
+                        </button>
+                      </>}
                       <button onClick={() => reAnalyze(rec)}
                           disabled={processing===rec.id}
                           style={{ display:"flex", alignItems:"center", gap:6,
