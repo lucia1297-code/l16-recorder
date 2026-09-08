@@ -52,7 +52,7 @@ async function analyzeLesson(transcript: string, studentName: string): Promise<{
         studentName,
         transcript: trimmed,
         model: "gpt-4o-mini",
-        max_tokens: 1500,
+        max_tokens: 3000,
         messages: [
           { role: "system", content: `당신은 수능 영어 전문 강사(30년 경력)의 수업 분석 보조 AI입니다.
 수업 녹음 텍스트를 분석하여 다음 형식으로 작성하세요:
@@ -72,7 +72,7 @@ async function analyzeLesson(transcript: string, studentName: string): Promise<{
 【다음 수업 지도 방향】
 • 구체적인 지도 제안 (유형별)
 
-전문적이고 간결하게 작성하세요.` },
+전사 내용의 근거를 충분히 인용하여 각 항목을 구체적으로 작성하세요. 학생의 발화·오류·교사의 지도 흐름을 구분하고, 관찰 근거가 없는 내용은 추정하지 마세요. 최소 10개 이상의 구체적인 관찰 문장을 작성하세요.` },
           { role: "user", content: `${studentName} 학생 수업 녹음입니다:
 
 ${trimmed}` }
@@ -450,8 +450,13 @@ export default function RecordingPanel() {
       if (!audioRes.ok) throw new Error(`오디오 다운로드 실패 (${audioRes.status})`);
       const blob = await audioRes.blob();
       if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
-      stage = "Whisper 전사";
-      const transcript = await transcribeRecording(blob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
+      let transcript = rec.transcript?.trim() ?? "";
+      if (!transcript) {
+        stage = "Whisper 전사";
+        transcript = await transcribeRecording(blob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
+      } else {
+        setNotice(`${rec.student_name} 기존 전사문으로 GPT 정밀 재분석 중…`);
+      }
       stage = "GPT 분석";
       setNotice(`${rec.student_name} GPT 분석 중…`);
       const { analysis, keywords } = await analyzeLesson(transcript, rec.student_name);
