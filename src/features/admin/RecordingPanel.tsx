@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { Mic, Square, RotateCcw, RefreshCw, ChevronDown, ChevronUp, Upload, CheckCircle, XCircle, Loader, Brain, FileText } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
+import { transcribeRecording } from "../../lib/recordingTranscription";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -31,26 +32,6 @@ async function getSignedUrl(path: string): Promise<string> {
   const data = await res.json().catch(() => ({}));
   if (!data.signedURL) throw new Error("서명 URL 없음");
   return `${SUPABASE_URL}/storage/v1${data.signedURL}`;
-}
-
-async function transcribeAudio(audioBlob: Blob): Promise<string> {
-  const form = new FormData();
-  // 파일 타입에 맞는 확장자로 Whisper 전송
-  const getWhisperExt = (type: string) => {
-    if (type.includes("mp4")) return "mp4";
-    if (type.includes("webm")) return "webm";
-    if (type.includes("ogg")) return "ogg";
-    return "mp4";
-  };
-  const whisperExt = getWhisperExt(audioBlob.type);
-  form.append("file", audioBlob, `recording.${whisperExt}`);
-  form.append("model", "whisper-1");
-  form.append("language", "ko");
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method:"POST", headers:{ "Authorization": `Bearer ${OPENAI_KEY}` }, body: form,
-  });
-  if (!res.ok) { const t = await res.text().catch(() => `HTTP ${res.status}`); throw new Error(t.slice(0,200)); }
-  return (await res.json()).text;
 }
 
 async function analyzeLesson(transcript: string, studentName: string): Promise<{analysis:string;keywords:string[]}> {
@@ -132,9 +113,19 @@ export default function RecordingPanel() {
 
   const mediaRef   = useRef<MediaRecorder|null>(null);
   const chunksRef  = useRef<Blob[]>([]);
+  const streamRef  = useRef<MediaStream|null>(null);
+  const segmentTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const segmentStartRef = useRef(0);
+  const stoppingRef = useRef(false);
+  const segmentQueueRef = useRef<Array<{blob:Blob; duration:number}>>([]);
+  const segmentBusyRef = useRef(false);
   const timerRef   = useRef<ReturnType<typeof setInterval>|null>(null);
   const startRef   = useRef(0);
   const mountedRef = useRef(true); // 언마운트 후 setState 방지
+  const sessionIdRef = useRef<string>("");
+  const deviceIdRef = useRef<string>(localStorage.getItem("l16.recording.device") || crypto.randomUUID());
+
+  useEffect(() => { localStorage.setItem("l16.recording.device", deviceIdRef.current); }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -144,6 +135,7 @@ export default function RecordingPanel() {
       mountedRef.current = false;
       // 언마운트 시 녹음 정리
       if (timerRef.current) clearInterval(timerRef.current);
+      if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
       if (mediaRef.current?.state !== "inactive") {
         try { mediaRef.current?.stop(); } catch { }
       }
@@ -192,6 +184,14 @@ export default function RecordingPanel() {
     if (!selectedStudent) { setNotice("학생을 먼저 선택해주세요."); return; }
     setNotice("");
     try {
+      // 최근 3시간 안에 같은 학생의 녹음이 있으면 다른 기기에서도 같은 세션으로 이어간다.
+      const recent = await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings?student_code=eq.${encodeURIComponent(selectedStudent)}&order=recorded_at.desc&limit=1`, {headers:SB_H}).then(r => r.ok ? r.json() : []).catch(() => []);
+      const latest = Array.isArray(recent) ? recent[0] : null;
+      const latestAt = latest?.recorded_at ? Date.parse(latest.recorded_at) : 0;
+      const pathParts = typeof latest?.audio_url === "string" ? latest.audio_url.split("/") : [];
+      const canResume = latestAt > Date.now() - 3 * 60 * 60 * 1000 && pathParts.length >= 3 && pathParts[1];
+      sessionIdRef.current = canResume ? pathParts[1] : crypto.randomUUID();
+      if (canResume) setNotice("최근 수업 세션을 이어서 녹음합니다.");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // iOS Safari: audio/mp4  /  Android Chrome: audio/webm
       const SUPPORTED_MIMES = [
@@ -199,12 +199,16 @@ export default function RecordingPanel() {
         "audio/mp4", "audio/ogg;codecs=opus", "audio/ogg", "",
       ];
       const mime = SUPPORTED_MIMES.find(m => !m || MediaRecorder.isTypeSupported(m)) ?? "";
-      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+      streamRef.current = stream;
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : { audioBitsPerSecond: 32000 });
       chunksRef.current = [];
       mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      mr.start(1000);
+      mr.start();
       mediaRef.current = mr;
       startRef.current = Date.now();
+      segmentStartRef.current = Date.now();
+      stoppingRef.current = false;
+      segmentTimerRef.current = setTimeout(() => rotateSegment(), 120_000);
       setRecording(true); setElapsed(0);
       timerRef.current = setInterval(() =>
         setElapsed(Math.floor((Date.now()-startRef.current)/1000)), 1000);
@@ -251,6 +255,8 @@ export default function RecordingPanel() {
   async function stopRecording() {
     if (!mediaRef.current) return;
     setRecording(false);
+    stoppingRef.current = true;
+    if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
     const duration = Math.floor((Date.now()-startRef.current)/1000);
 
@@ -269,16 +275,45 @@ export default function RecordingPanel() {
     const savedMime = mediaRef.current.mimeType || "audio/webm";
     // MediaRecorder state 체크 후 중지
     if (mediaRef.current.state !== "inactive") {
+      const stopped = new Promise<void>(resolve => mediaRef.current!.addEventListener("stop", () => resolve(), { once:true }));
       mediaRef.current.stop();
+      await Promise.race([stopped, new Promise<void>(resolve => setTimeout(resolve, 5000))]);
     }
-    mediaRef.current.stream.getTracks().forEach(t => t.stop());
-    await new Promise<void>((resolve, reject) => {
-      if (!mediaRef.current) { resolve(); return; }
-      const timeout = setTimeout(() => resolve(), 5000); // 5초 후 강제 완료
-      mediaRef.current.onstop = () => { clearTimeout(timeout); resolve(); };
-    });
     const blob = new Blob(chunksRef.current, { type: savedMime });
-    await uploadAndAnalyze(blob, duration);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    if (blob.size > 0) await enqueueSegment(blob, duration);
+  }
+
+  async function rotateSegment() {
+    const current = mediaRef.current;
+    if (!current || current.state === "inactive" || stoppingRef.current) return;
+    const mime = current.mimeType || "audio/webm";
+    const duration = Math.max(1, Math.floor((Date.now() - segmentStartRef.current) / 1000));
+    // Stopping and starting a new recorder creates an independently playable file.
+    const stopped = new Promise<void>(resolve => current.addEventListener("stop", () => resolve(), { once:true }));
+    current.stop();
+    await Promise.race([stopped, new Promise<void>(resolve => setTimeout(resolve, 5000))]);
+    const blob = new Blob(chunksRef.current, { type: mime });
+    chunksRef.current = [];
+    if (blob.size > 0) void enqueueSegment(blob, duration);
+    if (!streamRef.current || stoppingRef.current) return;
+    const next = new MediaRecorder(streamRef.current, { mimeType: mime, audioBitsPerSecond: 32000 });
+    next.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    next.start(); mediaRef.current = next; segmentStartRef.current = Date.now();
+    segmentTimerRef.current = setTimeout(() => rotateSegment(), 120_000);
+  }
+
+  async function enqueueSegment(blob: Blob, duration: number) {
+    segmentQueueRef.current.push({ blob, duration });
+    if (segmentBusyRef.current) return;
+    segmentBusyRef.current = true;
+    try {
+      while (segmentQueueRef.current.length) {
+        const segment = segmentQueueRef.current.shift()!;
+        await uploadAndAnalyze(segment.blob, segment.duration);
+      }
+    } finally { segmentBusyRef.current = false; }
   }
 
   async function uploadAndAnalyze(blob: Blob, duration: number) {
@@ -307,7 +342,7 @@ export default function RecordingPanel() {
       return "webm"; // 갤럭시 기본값
     };
     const ext = getExt(blobType);
-    const path = `${selectedStudent}/${Date.now()}.${ext}`;
+    const path = `${selectedStudent}/${sessionIdRef.current || crypto.randomUUID()}/${deviceIdRef.current}-${Date.now()}.${ext}`;
 
     try {
       // ── STEP 2: Supabase Storage 업로드 ──────────
@@ -339,7 +374,7 @@ export default function RecordingPanel() {
       setNotice("Whisper 변환 중… (수업 길이에 따라 1~3분 소요)");
       let transcript = "";
       try {
-        transcript = await transcribeAudio(fixedBlob);
+        transcript = await transcribeRecording(fixedBlob, OPENAI_KEY, { onProgress: setNotice });
       } catch(e: any) {
         // Whisper 실패해도 계속 진행 (status는 partial로)
         console.error("Whisper 실패:", e);
@@ -381,24 +416,32 @@ export default function RecordingPanel() {
   async function reAnalyze(rec: Recording) {
     setProcessing(rec.id);
     setNotice(`${rec.student_name} 재분석 중…`);
+    let stage = "녹음 접근 확인";
     try {
       const signedUrl = await getSignedUrl(rec.audio_url);
+      stage = "녹음 다운로드";
+      setNotice(`${rec.student_name} 녹음 다운로드 중…`);
       const audioRes = await fetch(signedUrl);
       if (!audioRes.ok) throw new Error(`오디오 다운로드 실패 (${audioRes.status})`);
       const blob = await audioRes.blob();
       if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
-      const transcript = await transcribeAudio(blob);
+      stage = "Whisper 전사";
+      const transcript = await transcribeRecording(blob, OPENAI_KEY, { onProgress: setNotice });
+      stage = "GPT 분석";
+      setNotice(`${rec.student_name} GPT 분석 중…`);
       const { analysis, keywords } = await analyzeLesson(transcript, rec.student_name);
-      await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings?id=eq.${rec.id}`, {
+      stage = "분석 결과 저장";
+      const saved = await fetch(`${SUPABASE_URL}/rest/v1/lesson_recordings?id=eq.${rec.id}`, {
         method:"PATCH",
         headers:{ ...SB_H, "Content-Type":"application/json" },
         body: JSON.stringify({ transcript, analysis, keywords, status:"done" }),
       });
+      if (!saved.ok) throw new Error(`저장 실패 (HTTP ${saved.status})`);
       setNotice(`${rec.student_name} 재분석 완료`);
       setTimeout(() => setNotice(""), 4000);
       await loadRecordings();
-    } catch(e) { setNotice("재분석 실패: " + (e as Error).message); }
-    setProcessing(null);
+    } catch(e) { setNotice(`${stage} 실패: ${(e as Error).message}`); }
+    finally { setProcessing(null); }
   }
 
   function fmt(sec: number) {
