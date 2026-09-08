@@ -478,12 +478,7 @@ export default function SchedulePanel() {
               ))}
             </div>
             <textarea value={fDesc} onChange={e => setFDesc(e.target.value)} rows={5}
-              placeholder={"내용을 자유롭게 입력하세요.
-
-예)
-• 상담내용: 수능 대비 전략 논의
-• 학부모 요청사항: 수학 병행 요청
-• 다음수업: 빈칸추론 집중"}
+              placeholder={"내용을 자유롭게 입력하세요.\n\n예)\n• 상담내용: 수능 대비 전략 논의\n• 학부모 요청사항: 수학 병행 요청\n• 다음수업: 빈칸추론 집중"}
               style={{ width:"100%",padding:"10px 12px",borderRadius:8,border:"1.5px solid #6ee7b7",
                 fontSize:13,fontFamily:"inherit",resize:"vertical" as const,
                 boxSizing:"border-box" as const,lineHeight:1.7 }} />
