@@ -15,8 +15,9 @@ export function encodeWav(channels: Float32Array[], sampleRate: number, start: n
   }
   return new Blob([buffer],{type:'audio/wav'});
 }
-export async function transcribeRecording(blob: Blob, key: string, options: {request?: typeof fetch; onProgress?: (message: string)=>void} = {}): Promise<string> {
-  if (!key?.trim()) throw new Error('OpenAI API 키가 설정되지 않았습니다. 배포 설정을 확인하세요.');
+export async function transcribeRecording(blob: Blob, key: string, options: {request?: typeof fetch; onProgress?: (message: string)=>void; proxyUrl?: string; proxyHeaders?: HeadersInit} = {}): Promise<string> {
+  const proxy = options.proxyUrl?.trim();
+  if (!proxy && !key?.trim()) throw new Error('OpenAI 전사 서버가 설정되지 않았습니다.');
   if (!blob.size) throw new Error('녹음 파일이 비어있습니다.');
   const request=options.request??fetch;
   const call=async (stage:string,url:string,init:RequestInit,timeout=120000) => {
@@ -36,12 +37,15 @@ export async function transcribeRecording(blob: Blob, key: string, options: {req
       throw error;
     } finally {clearTimeout(timer);}
   };
-  options.onProgress?.('OpenAI 인증 확인 중…');
-  await call('인증 확인','https://api.openai.com/v1/models/whisper-1',{headers:{Authorization:`Bearer ${key.trim()}`}},30000);
+  if (!proxy) {
+    options.onProgress?.('OpenAI 인증 확인 중…');
+    await call('인증 확인','https://api.openai.com/v1/models/whisper-1',{headers:{Authorization:`Bearer ${key.trim()}`}},30000);
+  }
   const upload=async (part:Blob,name:string) => {
     const form=new FormData();
     form.append('file',part,name); form.append('model','whisper-1'); form.append('language','ko');
-    const data=await call('Whisper 전사','https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form},180000);
+    if (proxy) form.append('action','transcribe');
+    const data=await call('Whisper 전사',proxy ?? 'https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:proxy ? options.proxyHeaders : {Authorization:`Bearer ${key.trim()}`},body:form},180000);
     if (typeof data.text!=='string' || !data.text.trim()) throw new Error('Whisper 전사 결과가 비어있습니다.');
     return data.text as string;
   };

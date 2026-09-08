@@ -6,8 +6,8 @@ import { transcribeRecording } from "../../lib/recordingTranscription";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-const OPENAI_KEY = import.meta.env.VITE_OPENAI_API_KEY as string;
 const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
+const OPENAI_PROXY = `${SUPABASE_URL}/functions/v1/openai-proxy`;
 
 interface Recording {
   id: string;
@@ -35,7 +35,6 @@ async function getSignedUrl(path: string): Promise<string> {
 }
 
 async function analyzeLesson(transcript: string, studentName: string): Promise<{analysis:string;keywords:string[]}> {
-  if (!OPENAI_KEY) throw new Error("OpenAI API 키 미설정");
   if (!transcript.trim()) throw new Error("전사 텍스트가 비어있습니다.");
 
   // 텍스트가 너무 길면 앞 8000자만 사용 (토큰 제한)
@@ -44,10 +43,11 @@ async function analyzeLesson(transcript: string, studentName: string): Promise<{
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2분 타임아웃
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch(OPENAI_PROXY, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+      headers: { ...SB_H, "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "analyze",
         model: "gpt-4o-mini",
         max_tokens: 1500,
         messages: [
@@ -374,7 +374,7 @@ export default function RecordingPanel() {
       setNotice("Whisper 변환 중… (수업 길이에 따라 1~3분 소요)");
       let transcript = "";
       try {
-        transcript = await transcribeRecording(fixedBlob, OPENAI_KEY, { onProgress: setNotice });
+        transcript = await transcribeRecording(fixedBlob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
       } catch(e: any) {
         // Whisper 실패해도 계속 진행 (status는 partial로)
         console.error("Whisper 실패:", e);
@@ -426,7 +426,7 @@ export default function RecordingPanel() {
       const blob = await audioRes.blob();
       if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
       stage = "Whisper 전사";
-      const transcript = await transcribeRecording(blob, OPENAI_KEY, { onProgress: setNotice });
+      const transcript = await transcribeRecording(blob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
       stage = "GPT 분석";
       setNotice(`${rec.student_name} GPT 분석 중…`);
       const { analysis, keywords } = await analyzeLesson(transcript, rec.student_name);
