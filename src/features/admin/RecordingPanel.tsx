@@ -7,7 +7,8 @@ import { transcribeRecording } from "../../lib/recordingTranscription";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
-const OPENAI_PROXY = `${SUPABASE_URL}/functions/v1/openai-proxy`;
+const OPENAI_PROXY = `${SUPABASE_URL}/functions/v1/recording-transcribe`;
+const ANALYZE_PROXY = `${SUPABASE_URL}/functions/v1/recording-analyze`;
 
 interface Recording {
   id: string;
@@ -43,11 +44,12 @@ async function analyzeLesson(transcript: string, studentName: string): Promise<{
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2분 타임아웃
   try {
-    const res = await fetch(OPENAI_PROXY, {
+    const res = await fetch(ANALYZE_PROXY, {
       method: "POST",
       headers: { ...SB_H, "Content-Type": "application/json" },
       body: JSON.stringify({
-        action: "analyze",
+        studentName,
+        transcript: trimmed,
         model: "gpt-4o-mini",
         max_tokens: 1500,
         messages: [
