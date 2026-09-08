@@ -470,8 +470,7 @@ export default function SchedulePanel() {
               <span style={{ fontSize:11,color:"#94a3b8" }}>빠른 입력:</span>
               {["상담완료","전화연락","자료전달","수업내용:","숙제:","특이사항:","다음수업:","준비물:"].map(t => (
                 <button key={t} type="button"
-                  onClick={() => setFDesc(prev => prev ? prev + "
-" + t + " " : t + " ")}
+                  onClick={() => setFDesc(prev => prev ? prev + "\n" + t + " " : t + " ")}
                   style={{ padding:"2px 8px",borderRadius:5,border:"1px solid #6ee7b7",
                     background:"#f0fdf4",color:"#065f46",fontSize:11,cursor:"pointer",fontWeight:600 }}>
                   {t}
