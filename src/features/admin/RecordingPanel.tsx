@@ -84,11 +84,11 @@ ${trimmed}` }
       throw new Error(`GPT API 오류 (${res.status}): ${errText.slice(0, 200)}`);
     }
     const json = await res.json();
-    const analysis = json.choices?.[0]?.message?.content ?? "분석 결과를 가져오지 못했습니다.";
+    const analysis = json.analysis ?? json.choices?.[0]?.message?.content ?? "분석 결과를 가져오지 못했습니다.";
     // 키워드 추출 (분석 텍스트에서 【】 안 제목들)
     const keywords = (analysis.match(/【([^】]+)】/g) ?? [])
       .map((k: string) => k.replace(/【|】/g, ""));
-    return { analysis, keywords };
+    return { analysis, keywords: Array.isArray(json.keywords) && json.keywords.length ? json.keywords : keywords };
   } catch(e: any) {
     if (e.name === "AbortError") throw new Error("GPT 분석 시간 초과 (2분).");
     throw e;
