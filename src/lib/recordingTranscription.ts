@@ -53,7 +53,7 @@ export async function transcribeRecording(blob: Blob, key: string, options: {req
   };
   // A low-bitrate phone recording can be 5–10 MB even when it is 90–120 minutes
   // long. Chunk by size earlier so long recordings never become one slow request.
-  if (blob.size<=5*1024*1024) {
+  if (blob.size<=8*1024*1024) {
     const type=blob.type.toLowerCase();
     const ext=type.includes('wav')?'wav':type.includes('ogg')?'ogg':type.includes('mpeg')||type.includes('mp3')?'mp3':type.includes('mp4')?'mp4':'webm';
     options.onProgress?.('Whisper 전사 중…');
