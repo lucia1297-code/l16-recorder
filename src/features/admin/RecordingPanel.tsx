@@ -101,7 +101,10 @@ ${trimmed}` }
 function cleanTranscriptForAnalysis(text: string): string {
   // Whisper can hallucinate long runs of question numbers in silence. Preserve
   // normal numbers, but replace only an unusually long consecutive number run.
-  return text.replace(/(?:\b\d{1,3}번\s*){20,}/g, "\n[연속 번호 낭독 구간 생략]\n").trim();
+  return text
+    .replace(/(?:\b\d{1,3}(?:번)?\s*){20,}/g, "\n[연속 번호 환각 구간 자동 정리]\n")
+    .replace(/(?:\s*\b1(?:번)?\b){12,}/g, "\n[반복 숫자 환각 구간 자동 정리]\n")
+    .trim();
 }
 
 function downloadTranscript(rec: Recording, format: "txt" | "doc") {
@@ -422,6 +425,7 @@ export default function RecordingPanel() {
       let transcript = "";
       try {
         transcript = await transcribeRecording(fixedBlob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
+        transcript = cleanTranscriptForAnalysis(transcript);
       } catch(e: any) {
         // Whisper 실패해도 계속 진행 (status는 partial로)
         console.error("Whisper 실패:", e);
@@ -477,6 +481,7 @@ export default function RecordingPanel() {
         if (blob.size === 0) throw new Error("오디오 파일이 비어있습니다.");
         stage = "Whisper 전사";
         transcript = await transcribeRecording(blob, "", { onProgress: setNotice, proxyUrl: OPENAI_PROXY, proxyHeaders: SB_H });
+        transcript = cleanTranscriptForAnalysis(transcript);
       } else {
         setNotice(`${rec.student_name} 기존 전사문으로 GPT 정밀 재분석 중…`);
       }
