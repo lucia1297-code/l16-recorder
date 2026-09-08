@@ -117,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -203,6 +203,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")}>
           📆 시험계획
         </button>
+        <button className={tab === "schedule" ? "on" : ""} onClick={() => setTab("schedule")}>
+          🗓 일정관리
+        </button>
 
         {/* ── 기타 ── */}
         <div className="rail-divider"/>
@@ -235,6 +238,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "admininput" && <AdminInputPanelLazy />}
         {tab === "memo" && <MemoPanelLazy />}
         {tab === "material" && <MaterialPanelLazy />}
+        {tab === "schedule" && <SchedulePanelLazy />}
       </div>
     </div>
   );
@@ -4466,6 +4470,17 @@ function MaterialPanelLazy() {
     import("./MaterialPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
   }, []);
   if (err) return <div className="card"><p style={{color:"#ef4444"}}>자료제공 패널 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function SchedulePanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./SchedulePanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>일정관리 패널 로드 실패: {err}</p></div>;
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
