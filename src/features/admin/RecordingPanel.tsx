@@ -125,6 +125,7 @@ export default function RecordingPanel() {
   const timerRef   = useRef<ReturnType<typeof setInterval>|null>(null);
   const startRef   = useRef(0);
   const mountedRef = useRef(true); // 언마운트 후 setState 방지
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const sessionIdRef = useRef<string>("");
   const deviceIdRef = useRef<string>(localStorage.getItem("l16.recording.device") || crypto.randomUUID());
 
@@ -142,8 +143,21 @@ export default function RecordingPanel() {
       if (mediaRef.current?.state !== "inactive") {
         try { mediaRef.current?.stop(); } catch { }
       }
+      void wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const reacquireWakeLock = async () => {
+      if (!recording || document.visibilityState !== "visible" || !("wakeLock" in navigator)) return;
+      try { wakeLockRef.current = await navigator.wakeLock.request("screen"); } catch { /* browser may deny it */ }
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") void reacquireWakeLock(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    void reacquireWakeLock();
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [recording]);
 
   async function loadRecordings() {
     if (mountedRef.current) setLoading(true);
@@ -264,6 +278,8 @@ export default function RecordingPanel() {
   async function stopRecording() {
     if (!mediaRef.current) return;
     setRecording(false);
+    void wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
     stoppingRef.current = true;
     if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
