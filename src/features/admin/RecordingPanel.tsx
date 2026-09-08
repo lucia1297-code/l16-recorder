@@ -439,13 +439,13 @@ export default function RecordingPanel() {
     setUploading(false);
   }
 
-  async function reAnalyze(rec: Recording) {
+  async function reAnalyze(rec: Recording, forceRetranscribe = false) {
     setProcessing(rec.id);
     setProcessResult(prev => ({ ...prev, [rec.id]: `${rec.student_name} 재분석 시작…` }));
     setNotice(`${rec.student_name} 재분석 중…`);
     let stage = "녹음 접근 확인";
     try {
-      let transcript = rec.transcript?.trim() ?? "";
+      let transcript = forceRetranscribe ? "" : (rec.transcript?.trim() ?? "");
       if (!transcript) {
         const signedUrl = await getSignedUrl(rec.audio_url);
         stage = "녹음 다운로드";
@@ -920,6 +920,16 @@ export default function RecordingPanel() {
                           <RefreshCw size={11}/>
                           {processing===rec.id ? "재분석 중…" : "재분석"}
                         </button>
+                      <button onClick={() => reAnalyze(rec, true)}
+                        disabled={processing===rec.id}
+                        style={{ display:"flex", alignItems:"center", gap:6,
+                          padding:"6px 14px", borderRadius:8, border:"1px solid rgba(245,158,11,0.35)",
+                          background: processing===rec.id ? "#1e293b" : "rgba(245,158,11,0.12)",
+                          color: processing===rec.id ? "#475569" : "#fbbf24",
+                          fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                        <RefreshCw size={11}/>
+                        원본 재전사 후 분석
+                      </button>
                       {(processing===rec.id || processResult[rec.id]) && (
                         <span style={{ fontSize:10, color:"#f59e0b", alignSelf:"center" }}>
                           {processing===rec.id ? notice : processResult[rec.id]}
