@@ -117,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -173,6 +173,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         </button>
         <button className={tab === "submit" ? "on" : ""} onClick={() => setTab("submit")}>
           📌 제출 현황
+        </button>
+        <button className={tab === "material" ? "on" : ""} onClick={() => setTab("material")}>
+          📦 자료 제공
         </button>
 
         {/* ── 수업 ── */}
@@ -231,6 +234,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "wworder" && <WWOrderPanelLazy />}
         {tab === "admininput" && <AdminInputPanelLazy />}
         {tab === "memo" && <MemoPanelLazy />}
+        {tab === "material" && <MaterialPanelLazy />}
       </div>
     </div>
   );
@@ -4451,6 +4455,17 @@ function MemoPanelLazy() {
     import("./MemoPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
   }, []);
   if (err) return <div className="card"><p style={{color:"#ef4444"}}>메모장 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function MaterialPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./MaterialPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>자료제공 패널 로드 실패: {err}</p></div>;
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
