@@ -51,7 +51,9 @@ export async function transcribeRecording(blob: Blob, key: string, options: {req
     if (typeof data.text!=='string' || !data.text.trim()) throw new Error('Whisper 전사 결과가 비어있습니다.');
     return data.text as string;
   };
-  if (blob.size<=24*1024*1024) {
+  // A low-bitrate phone recording can be 5–10 MB even when it is 90–120 minutes
+  // long. Chunk by size earlier so long recordings never become one slow request.
+  if (blob.size<=5*1024*1024) {
     const type=blob.type.toLowerCase();
     const ext=type.includes('wav')?'wav':type.includes('ogg')?'ogg':type.includes('mpeg')||type.includes('mp3')?'mp3':type.includes('mp4')?'mp4':'webm';
     options.onProgress?.('Whisper 전사 중…');

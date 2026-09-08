@@ -9,6 +9,7 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
 const OPENAI_PROXY = `${SUPABASE_URL}/functions/v1/recording-transcribe`;
 const ANALYZE_PROXY = `${SUPABASE_URL}/functions/v1/recording-analyze`;
+const MAX_RECORDING_SECONDS = 5 * 60 * 60;
 
 interface Recording {
   id: string;
@@ -212,8 +213,14 @@ export default function RecordingPanel() {
       stoppingRef.current = false;
       segmentTimerRef.current = setTimeout(() => rotateSegment(), 120_000);
       setRecording(true); setElapsed(0);
-      timerRef.current = setInterval(() =>
-        setElapsed(Math.floor((Date.now()-startRef.current)/1000)), 1000);
+      timerRef.current = setInterval(() => {
+        const seconds = Math.floor((Date.now()-startRef.current)/1000);
+        setElapsed(seconds);
+        if (seconds >= MAX_RECORDING_SECONDS) {
+          setNotice("최대 5시간 녹음에 도달해 자동으로 마무리합니다.");
+          void stopRecording();
+        }
+      }, 1000);
 
       // 갤럭시 백그라운드 유지 힌트
       // MediaSession API — 잠금화면에 "녹음 중" 표시 + 백그라운드 오디오 유지
