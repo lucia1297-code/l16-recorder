@@ -98,6 +98,12 @@ ${trimmed}` }
   }
 }
 
+function cleanTranscriptForAnalysis(text: string): string {
+  // Whisper can hallucinate long runs of question numbers in silence. Preserve
+  // normal numbers, but replace only an unusually long consecutive number run.
+  return text.replace(/(?:\b\d{1,3}번\s*){20,}/g, "\n[연속 번호 낭독 구간 생략]\n").trim();
+}
+
 export default function RecordingPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -445,7 +451,7 @@ export default function RecordingPanel() {
     setNotice(`${rec.student_name} 재분석 중…`);
     let stage = "녹음 접근 확인";
     try {
-      let transcript = forceRetranscribe ? "" : (rec.transcript?.trim() ?? "");
+      let transcript = forceRetranscribe ? "" : cleanTranscriptForAnalysis(rec.transcript?.trim() ?? "");
       if (!transcript) {
         const signedUrl = await getSignedUrl(rec.audio_url);
         stage = "녹음 다운로드";
