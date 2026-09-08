@@ -7,6 +7,10 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const SB_H = {
   "apikey": SUPABASE_KEY,
   "Authorization": `Bearer ${SUPABASE_KEY}`,
+};
+const SB_H_JSON = {
+  "apikey": SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
   "Content-Type": "application/json",
 };
 
@@ -97,14 +101,14 @@ export default function MaterialPanel() {
       if (editId) {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/material_records?id=eq.${editId}`,
-          { method: "PATCH", headers: SB_H, body: JSON.stringify(body) }
+          { method: "PATCH", headers: SB_H_JSON, body: JSON.stringify(body) }
         );
         if (!res.ok) throw new Error(`수정 실패 (${res.status})`);
         setNotice("✅ 수정 완료");
       } else {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/material_records`,
-          { method: "POST", headers: { ...SB_H, Prefer: "return=minimal" }, body: JSON.stringify(body) }
+          { method: "POST", headers: { ...SB_H_JSON, Prefer: "return=minimal" }, body: JSON.stringify(body) }
         );
         if (!res.ok) throw new Error(`저장 실패 (${res.status})`);
         setNotice("✅ 저장 완료");
@@ -122,7 +126,7 @@ export default function MaterialPanel() {
     if (!confirm("이 기록을 삭제할까요?")) return;
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/material_records?id=eq.${id}`,
-      { method: "DELETE", headers: SB_H }
+      { method: "DELETE", headers: SB_H_JSON }
     );
     if (res.ok) { setNotice("삭제 완료"); await loadRecords(); }
     else setNotice("삭제 실패");
