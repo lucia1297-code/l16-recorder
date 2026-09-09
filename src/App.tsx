@@ -120,7 +120,7 @@ export default function App() {
   return (
     <div className="app">
       {/* PWA 업데이트 알림 배너 */}
-      {(showUpdate || (needRefresh[0] && !window.__updateDismissed)) && (
+      {(showUpdate || (needRefresh[0] && !(window as any).__updateDismissed)) && (
         <div style={{
           position:"fixed", top:0, left:0, right:0, zIndex:9999,
           background:"linear-gradient(135deg,#d1fae5,#fef9c3)",
