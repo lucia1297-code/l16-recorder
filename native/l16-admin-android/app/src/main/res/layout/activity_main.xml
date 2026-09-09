@@ -1,0 +1,7 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="24dp" android:layout_width="match_parent" android:layout_height="match_parent">
+    <TextView android:text="L16 관리자 녹음" android:textSize="24sp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <TextView android:id="@+id/status" android:text="대기" android:layout_marginTop="24dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <EditText android:id="@+id/student_code" android:hint="학생 코드" android:inputType="text" android:layout_marginTop="16dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <Button android:id="@+id/start" android:text="녹음 시작" android:layout_marginTop="24dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <Button android:id="@+id/stop" android:text="녹음 종료" android:enabled="false" android:layout_marginTop="12dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+</LinearLayout>
