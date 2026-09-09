@@ -267,7 +267,7 @@ export default function SchedulePanel() {
                 </div>
                 {holiday && <div style={{ fontSize:9,color:"#dc2626",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{holiday}</div>}
                 <div style={{ display:"flex",flexDirection:"column",gap:1 }}>
-                  {dayEvents.slice(0,3).map(ev => {
+                  {dayEvents.map(ev => {
                     const cat = CATEGORIES.find(c => c.label === ev.category);
                     const isMultiDay = ev.end_date && ev.end_date !== ev.event_date;
                     const isStart = key === ev.event_date;
@@ -287,9 +287,6 @@ export default function SchedulePanel() {
                       </div>
                     );
                   })}
-                  {dayEvents.length > 3 && (
-                    <div style={{ fontSize:9,color:"#94a3b8",paddingLeft:4 }}>+{dayEvents.length - 3}개</div>
-                  )}
                 </div>
               </div>
             );
