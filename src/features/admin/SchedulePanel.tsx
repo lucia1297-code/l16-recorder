@@ -554,7 +554,7 @@ export default function SchedulePanel() {
         <span style={{ fontSize:12,color:"#64748b",alignSelf:"center",marginLeft:"auto" }}>{filtered.length}건</span>
       </div>
 
-      {showForm && <Form />}
+      {showForm && Form()}
 
       {loading
         ? <p style={{ color:"#94a3b8",fontSize:13 }}>로딩 중…</p>
