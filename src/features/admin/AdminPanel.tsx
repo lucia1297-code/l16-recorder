@@ -574,6 +574,7 @@ function RosterManager() {
   // 수업 시간표 편집 모달
   const [scheduleModal, setScheduleModal] = useState<RosterEntry | null>(null);
   const [scheduleForm, setScheduleForm] = useState<import("../../core/roster").LessonSchedule>([]);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   function openScheduleModal(entry: RosterEntry) {
     setScheduleModal(entry);
@@ -581,7 +582,8 @@ function RosterManager() {
   }
 
   async function saveSchedule() {
-    if (!scheduleModal) return;
+    if (!scheduleModal || savingSchedule) return;
+    setSavingSchedule(true);
     const updated = { ...scheduleModal, lessonSchedule: scheduleForm };
     try {
       await rosterStore.saveRoster([updated]);
@@ -591,6 +593,8 @@ function RosterManager() {
       setScheduleModal(null);
     } catch(e: any) {
       setNotice("저장 실패: " + (e?.message ?? "오류"));
+    } finally {
+      setSavingSchedule(false);
     }
   }
 
@@ -1214,14 +1218,16 @@ function RosterManager() {
                 </div>
               )}
               <div style={{ marginTop:16, display:"flex", gap:8 }}>
-                <button onClick={saveSchedule}
+                <button onClick={saveSchedule} disabled={savingSchedule}
                   style={{ flex:1, padding:"12px", borderRadius:10, border:"none",
-                    background:"#0891b2", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
-                  저장
+                    background: savingSchedule ? "#cbd5e1" : "#0891b2", color:"#fff", fontWeight:700, fontSize:14,
+                    cursor: savingSchedule ? "not-allowed" : "pointer", opacity: savingSchedule ? 0.6 : 1 }}>
+                  {savingSchedule ? "저장 중..." : "저장"}
                 </button>
-                <button onClick={()=>setScheduleModal(null)}
+                <button onClick={()=>setScheduleModal(null)} disabled={savingSchedule}
                   style={{ padding:"12px 20px", borderRadius:10, border:"1px solid #e2e8f0",
-                    background:"#fff", color:"#64748b", fontSize:14, cursor:"pointer" }}>
+                    background:"#fff", color:"#64748b", fontSize:14, cursor: savingSchedule ? "not-allowed" : "pointer",
+                    opacity: savingSchedule ? 0.5 : 1 }}>
                   취소
                 </button>
               </div>
