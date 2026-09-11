@@ -1218,13 +1218,13 @@ function RosterManager() {
                 </div>
               )}
               <div style={{ marginTop:16, display:"flex", gap:8 }}>
-                <button onClick={saveSchedule} disabled={savingSchedule}
+                <button type="button" onClick={(e) => { e.preventDefault(); saveSchedule(); }} disabled={savingSchedule}
                   style={{ flex:1, padding:"12px", borderRadius:10, border:"none",
                     background: savingSchedule ? "#cbd5e1" : "#0891b2", color:"#fff", fontWeight:700, fontSize:14,
                     cursor: savingSchedule ? "not-allowed" : "pointer", opacity: savingSchedule ? 0.6 : 1 }}>
                   {savingSchedule ? "저장 중..." : "저장"}
                 </button>
-                <button onClick={()=>setScheduleModal(null)} disabled={savingSchedule}
+                <button type="button" onClick={(e) => { e.preventDefault(); setScheduleModal(null); }} disabled={savingSchedule}
                   style={{ padding:"12px 20px", borderRadius:10, border:"1px solid #e2e8f0",
                     background:"#fff", color:"#64748b", fontSize:14, cursor: savingSchedule ? "not-allowed" : "pointer",
                     opacity: savingSchedule ? 0.5 : 1 }}>
