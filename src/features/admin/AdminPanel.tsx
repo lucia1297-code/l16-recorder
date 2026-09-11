@@ -117,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -181,6 +181,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {/* ── 수업 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">수업</div>
+        <button className={tab === "timetable" ? "on" : ""} onClick={() => setTab("timetable")}>
+          📅 수업 시간표
+        </button>
         <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")}>
           🎙 녹음분석
         </button>
@@ -243,6 +246,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "material" && <MaterialPanelLazy />}
         {tab === "schedule" && <SchedulePanelLazy />}
         {tab === "calculator" && <CalculatorPanelLazy />}
+        {tab === "timetable" && <TimetablePanelLazy />}
       </div>
     </div>
   );
@@ -4485,6 +4489,15 @@ function SchedulePanelLazy() {
     import("./SchedulePanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
   }, []);
   if (err) return <div className="card"><p style={{color:"#ef4444"}}>일정관리 패널 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function TimetablePanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  useEffect(() => {
+    import("./TimetablePanel").then(m => setComp(() => m.default)).catch(console.error);
+  }, []);
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
