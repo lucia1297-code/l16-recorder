@@ -585,13 +585,18 @@ function RosterManager() {
     if (!scheduleModal || savingSchedule) return;
     setSavingSchedule(true);
     const updated = { ...scheduleModal, lessonSchedule: scheduleForm };
+    console.log("저장할 데이터:", updated);
     try {
+      console.log("rosterStore.saveRoster 호출 시작...");
       await rosterStore.saveRoster([updated]);
+      console.log("저장 완료, 리스트 조회 중...");
       const all = await rosterStore.listRoster();
+      console.log("조회 완료, 상태 업데이트...");
       setRoster(all);
       setNotice(`✅ ${scheduleModal.name} 수업 시간 저장 완료`);
       setScheduleModal(null);
     } catch(e: any) {
+      console.error("저장 중 에러 발생:", e);
       setNotice("저장 실패: " + (e?.message ?? "오류"));
     } finally {
       setSavingSchedule(false);
