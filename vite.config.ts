@@ -17,7 +17,8 @@ export default defineConfig({
         theme_color: "#2B4C7E",
         background_color: "#FAF9F6",
         display: "standalone",
-        start_url: "/l16-recorder/",`r`n        scope: "/l16-recorder/",
+        start_url: "/l16-recorder/",
+        scope: "/l16-recorder/",
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png" },
