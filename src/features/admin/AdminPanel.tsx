@@ -1016,7 +1016,7 @@ function RosterManager() {
 
       {/* ── 과제 독려 발송 섹션 ── */}
       {roster.length > 0 && (
-        <LessonScheduleManager roster={roster} setRoster={setRoster} rosterStore={rosterStore} />
+        <LessonScheduleManager roster={roster} setRoster={setRoster} rosterStore={rosterStore} openScheduleModal={openScheduleModal} />
       )}
       {roster.length > 0 && (
         <ReminderSection roster={roster} />
@@ -1031,11 +1031,21 @@ const DAY_LABELS: Record<string, string> = {
 };
 const ALL_DAYS = ["mon","tue","wed","thu","fri","sat","sun"] as const;
 
-function LessonScheduleManager({ roster, setRoster, rosterStore }: {
+function LessonScheduleManager({ roster, setRoster, rosterStore, openScheduleModal }: {
   roster: RosterEntry[];
   setRoster: (r: RosterEntry[]) => void;
   rosterStore: ReturnType<typeof createRosterStore>;
+  openScheduleModal: (entry: RosterEntry) => void;
 }) {
+  const DAY_ORDER: import("../../core/roster").DayOfWeek[] = ["mon","tue","wed","thu","fri","sat","sun"];
+  function formatLessonSchedule(entry: RosterEntry): string | null {
+    const sched = entry.lessonSchedule;
+    if (!sched || sched.length === 0) return null;
+    return [...sched]
+      .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day))
+      .map((s) => `${DAY_LABELS[s.day]} ${s.startTime}~${s.endTime}`)
+      .join(" · ");
+  }
   const [selectedStudent, setSelectedStudent] = useState<string>("");
   const [editMode, setEditMode] = useState(false);
   const [tempDays, setTempDays] = useState<LessonDayMap>({});
@@ -1144,6 +1154,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                 <th style={{ padding: "6px 10px", textAlign: "center" }}>상태</th>
                 <th style={{ padding: "6px 10px", textAlign: "center" }}>주 시수</th>
                 <th style={{ padding: "6px 10px", textAlign: "left" }}>수업 요일</th>
+                <th style={{ padding: "6px 10px", textAlign: "left" }}>수업 시간</th>
                 <th style={{ padding: "6px 10px", textAlign: "center" }}>변경</th>
               </tr>
             </thead>
@@ -1190,6 +1201,26 @@ function LessonScheduleManager({ roster, setRoster, rosterStore }: {
                           ))}
                         </div>
                       ) : <span style={{ color: "#ccc", fontSize: 12 }}>-</span>}
+                    </td>
+                    <td style={{ padding: "6px 10px" }}>
+                      {(() => {
+                        const timeStr = formatLessonSchedule(r);
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 12, color: timeStr ? "#0c4a6e" : "#ccc", fontWeight: timeStr ? 600 : 400 }}>
+                              {timeStr ?? "미설정"}
+                            </span>
+                            <button
+                              onClick={() => openScheduleModal(r)}
+                              title="수업 시간 설정"
+                              style={{ padding: "2px 6px", fontSize: 11, borderRadius: 4, border: "none",
+                                background: "#0891b2", color: "#fff", cursor: "pointer", fontWeight: 600 }}
+                            >
+                              🕐 {timeStr ? "수정" : "설정"}
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: "6px 10px", textAlign: "center" }}>
                       <select
