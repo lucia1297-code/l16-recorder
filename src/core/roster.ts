@@ -6,6 +6,16 @@ export type DayOfWeek = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 // 요일별 수업 횟수 (1=일반, 2=연강)
 export type LessonDayMap = Partial<Record<DayOfWeek, 1 | 2>>;
 
+// 수업 시간 정보 (시작·종료 시간 포함)
+export interface LessonTime {
+  day: DayOfWeek;
+  startTime: string;  // "HH:MM" (예: "08:30")
+  endTime: string;    // "HH:MM" (예: "11:30")
+}
+
+// 주간 수업 일정 (최대 5일)
+export type LessonSchedule = LessonTime[];
+
 // 총 주간 시수 계산
 export function calcWeeklyTotal(lessonDayMap: LessonDayMap | undefined): number {
   if (!lessonDayMap) return 0;
@@ -70,6 +80,7 @@ export interface RosterEntry {
   studentStatus?: StudentStatus;  // 수강 상태 (기본값: active)
   pausedAt?: string;              // 중단 시작일
   pausedReason?: string;          // 중단 사유
+  lessonSchedule?: LessonSchedule;  // 수업 시간 일정 (최대 5일)
 }
 
 // 수업 시수별 과제 제출 기한 (일)

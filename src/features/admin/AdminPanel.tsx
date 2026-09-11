@@ -117,7 +117,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -181,6 +181,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {/* ── 수업 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">수업</div>
+        <button className={tab === "timetable" ? "on" : ""} onClick={() => setTab("timetable")}>
+          📅 수업 시간표
+        </button>
         <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")}>
           🎙 녹음분석
         </button>
@@ -243,6 +246,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "material" && <MaterialPanelLazy />}
         {tab === "schedule" && <SchedulePanelLazy />}
         {tab === "calculator" && <CalculatorPanelLazy />}
+        {tab === "timetable" && <TimetablePanelLazy />}
       </div>
     </div>
   );
@@ -565,6 +569,68 @@ function RosterManager() {
     } catch (e) {
       setNotice(`전송 실패: ${(e as Error).message}`);
     }
+  }
+
+  // 수업 시간표 편집 모달
+  const [scheduleModal, setScheduleModal] = useState<RosterEntry | null>(null);
+  const [scheduleForm, setScheduleForm] = useState<import("../../core/roster").LessonSchedule>([]);
+
+  function openScheduleModal(entry: RosterEntry) {
+    setScheduleModal(entry);
+    setScheduleForm(entry.lessonSchedule ? [...entry.lessonSchedule] : []);
+  }
+
+  async function saveSchedule() {
+    if (!scheduleModal) return;
+    const updated = { ...scheduleModal, lessonSchedule: scheduleForm };
+    try {
+      await rosterStore.saveRoster([updated]);
+      const all = await rosterStore.listRoster();
+      setRoster(all);
+      setNotice(`✅ ${scheduleModal.name} 수업 시간 저장 완료`);
+      setScheduleModal(null);
+    } catch(e: any) {
+      setNotice("저장 실패: " + (e?.message ?? "오류"));
+    }
+  }
+
+  const DAYS_KO: { key: import("../../core/roster").DayOfWeek; label: string }[] = [
+    { key:"sun", label:"일" }, { key:"mon", label:"월" }, { key:"tue", label:"화" },
+    { key:"wed", label:"수" }, { key:"thu", label:"목" }, { key:"fri", label:"금" },
+    { key:"sat", label:"토" },
+  ];
+
+  // 30분 단위 시간 슬롯 (06:00~24:00)
+  const TIME_SLOTS: string[] = [];
+  for (let h=6; h<24; h++) {
+    TIME_SLOTS.push(`${String(h).padStart(2,"0")}:00`);
+    TIME_SLOTS.push(`${String(h).padStart(2,"0")}:30`);
+  }
+  TIME_SLOTS.push("24:00");
+
+  function toggleScheduleDay(key: import("../../core/roster").DayOfWeek) {
+    const exists = scheduleForm.find(s => s.day === key);
+    if (exists) {
+      setScheduleForm(scheduleForm.filter(s => s.day !== key));
+    } else if (scheduleForm.length >= 5) {
+      alert("최대 5일까지 수업 가능합니다.");
+    } else {
+      setScheduleForm([...scheduleForm, { day:key, startTime:"09:00", endTime:"11:00" }]);
+    }
+  }
+
+  function updateScheduleTime(day: import("../../core/roster").DayOfWeek, field: "startTime"|"endTime", val: string) {
+    setScheduleForm(scheduleForm.map(s => s.day===day ? {...s, [field]:val} : s));
+  }
+
+  function calcHours(start: string, end: string): string {
+    const [sh,sm] = start.split(":").map(Number);
+    const [eh,em] = end.split(":").map(Number);
+    const diff = (eh*60+em) - (sh*60+sm);
+    if (diff <= 0) return "?";
+    const h = Math.floor(diff/60);
+    const m = diff%60;
+    return h > 0 ? (m > 0 ? `${h}시간 ${m}분` : `${h}시간`) : `${m}분`;
   }
 
   function startEdit(entry: RosterEntry) {
@@ -988,6 +1054,11 @@ function RosterManager() {
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => startEdit(e)}>번호수정</button>
                           <button className="btn ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => sendCode(e)}>코드전송</button>
+                          <button onClick={() => openScheduleModal(e)}
+                            style={{ padding:"4px 8px", fontSize:11, background:"#0891b2",
+                              color:"#fff", border:"none", borderRadius:4, cursor:"pointer" }}>
+                            🕐 수업시간
+                          </button>
                           <button
                             onClick={() => deleteStudent(e)}
                             style={{ padding: "4px 10px", fontSize: 12, borderRadius: 6,
@@ -1020,6 +1091,143 @@ function RosterManager() {
       )}
       {roster.length > 0 && (
         <ReminderSection roster={roster} />
+      )}
+
+      {/* ── 수업 시간표 편집 모달 ── */}
+      {scheduleModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)",
+          zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+          onClick={e => { if (e.target===e.currentTarget) setScheduleModal(null); }}>
+          <div style={{ background:"#fff", borderRadius:16, width:"100%", maxWidth:520,
+            maxHeight:"90vh", overflow:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ padding:"16px 20px", borderBottom:"1px solid #e2e8f0",
+              background:"#f0f9ff", borderRadius:"16px 16px 0 0",
+              display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div>
+                <h3 style={{ margin:0, fontSize:15, fontWeight:700, color:"#0c4a6e" }}>
+                  🕐 수업 시간 설정
+                </h3>
+                <p style={{ margin:"3px 0 0", fontSize:12, color:"#0891b2", fontWeight:600 }}>
+                  {scheduleModal.name} · {scheduleModal.school} {scheduleModal.grade}학년
+                </p>
+              </div>
+              <button onClick={() => setScheduleModal(null)}
+                style={{ background:"none", border:"none", fontSize:20, color:"#94a3b8", cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ padding:20 }}>
+              <div style={{ padding:"10px 14px", borderRadius:8, marginBottom:16,
+                background:"#f0f9ff", border:"1px solid #bae6fd", fontSize:12, color:"#0c4a6e" }}>
+                최대 <strong>5일</strong> · 1일 최대 <strong>3시간</strong> (30분 단위) · 06:00~24:00
+              </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={{ fontSize:12, fontWeight:700, color:"#374151", display:"block", marginBottom:8 }}>
+                  수업 요일 ({scheduleForm.length}/5)
+                </label>
+                <div style={{ display:"flex", gap:6 }}>
+                  {DAYS_KO.map(({key,label}) => {
+                    const selected = scheduleForm.some(s => s.day===key);
+                    return (
+                      <button key={key} onClick={() => toggleScheduleDay(key)}
+                        style={{ width:40, height:40, borderRadius:10, border:"none",
+                          background: selected ? "#0891b2" : "#f1f5f9",
+                          color: selected ? "#fff" : "#94a3b8",
+                          fontWeight: selected ? 800 : 400, fontSize:14, cursor:"pointer",
+                          outline: selected ? "2px solid #0891b2" : "none",
+                          outlineOffset:2 }}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {scheduleForm.length === 0 ? (
+                <div style={{ textAlign:"center", padding:"20px", color:"#94a3b8",
+                  fontSize:13, border:"1px dashed #e2e8f0", borderRadius:8 }}>
+                  수업 요일을 선택하세요
+                </div>
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {[...scheduleForm].sort((a,b)=>{
+                    const o=["sun","mon","tue","wed","thu","fri","sat"];
+                    return o.indexOf(a.day)-o.indexOf(b.day);
+                  }).map(s => {
+                    const dayLabel = DAYS_KO.find(d=>d.key===s.day)?.label ?? s.day;
+                    const [sh,sm] = s.startTime.split(":").map(Number);
+                    const [eh,em] = s.endTime.split(":").map(Number);
+                    const diffMin = (eh*60+em)-(sh*60+sm);
+                    const overLimit = diffMin > 180;
+                    const hours = diffMin>0 ? (Math.floor(diffMin/60)>0 ? `${Math.floor(diffMin/60)}시간${diffMin%60>0?` ${diffMin%60}분`:""}` : `${diffMin}분`) : "?";
+                    return (
+                      <div key={s.day} style={{ padding:"12px 14px", borderRadius:10,
+                        border:`1.5px solid ${overLimit?"#fca5a5":"#bae6fd"}`,
+                        background: overLimit ? "#fef2f2" : "#f0f9ff" }}>
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+                          <span style={{ fontSize:14, fontWeight:800, color:"#0c4a6e" }}>{dayLabel}요일</span>
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <span style={{ fontSize:12, fontWeight:700,
+                              color: overLimit?"#dc2626":"#0891b2",
+                              padding:"2px 8px", borderRadius:6,
+                              background: overLimit?"#fee2e2":"#e0f2fe" }}>
+                              {hours}{overLimit&&" ⚠️ 3시간 초과"}
+                            </span>
+                            <button onClick={()=>toggleScheduleDay(s.day)}
+                              style={{ width:24, height:24, borderRadius:6, border:"none",
+                                background:"#fee2e2", color:"#dc2626", cursor:"pointer", fontSize:12 }}>✕</button>
+                          </div>
+                        </div>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                          <div>
+                            <label style={{ fontSize:11, fontWeight:600, color:"#64748b", display:"block", marginBottom:4 }}>시작</label>
+                            <select value={s.startTime}
+                              onChange={e=>updateScheduleTime(s.day,"startTime",e.target.value)}
+                              style={{ width:"100%", padding:"8px 10px", borderRadius:8,
+                                border:"1px solid #bae6fd", fontSize:13, fontWeight:600,
+                                background:"#fff", boxSizing:"border-box" as const }}>
+                              {TIME_SLOTS.slice(0,-1).map(t=><option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize:11, fontWeight:600, color:"#64748b", display:"block", marginBottom:4 }}>종료</label>
+                            <select value={s.endTime}
+                              onChange={e=>updateScheduleTime(s.day,"endTime",e.target.value)}
+                              style={{ width:"100%", padding:"8px 10px", borderRadius:8,
+                                border:"1px solid #bae6fd", fontSize:13, fontWeight:600,
+                                background:"#fff", boxSizing:"border-box" as const }}>
+                              {TIME_SLOTS.slice(1).map(t=><option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {scheduleForm.length > 0 && (
+                <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8,
+                  background:"#f8fafc", border:"1px solid #e2e8f0", fontSize:12, color:"#64748b" }}>
+                  <strong style={{ color:"#374151" }}>요약:</strong>
+                  {[...scheduleForm].sort((a,b)=>{const o=["sun","mon","tue","wed","thu","fri","sat"];return o.indexOf(a.day)-o.indexOf(b.day);}).map(s=>(
+                    <span key={s.day} style={{ marginLeft:8 }}>
+                      {DAYS_KO.find(d=>d.key===s.day)?.label} {s.startTime}~{s.endTime}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop:16, display:"flex", gap:8 }}>
+                <button onClick={saveSchedule}
+                  style={{ flex:1, padding:"12px", borderRadius:10, border:"none",
+                    background:"#0891b2", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                  저장
+                </button>
+                <button onClick={()=>setScheduleModal(null)}
+                  style={{ padding:"12px 20px", borderRadius:10, border:"1px solid #e2e8f0",
+                    background:"#fff", color:"#64748b", fontSize:14, cursor:"pointer" }}>
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1836,6 +2044,7 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
           </p>
         </>
       )}
+
     </div>
   );
 }
@@ -4516,6 +4725,15 @@ function SchedulePanelLazy() {
     import("./SchedulePanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
   }, []);
   if (err) return <div className="card"><p style={{color:"#ef4444"}}>일정관리 패널 로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function TimetablePanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  useEffect(() => {
+    import("./TimetablePanel").then(m => setComp(() => m.default)).catch(console.error);
+  }, []);
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
