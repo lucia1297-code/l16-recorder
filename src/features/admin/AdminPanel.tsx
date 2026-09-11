@@ -1096,7 +1096,7 @@ function RosterManager() {
 
       {/* ── 과제 독려 발송 섹션 ── */}
       {roster.length > 0 && (
-        <LessonScheduleManager roster={roster} setRoster={setRoster} rosterStore={rosterStore} openScheduleModal={openScheduleModal} />
+        <LessonScheduleManager roster={roster} setRoster={setRoster} rosterStore={rosterStore} openScheduleModal={openScheduleModal} scheduleModal={scheduleModal} setScheduleModal={setScheduleModal} scheduleForm={scheduleForm} setScheduleForm={setScheduleForm} saveSchedule={saveSchedule} savingSchedule={savingSchedule} />
       )}
       {roster.length > 0 && (
         <ReminderSection roster={roster} />
@@ -1250,11 +1250,17 @@ const DAY_LABELS: Record<string, string> = {
 };
 const ALL_DAYS = ["mon","tue","wed","thu","fri","sat","sun"] as const;
 
-function LessonScheduleManager({ roster, setRoster, rosterStore, openScheduleModal }: {
+function LessonScheduleManager({ roster, setRoster, rosterStore, openScheduleModal, scheduleModal, setScheduleModal, scheduleForm, setScheduleForm, saveSchedule, savingSchedule }: {
   roster: RosterEntry[];
   setRoster: (r: RosterEntry[]) => void;
   rosterStore: ReturnType<typeof createRosterStore>;
   openScheduleModal: (entry: RosterEntry) => void;
+  scheduleModal: RosterEntry | null;
+  setScheduleModal: (entry: RosterEntry | null) => void;
+  scheduleForm: import("../../core/roster").LessonSchedule;
+  setScheduleForm: (form: import("../../core/roster").LessonSchedule) => void;
+  saveSchedule: () => Promise<void>;
+  savingSchedule: boolean;
 }) {
   const DAY_ORDER: import("../../core/roster").DayOfWeek[] = ["mon","tue","wed","thu","fri","sat","sun"];
   function formatLessonSchedule(entry: RosterEntry): string | null {
