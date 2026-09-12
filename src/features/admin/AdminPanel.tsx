@@ -201,11 +201,11 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {/* ── 시험 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">시험</div>
-        <button className={tab === "examschedule" ? "on" : ""} onClick={() => setTab("examschedule")}>
-          📊 시험일정 chart
-        </button>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")}>
           📅 시험일정
+        </button>
+        <button className={tab === "examschedule" ? "on" : ""} onClick={() => setTab("examschedule")}>
+          📊 시험일정 chart
         </button>
         <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")}>
           📆 시험계획
