@@ -32,6 +32,9 @@ export interface AssignmentSubmission {
   // 정밀 분석 답변 (선택 — 학생이 제출 시 입력)
   analysisData?: AssignmentAnalysisData;
 
+  // 메모 (선택 — 관리자가 추가할 수 있음)
+  memo?: string;
+
   // 강사 2차 점검 (선택 — 제출 직후에는 비어있고, 강사가 확인하면 채워짐)
   reviewStatus?: "pending" | "pass" | "fail";
   reviewedAt?: string; // ISO

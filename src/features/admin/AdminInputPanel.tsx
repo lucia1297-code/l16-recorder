@@ -34,6 +34,7 @@ function uuidv4(): string {
 }
 
 const EMPTY_EXAM = {
+  id: "",
   examName: `${now.getFullYear()}년 ${now.getMonth()+1}월 학력평가`,
   year: now.getFullYear(),
   month: now.getMonth() + 1,
@@ -46,6 +47,7 @@ const EMPTY_EXAM = {
 };
 
 const EMPTY_ASG = {
+  id: "",
   typeId: "", round: 1, score: "",
   wrongNos: "", completed: true, totalMinutes: "", memo: "",
 };
@@ -112,7 +114,39 @@ export default function AdminInputPanel() {
   }
   function fail(msg: string) { setError(msg); setNotice(""); }
 
-  // ── 모의고사 저장 ───────────────────────────────────
+  // ── 모의고사 이력 클릭 시 폼에 로드 ───────────────────
+  function editExam(ex: ExamResult) {
+    setExamForm({
+      id: ex.id,
+      examName: ex.exam.examName,
+      year: ex.exam.year,
+      month: ex.exam.month,
+      round: ex.exam.round,
+      date: ex.date,
+      provider: ex.exam.provider || "",
+      score: String(ex.score),
+      wrongNos: ex.wrongAnswers.map(w => w.questionNo).join(", "),
+      memo: ex.reflection.hardestReason,
+    });
+    setInputTab("exam");
+  }
+
+  // ── 과제 이력 클릭 시 폼에 로드 ──────────────────────
+  function editAsg(asg: AssignmentSubmission) {
+    setAsgForm({
+      id: asg.id,
+      typeId: asg.typeId,
+      round: asg.round,
+      score: asg.score ? String(asg.score) : "",
+      wrongNos: asg.wrongNumbers.join(", "),
+      completed: asg.completed,
+      totalMinutes: asg.totalMinutes ? String(asg.totalMinutes) : "",
+      memo: asg.memo ?? "",
+    });
+    setInputTab("assignment");
+  }
+
+  // ── 모의고사 저장 (새로 입력 또는 수정) ──────────────
   async function saveExam() {
     if (!student) { fail("학생을 먼저 선택해주세요."); return; }
     const score = Number(examForm.score);
@@ -125,8 +159,9 @@ export default function AdminInputPanel() {
         .split(/[,\s]+/).filter(Boolean).map(Number)
         .filter(n => !isNaN(n) && n > 0);
 
+      const isUpdate = !!examForm.id;
       const result: ExamResult = {
-        id: uuidv4(),
+        id: examForm.id || uuidv4(),
         student: {
           studentCode: student.studentCode,
           name: student.name,
@@ -152,11 +187,23 @@ export default function AdminInputPanel() {
           hardestReason: examForm.memo,
           nextGoal: "", satisfaction: 0,
         },
-        submittedAt: new Date().toISOString(),
+        submittedAt: isUpdate ? new Date().toISOString() : new Date().toISOString(),
       };
 
-      await storage.saveResult(result);
-      notify(`✅ ${student.name} — ${examForm.examName} ${score}점 저장 완료`);
+      if (isUpdate) {
+        await fetch(`${SUPABASE_URL}/rest/v1/results?id=eq.${result.id}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify(result),
+        }).then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        });
+        notify(`✅ ${student.name} — ${examForm.examName} ${score}점 수정 완료`);
+      } else {
+        await storage.saveResult(result);
+        notify(`✅ ${student.name} — ${examForm.examName} ${score}점 저장 완료`);
+      }
+
       setExamForm(EMPTY_EXAM);
       storage.listResults().then(all =>
         setRecentExams(
@@ -172,7 +219,7 @@ export default function AdminInputPanel() {
     setSaving(false);
   }
 
-  // ── 과제 저장 ───────────────────────────────────────
+  // ── 과제 저장 (새로 입력 또는 수정) ──────────────
   async function saveAsg() {
     if (!student) { fail("학생을 먼저 선택해주세요."); return; }
     if (!asgForm.typeId) { fail("과제 유형을 선택해주세요."); return; }
@@ -182,21 +229,41 @@ export default function AdminInputPanel() {
         .split(/[,\s]+/).filter(Boolean).map(Number)
         .filter(n => !isNaN(n) && n > 0);
 
-      const entry: AssignmentSubmission = {
-        id: uuidv4(),
-        studentCode: selectedCode,
-        typeId: asgForm.typeId,
-        round: asgForm.round,
-        score: asgForm.score ? Number(asgForm.score) : null,
-        wrongNumbers: wrongNos,
-        completed: asgForm.completed,
-        totalMinutes: asgForm.totalMinutes ? Number(asgForm.totalMinutes) : undefined,
-        submittedAt: new Date().toISOString(),
-      };
+      const isUpdate = !!asgForm.id;
 
-      await asgStore.submit(entry);
-      const typeName = asgTypes.find(t => t.id === asgForm.typeId)?.name ?? "";
-      notify(`✅ ${student.name} — ${typeName} 저장 완료`);
+      if (isUpdate) {
+        // 수정: updateSubmission 사용
+        await asgStore.updateSubmission(asgForm.id, {
+          typeId: asgForm.typeId,
+          round: asgForm.round,
+          score: asgForm.score ? Number(asgForm.score) : null,
+          wrongNumbers: wrongNos,
+          completed: asgForm.completed,
+          totalMinutes: asgForm.totalMinutes ? Number(asgForm.totalMinutes) : undefined,
+          memo: asgForm.memo || undefined,
+          submittedAt: new Date().toISOString(),
+        });
+        const typeName = asgTypes.find(t => t.id === asgForm.typeId)?.name ?? "";
+        notify(`✅ ${student.name} — ${typeName} 수정 완료`);
+      } else {
+        // 새로 입력: submit 사용
+        const entry: AssignmentSubmission = {
+          id: uuidv4(),
+          studentCode: selectedCode,
+          typeId: asgForm.typeId,
+          round: asgForm.round,
+          score: asgForm.score ? Number(asgForm.score) : null,
+          wrongNumbers: wrongNos,
+          completed: asgForm.completed,
+          totalMinutes: asgForm.totalMinutes ? Number(asgForm.totalMinutes) : undefined,
+          memo: asgForm.memo || undefined,
+          submittedAt: new Date().toISOString(),
+        };
+        await asgStore.submit(entry);
+        const typeName = asgTypes.find(t => t.id === asgForm.typeId)?.name ?? "";
+        notify(`✅ ${student.name} — ${typeName} 저장 완료`);
+      }
+
       setAsgForm(EMPTY_ASG);
       asgStore.listSubmissionsForStudent(selectedCode).then(all =>
         setRecentAsgs(
@@ -453,7 +520,7 @@ export default function AdminInputPanel() {
                   display:"flex", alignItems:"center",
                   justifyContent:"center", gap:8 }}>
                 <Save size={18}/>
-                {saving ? "저장 중…" : `${student?.name} 점수 저장`}
+                {saving ? "저장 중…" : examForm.id ? `${student?.name} 점수 수정` : `${student?.name} 점수 저장`}
               </button>
 
               {/* 최근 이력 */}
@@ -497,13 +564,22 @@ export default function AdminInputPanel() {
                             </span>
                           )}
                         </div>
-                        <button onClick={() => deleteExam(ex.id)}
-                          style={{ display:"flex", alignItems:"center", gap:3,
-                            padding:"4px 10px", borderRadius:6,
-                            border:"1px solid #fca5a5", background:"#fff",
-                            color:"#ef4444", fontSize:11, cursor:"pointer" }}>
-                          <Trash2 size={11}/> 삭제
-                        </button>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button onClick={() => editExam(ex)}
+                            style={{ display:"flex", alignItems:"center", gap:3,
+                              padding:"4px 10px", borderRadius:6,
+                              border:"1px solid #c4b5fd", background:"#fff",
+                              color:"#7c3aed", fontSize:11, cursor:"pointer" }}>
+                            <Edit2 size={11}/> 수정
+                          </button>
+                          <button onClick={() => deleteExam(ex.id)}
+                            style={{ display:"flex", alignItems:"center", gap:3,
+                              padding:"4px 10px", borderRadius:6,
+                              border:"1px solid #fca5a5", background:"#fff",
+                              color:"#ef4444", fontSize:11, cursor:"pointer" }}>
+                            <Trash2 size={11}/> 삭제
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -631,7 +707,7 @@ export default function AdminInputPanel() {
                   display:"flex", alignItems:"center",
                   justifyContent:"center", gap:8 }}>
                 <Save size={18}/>
-                {saving ? "저장 중…" : `${student?.name} 과제 저장`}
+                {saving ? "저장 중…" : asgForm.id ? `${student?.name} 과제 수정` : `${student?.name} 과제 저장`}
               </button>
 
               {/* 최근 이력 */}
@@ -674,6 +750,13 @@ export default function AdminInputPanel() {
                               {asg.submittedAt.slice(0, 10)}
                             </span>
                           </div>
+                          <button onClick={() => editAsg(asg)}
+                            style={{ display:"flex", alignItems:"center", gap:3,
+                              padding:"4px 10px", borderRadius:6,
+                              border:"1px solid #c4b5fd", background:"#fff",
+                              color:"#059669", fontSize:11, cursor:"pointer" }}>
+                            <Edit2 size={11}/> 수정
+                          </button>
                         </div>
                       );
                     })}
