@@ -31,8 +31,11 @@ import {
   isPendingReview,
   REVIEW_STATUS_LABELS,
   ASSIGNMENT_STATUS_LABELS,
+  ANALYSIS_QUESTIONS,
+  COMMON_ANALYSIS_QUESTIONS,
   type AssignmentType,
   type AssignmentSubmission,
+  type AssignmentAnalysisQuestion,
 } from "../../core/assignment";
 import { DEFAULT_MOCK_EXAM_TIMING_CONFIG, type MockExamTimingConfig } from "../../core/mockExamTiming";
 import { bumpWarningOnCarryOver, resetWarningCount, isRecentWarning, type WarningRecord } from "../../core/warning";
@@ -2875,6 +2878,14 @@ function MockExamTimingSettings() {
   );
 }
 
+// 정밀 분석 답변의 questionId → 질문 텍스트를 찾기 위한 전체 질문 맵
+const ALL_ANALYSIS_QUESTIONS_MAP: Record<string, AssignmentAnalysisQuestion> = (() => {
+  const map: Record<string, AssignmentAnalysisQuestion> = {};
+  Object.values(ANALYSIS_QUESTIONS).forEach((qs) => qs.forEach((q) => { map[q.id] = q; }));
+  COMMON_ANALYSIS_QUESTIONS.forEach((q) => { map[q.id] = q; });
+  return map;
+})();
+
 function AssignmentReviewManager() {
   const assignmentStore = useMemo(() => createAssignmentStore(), []);
   const rosterStore = useMemo(() => createRosterStore(), []);
@@ -2887,6 +2898,16 @@ function AssignmentReviewManager() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function refresh() {
     const [s, t, r] = await Promise.all([
@@ -2992,15 +3013,29 @@ function AssignmentReviewManager() {
                 const student = roster.find((r) => r.studentCode === sub.studentCode);
                 const type = types.find((t) => t.id === sub.typeId);
                 const status = sub.reviewStatus ?? "pending";
+                const hasAnalysis = Boolean(sub.analysisData?.answers?.length);
+                const isExpanded = expandedIds.has(sub.id);
                 return (
-                  <tr key={sub.id}>
+                  <Fragment key={sub.id}>
+                  <tr>
                     <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{student?.name ?? sub.studentCode}</td>
                     <td>{type?.name ?? "-"}</td>
                     <td>{sub.round}</td>
                     <td style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>
                       {new Date(sub.submittedAt).toLocaleDateString("ko-KR")}
                     </td>
-                    <td style={{ fontSize: 12 }}>{renderContent(sub)}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {renderContent(sub)}
+                      {hasAnalysis && (
+                        <button
+                          className="btn ghost"
+                          style={{ display:"block", marginTop:4, padding:"2px 8px", fontSize:11, color:"#166534" }}
+                          onClick={() => toggleExpanded(sub.id)}
+                        >
+                          {isExpanded ? "▲ 정밀분석 닫기" : "🔬 정밀분석 보기"}
+                        </button>
+                      )}
+                    </td>
                     <td
                       style={{
                         fontWeight: 700,
@@ -3045,6 +3080,29 @@ function AssignmentReviewManager() {
                       </div>
                     </td>
                   </tr>
+                  {hasAnalysis && isExpanded && (
+                    <tr>
+                      <td colSpan={8} style={{ background:"#f0fdf4", padding:"12px 16px" }}>
+                        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                          {sub.analysisData!.answers.map((a) => {
+                            const q = ALL_ANALYSIS_QUESTIONS_MAP[a.questionId];
+                            if (!q) return null;
+                            const answerText = a.rating != null
+                              ? `${"★".repeat(a.rating)}${"☆".repeat(5 - a.rating)} (${a.rating}/5)`
+                              : a.choice ?? a.text ?? "-";
+                            return (
+                              <div key={a.questionId} style={{ fontSize:12 }}>
+                                <span style={{ fontWeight:600, color:"#166534" }}>{q.question}</span>
+                                {" → "}
+                                <span style={{ color:"#374151" }}>{answerText}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

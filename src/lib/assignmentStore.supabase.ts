@@ -72,6 +72,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
       scope: entry.scope,
       completed: entry.completed,
       memo: entry.memo ?? null,
+      analysis_data: entry.analysisData ?? null,
       review_status: entry.reviewStatus ?? "pending",
     });
     if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
@@ -91,6 +92,7 @@ export class SupabaseAssignmentStore implements AssignmentStore {
     if (patch.scope !== undefined) row.scope = patch.scope;
     if (patch.completed !== undefined) row.completed = patch.completed;
     if (patch.memo !== undefined) row.memo = patch.memo;
+    if (patch.analysisData !== undefined) row.analysis_data = patch.analysisData;
     if (patch.reviewStatus !== undefined) row.review_status = patch.reviewStatus;
     if (patch.reviewedAt !== undefined) row.reviewed_at = patch.reviewedAt;
     if (patch.reviewNote !== undefined) row.review_note = patch.reviewNote;
@@ -137,6 +139,7 @@ function mapRow(r: any): AssignmentSubmission {
     scope: r.scope ?? undefined,
     completed: r.completed ?? undefined,
     memo: r.memo ?? undefined,
+    analysisData: r.analysis_data ?? undefined,
     reviewStatus: r.review_status ?? undefined,
     reviewedAt: r.reviewed_at ?? undefined,
     reviewNote: r.review_note ?? undefined,

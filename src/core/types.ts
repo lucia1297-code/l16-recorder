@@ -71,6 +71,11 @@ export interface ExamResult {
   reflection: Reflection;
   questionDetails?: QuestionDetail[]; // 3문항 정밀조사
   submittedAt: string; // ISO
+  // 모의고사 세부풀이시간 (선택)
+  totalMinutes?: number;
+  step1Minutes?: number;
+  step2Minutes?: number;
+  step3Minutes?: number;
 }
 
 // 제출 전 작성 중 상태 (자동 저장 대상)

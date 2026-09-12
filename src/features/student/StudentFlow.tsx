@@ -39,6 +39,8 @@ import {
   getGeneralFieldLabels,
   detectAnalysisCategory,
   ANALYSIS_QUESTIONS,
+  COMMON_ANALYSIS_QUESTIONS,
+  pickRotatingQuestions,
   type AssignmentType,
   type AssignmentSubmission,
   type AssignmentAnalysisAnswer,
@@ -1991,10 +1993,14 @@ function AssignmentSubmitForm({
             </>
           )}
 
-          {/* 정밀 분석 질문 */}
+          {/* 정밀 분석 질문 — 과제 종류별 질문 + 매 회차 로테이션 + 다짐/목표·만족도 공통 질문 */}
           {selectedType && (() => {
             const cat = detectAnalysisCategory(selectedType.name);
-            const questions = ANALYSIS_QUESTIONS[cat];
+            const roundForQuestions = isMockExam ? (Number(round) || 1) : nextRound;
+            const questions = [
+              ...pickRotatingQuestions(cat, roundForQuestions),
+              ...COMMON_ANALYSIS_QUESTIONS,
+            ];
             const catLabel = cat === "vocabulary" ? "어휘" : cat === "grammar" ? "어법" :
               cat === "essay" ? "서술형" : cat === "mockexam" ? "모의고사" : "독해";
             function getAns(qid: string) { return analysisAnswers.find(a => a.questionId === qid); }
@@ -2011,8 +2017,15 @@ function AssignmentSubmitForm({
                   🔬 정밀 분석 — {catLabel}
                 </p>
                 <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-                  {questions.map(q => (
+                  {questions.map((q, i) => (
                     <div key={q.id}>
+                      {i === questions.length - COMMON_ANALYSIS_QUESTIONS.length && (
+                        <div style={{ borderTop:"1px dashed #86efac", margin:"2px 0 12px", paddingTop:12 }}>
+                          <p style={{ fontSize:11, fontWeight:700, color:"#15803d", marginBottom:10 }}>
+                            🎯 다짐 · 만족도
+                          </p>
+                        </div>
+                      )}
                       <p style={{ fontSize:12, fontWeight:600, color:"#374151", marginBottom:7 }}>{q.question}</p>
                       {q.type === "rating" && (
                         <div style={{ display:"flex", gap:8, alignItems:"center" }}>

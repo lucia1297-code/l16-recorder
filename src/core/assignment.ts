@@ -249,7 +249,8 @@ export interface AssignmentAnalysisData {
   submittedAt: string;
 }
 
-// 과제 유형별 정밀 분석 질문 정의
+// 과제 유형별 정밀 분석 질문 정의 (카테고리마다 질문 pool을 넉넉히 두고,
+// 매 제출마다 pickRotatingQuestions()로 일부만 뽑아 보여줌 — "매주 같은 질문" 방지)
 export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAnalysisQuestion[]> = {
   vocabulary: [
     { id:"v1", category:"vocabulary", question:"오늘 암기한 어휘 중 가장 어려웠던 단어는?", type:"text" },
@@ -257,6 +258,13 @@ export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAn
     { id:"v3", category:"vocabulary", question:"어떤 방법으로 암기했나요?", type:"choice",
       choices:["소리 내어 읽기","손으로 쓰기","예문으로 외우기","어원 분석","반복 보기"] },
     { id:"v4", category:"vocabulary", question:"다음에 다시 봐야 할 단어가 있나요?", type:"text" },
+    { id:"v5", category:"vocabulary", question:"오늘 암기 분량(어휘 수)은 적절했나요?", type:"choice",
+      choices:["너무 적었다","적당했다","너무 많았다"] },
+    { id:"v6", category:"vocabulary", question:"어려운 단어의 비중은 어느 정도였나요?", type:"choice",
+      choices:["대부분 쉬웠다","적당히 섞여있었다","대부분 어려웠다"] },
+    { id:"v7", category:"vocabulary", question:"철자가 헷갈리는 단어가 있었나요?", type:"choice",
+      choices:["없었다","1~2개 있었다","3개 이상 있었다"] },
+    { id:"v8", category:"vocabulary", question:"뜻은 아는데 문장 속에서 못 알아본 단어가 있었나요?", type:"text" },
   ],
   grammar: [
     { id:"g1", category:"grammar", question:"오늘 학습한 어법 포인트를 한 줄로 설명해보세요.", type:"text" },
@@ -264,6 +272,11 @@ export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAn
     { id:"g3", category:"grammar", question:"헷갈렸던 부분은 무엇인가요?", type:"text" },
     { id:"g4", category:"grammar", question:"어떤 유형에서 주로 실수하나요?", type:"choice",
       choices:["동사/준동사","관계사","접속사","수일치","병렬구조","시제","수동태"] },
+    { id:"g5", category:"grammar", question:"오늘 분량(문항 수/난이도)은 적절했나요?", type:"choice",
+      choices:["너무 쉬웠다","적당했다","너무 어려웠다"] },
+    { id:"g6", category:"grammar", question:"규칙은 알지만 문제에 적용이 안 됐던 부분이 있나요?", type:"text" },
+    { id:"g7", category:"grammar", question:"같은 실수를 반복하고 있다고 느끼나요?", type:"choice",
+      choices:["전혀 아니다","가끔 그렇다","자주 그렇다"] },
   ],
   reading: [
     { id:"r1", category:"reading", question:"오늘 푼 독해 유형 중 가장 어려웠던 것은?", type:"choice",
@@ -272,6 +285,11 @@ export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAn
     { id:"r3", category:"reading", question:"오답의 주요 원인은?", type:"choice",
       choices:["지문 이해 부족","시간 부족","선지 혼동","어휘 모름","집중력 저하","논리 오류"] },
     { id:"r4", category:"reading", question:"오늘 배운 독해 전략을 한 줄로 정리해보세요.", type:"text" },
+    { id:"r5", category:"reading", question:"지문 길이나 난이도는 적절했나요?", type:"choice",
+      choices:["너무 쉬웠다","적당했다","너무 어려웠다"] },
+    { id:"r6", category:"reading", question:"모르는 어휘 때문에 지문 이해가 막힌 적이 있나요?", type:"choice",
+      choices:["없었다","1~2번 있었다","자주 있었다"] },
+    { id:"r7", category:"reading", question:"다시 읽어도 이해가 안 되는 문장이 있었나요?", type:"text" },
   ],
   essay: [
     { id:"e1", category:"essay", question:"서술형 문항에서 가장 어려웠던 부분은?", type:"choice",
@@ -279,6 +297,9 @@ export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAn
     { id:"e2", category:"essay", question:"영작 자신감은 어느 정도인가요?", type:"rating" },
     { id:"e3", category:"essay", question:"틀린 이유를 직접 분석해보세요.", type:"text" },
     { id:"e4", category:"essay", question:"다음에 같은 유형이 나오면 어떻게 접근할 건가요?", type:"text" },
+    { id:"e5", category:"essay", question:"조건(단어 수, 필수 표현 등)을 지키는 데 어려움이 있었나요?", type:"choice",
+      choices:["없었다","조금 있었다","많이 있었다"] },
+    { id:"e6", category:"essay", question:"우리말을 영어로 옮길 때 막힌 표현이 있었나요?", type:"text" },
   ],
   mockexam: [
     { id:"m1", category:"mockexam", question:"오늘 풀이에서 가장 아쉬웠던 점은?", type:"text" },
@@ -286,8 +307,42 @@ export const ANALYSIS_QUESTIONS: Record<AssignmentAnalysisCategory, AssignmentAn
     { id:"m3", category:"mockexam", question:"시간 배분이 적절했나요?", type:"choice",
       choices:["충분했다","약간 부족했다","많이 부족했다","시간이 남았다"] },
     { id:"m4", category:"mockexam", question:"다음 번에 개선할 한 가지는?", type:"text" },
+    { id:"m5", category:"mockexam", question:"어느 구간에서 집중력이 가장 떨어졌나요?", type:"choice",
+      choices:["초반","중반","후반","전반적으로 유지됨"] },
+    { id:"m6", category:"mockexam", question:"찍은 문항이 있었나요? 있었다면 몇 개 정도인가요?", type:"text" },
   ],
 };
+
+// 카테고리 상관없이 매 제출마다 항상 함께 표시하는 공통 질문 —
+// "다짐/목표 설정"과 "만족도 평가"는 로테이션 대상이 아니라 매번 고정으로 노출한다.
+export const COMMON_ANALYSIS_QUESTIONS: AssignmentAnalysisQuestion[] = [
+  { id:"common_goal", category:"reading", question:"다음 학습을 위한 다짐이나 목표를 한 줄로 적어주세요.", type:"text" },
+  { id:"common_satisfaction", category:"reading", question:"오늘 학습에 대한 전반적인 만족도는?", type:"rating" },
+];
+
+const ROTATING_QUESTION_COUNT = 3;
+
+/**
+ * 카테고리별 질문 pool에서 이번 회차(round)에 보여줄 질문만 순환하여 뽑는다.
+ * 매번 같은 3~4개만 물으면 "매주 똑같다"는 피로감이 생기므로, round를 시드로
+ * pool을 순환시켜 회차마다 다른 조합이 나오게 한다. pool이 로테이션 개수보다
+ * 작으면 pool 전체를 그대로 반환한다.
+ */
+export function pickRotatingQuestions(
+  category: AssignmentAnalysisCategory,
+  round: number,
+): AssignmentAnalysisQuestion[] {
+  const pool = ANALYSIS_QUESTIONS[category];
+  const n = pool.length;
+  if (n <= ROTATING_QUESTION_COUNT) return pool;
+  const safeRound = Number.isFinite(round) && round > 0 ? round : 1;
+  const start = ((safeRound - 1) * ROTATING_QUESTION_COUNT) % n;
+  const picked: AssignmentAnalysisQuestion[] = [];
+  for (let i = 0; i < ROTATING_QUESTION_COUNT; i++) {
+    picked.push(pool[(start + i) % n]);
+  }
+  return picked;
+}
 
 // 과제 이름으로 카테고리 자동 판별
 export function detectAnalysisCategory(typeName: string): AssignmentAnalysisCategory {

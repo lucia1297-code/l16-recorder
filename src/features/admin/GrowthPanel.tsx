@@ -6,9 +6,17 @@ import type { RosterEntry } from "../../core/roster";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
 import { ANALYSIS_QUESTIONS } from "../../core/assignment";
 import type { AssignmentSubmission } from "../../core/assignment";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+const getSupabaseClient = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!url || !key) throw new Error("Supabase 환경변수가 없습니다.");
+  return createClient(url, key);
+};
 
 interface GrowthMessage {
   id: string;
@@ -42,38 +50,63 @@ function parseJsonField(val: unknown): any {
 }
 
 async function fetchResults(): Promise<ExamResult[]> {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/results?select=*&order=date.asc,submitted_at.asc`,
-    { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
-  );
-  if (!res.ok) return [];
-  const _rawRows = await res.json();
-  const rows = Array.isArray(_rawRows) ? _rawRows : [];
-  return rows.map((r: any) => ({
-    id: r.id,
-    student: {
-      studentCode: r.student_code,
-      name: r.name,
-      school: r.school ?? "",
-      grade: r.grade ?? "",
-    },
-    exam: {
-      examName: r.exam_name ?? "",
-      year: r.year ?? 0,
-      month: r.month ?? 0,
-      round: r.round ?? 0,
-      totalQuestions: r.total_questions ?? 45,
-      maxScore: r.max_score ?? 100,
-    },
-    teacher: r.teacher ?? "",
-    date: r.date ?? r.submitted_at?.slice(0, 10) ?? "",
-    score: Number(r.score ?? 0),
-    // ← 핵심: parseJsonField 사용
-    wrongAnswers: parseJsonField(r.wrong_answers) ?? [],
-    reflection: parseJsonField(r.reflection) ?? {},
-    questionDetails: parseJsonField(r.question_details) ?? [],
-    submittedAt: r.submitted_at ?? "",
-  }));
+  try {
+    const sb = getSupabaseClient();
+    const [resResults, resSubs] = await Promise.all([
+      sb.from("results").select("*").order("date", { ascending: true }).order("submitted_at", { ascending: true }),
+      sb.from("assignment_submissions").select("*")
+    ]);
+
+    if (resResults.error) {
+      console.error("[GrowthPanel] results fetch error:", resResults.error);
+      return [];
+    }
+
+    const rows = resResults.data ?? [];
+    const timingMap = new Map<string, any>();
+    if (!resSubs.error && resSubs.data) {
+      resSubs.data.forEach((s: any) => {
+        const key = `${s.student_code}:${s.round}`;
+        timingMap.set(key, s);
+      });
+    }
+
+    return rows.map((r: any) => {
+      const timingKey = `${r.student_code}:${r.round}`;
+      const timing = timingMap.get(timingKey);
+      return {
+        id: r.id,
+        student: {
+          studentCode: r.student_code,
+          name: r.name,
+          school: r.school ?? "",
+          grade: r.grade ?? "",
+        },
+        exam: {
+          examName: r.exam_name ?? "",
+          year: r.year ?? 0,
+          month: r.month ?? 0,
+          round: r.round ?? 0,
+          totalQuestions: r.total_questions ?? 45,
+          maxScore: r.max_score ?? 100,
+        },
+        teacher: r.teacher ?? "",
+        date: r.date ?? r.submitted_at?.slice(0, 10) ?? "",
+        score: Number(r.score ?? 0),
+        wrongAnswers: parseJsonField(r.wrong_answers) ?? [],
+        reflection: parseJsonField(r.reflection) ?? {},
+        questionDetails: parseJsonField(r.question_details) ?? [],
+        submittedAt: r.submitted_at ?? "",
+        totalMinutes: timing?.total_minutes ?? undefined,
+        step1Minutes: timing?.step1_minutes ?? undefined,
+        step2Minutes: timing?.step2_minutes ?? undefined,
+        step3Minutes: timing?.step3_minutes ?? undefined,
+      };
+    });
+  } catch(e) {
+    console.error("[GrowthPanel] fetchResults error:", e);
+    return [];
+  }
 }
 
 async function fetchAssignmentsWithAnalysis(): Promise<AssignmentSubmission[]> {
@@ -81,6 +114,13 @@ async function fetchAssignmentsWithAnalysis(): Promise<AssignmentSubmission[]> {
     const store = createAssignmentStore();
     const subs = await store.listSubmissions();
     return subs.filter(s => s.analysisData != null);
+  } catch { return []; }
+}
+
+async function fetchAllAssignments(): Promise<AssignmentSubmission[]> {
+  try {
+    const store = createAssignmentStore();
+    return await store.listSubmissions();
   } catch { return []; }
 }
 
@@ -114,6 +154,7 @@ export default function GrowthPanel() {
   const [results, setResults] = useState<ExamResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignmentSubs, setAssignmentSubs] = useState<AssignmentSubmission[]>([]);
+  const [allAssignmentSubs, setAllAssignmentSubs] = useState<AssignmentSubmission[]>([]);
   const [selected, setSelected] = useState("");
   const [viewTab, setViewTab] = useState<"compare" | "analysis" | "message" | "summary8">("compare");
   const [summary8Map, setSummary8Map] = useState<Map<string,string>>(new Map());
@@ -147,6 +188,7 @@ export default function GrowthPanel() {
     rosterStore.listRoster().then(setRoster);
     fetchResults().then(r => { setResults(r); setLoading(false); });
     fetchAssignmentsWithAnalysis().then(setAssignmentSubs);
+    fetchAllAssignments().then(setAllAssignmentSubs);
   }, [rosterStore]);
 
   function saveMsgs(msgs: GrowthMessage[]) {
@@ -210,19 +252,29 @@ export default function GrowthPanel() {
 
   function makeDiagnosis(code: string, name: string): string {
     const rows = byStudent.get(code) || [];
-    if (!rows.length) return "";
+    const relevantSubs = allAssignmentSubs.filter(s => s.studentCode === code);
+
+    if (!rows.length && !relevantSubs.length) return "";
+
     const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
     const recent3 = sorted.slice(-3);
     const latest = sorted[sorted.length - 1];
     const prev = sorted[sorted.length - 2];
-    const avg = Math.round(recent3.reduce((s, r) => s + r.score, 0) / recent3.length);
+    const avg = sorted.length ? Math.round(recent3.reduce((s, r) => s + r.score, 0) / recent3.length) : 0;
     const trend = prev ? latest.score - prev.score : 0;
     const totalCnt: Record<string, number> = {};
     sorted.forEach(r => (r.wrongAnswers ?? []).forEach((w: any) =>
       (w.reasons || []).forEach((rs: string) => { totalCnt[rs] = (totalCnt[rs] || 0) + 1; })
     ));
     const top3 = Object.entries(totalCnt).sort((a, b) => b[1] - a[1]).slice(0, 3);
-    const ref = (latest.reflection as any) || {};
+    const ref = (latest?.reflection as any) || {};
+
+    // 풀이 시간 정보
+    const timingInfo = latest?.totalMinutes
+      ? `총 ${latest.totalMinutes}분 (Step1: ${latest.step1Minutes ?? "-"}분, Step2: ${latest.step2Minutes ?? "-"}분, Step3: ${latest.step3Minutes ?? "-"}분)`
+      : relevantSubs.length ? `시간 기록: ${relevantSubs.filter(s => s.totalMinutes).map(s => `${s.totalMinutes}분`).join(", ")} 중 평균 ${Math.round(relevantSubs.filter(s => s.totalMinutes).reduce((s, sub) => s + (sub.totalMinutes || 0), 0) / relevantSubs.filter(s => s.totalMinutes).length)}분`
+      : "";
+
     const student = roster.find(r => r.studentCode === code);
     const school = student?.school ?? "";
     const grade = student?.grade ?? "";
@@ -288,6 +340,7 @@ export default function GrowthPanel() {
 
 【현재 수준】
 ${name} 학생은 현재 ${grade_str}(최근 ${avg}점 평균)에 해당하며, ${trendComment} 전반적인 학습 기반이 갖추어지고 있는 상황입니다. 총 ${sorted.length}회의 모의고사 데이터를 바탕으로 분석한 결과, 꾸준한 응시 노력이 실력 형성에 긍정적으로 작용하고 있습니다.
+${timingInfo ? `\n【풀이 시간 분석】\n${name} 학생의 평균 풀이 시간은 ${timingInfo}로 기록되고 있습니다.` : ""}
 
 【오답 원인 분석】
 누적 오답 분석 결과, 가장 두드러진 취약 원인은 ${REASON_KO[top1Key] ?? top1Key}(으)로, ${top1Diag}. ${top2Key ? `또한 ${REASON_KO[top2Key] ?? top2Key} 영역에서도 개선이 요구되며, ` : ""}${top3Key ? `${REASON_KO[top3Key] ?? top3Key} 관련 실점도 함께 관리가 필요합니다.` : "이 부분에 대한 집중 지도가 진행 중입니다."}
@@ -307,6 +360,8 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
   function printReport(code: string) {
     const student = roster.find(r => r.studentCode === code);
     const rows = byStudent.get(code) ?? [];
+    const relevantSubs = allAssignmentSubs.filter(s => s.studentCode === code);
+
     const sorted = [...rows].sort((a,b) => a.date.localeCompare(b.date));
     const latest = sorted[sorted.length-1];
     const ref = (latest?.reflection as any) || {};
@@ -316,6 +371,13 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
     const top3 = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([r])=>REASON_KO[r]??r);
     const avg = sorted.length ? Math.round(sorted.reduce((s,r)=>s+r.score,0)/sorted.length) : 0;
     const trend = sorted.length >= 2 ? sorted[sorted.length-1].score - sorted[sorted.length-2].score : 0;
+
+    // 풀이 시간 정보
+    const timingInfo = latest?.totalMinutes
+      ? `총 ${latest.totalMinutes}분 (Step1: ${latest.step1Minutes ?? "-"}분, Step2: ${latest.step2Minutes ?? "-"}분, Step3: ${latest.step3Minutes ?? "-"}분)`
+      : relevantSubs.length ? `평균 ${Math.round(relevantSubs.filter(s => s.totalMinutes).reduce((s, sub) => s + (sub.totalMinutes || 0), 0) / (relevantSubs.filter(s => s.totalMinutes).length || 1))}분`
+      : "";
+
     const month = new Date().getMonth()+1;
 
     const html = `<!DOCTYPE html>
@@ -362,6 +424,11 @@ ${refComment}, ${goalComment}. 이러한 자기 인식은 성장의 중요한 �
     ${sorted.map((r,i)=>`<div class="score-chip ${i===sorted.length-1?"latest":""}">${r.date.slice(5)} ${r.score}점</div>`).join("")}
   </div>
 </div>
+
+${timingInfo ? `<div class="section">
+  <h2>⏱️ 풀이 시간</h2>
+  <div style="font-size:13px;color:#475569">${timingInfo}</div>
+</div>` : ""}
 
 <div class="section">
   <h2>⚠️ 주요 오답 원인</h2>
@@ -488,9 +555,25 @@ ${monthLabel} 학습 상담 평가서
   }
 
   const active = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
+
+  const allStudentsWithData = useMemo(() => {
+    const map = new Map<string, ExamResult[]>();
+
+    // results 테이블에서 가져온 데이터
+    byStudent.forEach((rows, code) => map.set(code, rows));
+
+    // 과제 제출만 있고 모의고사 결과가 없는 학생도 추가 (분석 데이터 유무와 무관)
+    const submissionCodes = new Set(allAssignmentSubs.map(s => s.studentCode));
+    submissionCodes.forEach(code => {
+      if (!map.has(code)) map.set(code, []);
+    });
+
+    return map;
+  }, [byStudent, allAssignmentSubs]);
+
   const displayStudents = selected
-    ? Array.from(byStudent.entries()).filter(([code]) => code === selected)
-    : Array.from(byStudent.entries()).sort(([a], [b]) => {
+    ? Array.from(allStudentsWithData.entries()).filter(([code]) => code === selected)
+    : Array.from(allStudentsWithData.entries()).sort(([a], [b]) => {
         const na = roster.find(r => r.studentCode === a)?.name ?? "";
         const nb = roster.find(r => r.studentCode === b)?.name ?? "";
         return na.localeCompare(nb);
@@ -539,6 +622,53 @@ ${monthLabel} 학습 상담 평가서
                 const student = roster.find(r => r.studentCode === code);
                 const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
                 const latest = sorted[sorted.length-1];
+
+                // 모의고사 제출 기록이 없는 학생(과제 제출만 있음) - 간소화된 카드
+                if (!latest) {
+                  const subs = allAssignmentSubs.filter(s => s.studentCode === code)
+                    .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+                  const lastSub = subs[subs.length - 1];
+                  const timedSubs = subs.filter(s => s.totalMinutes != null);
+                  const avgMinutes = timedSubs.length
+                    ? Math.round(timedSubs.reduce((s, sub) => s + (sub.totalMinutes || 0), 0) / timedSubs.length)
+                    : null;
+                  return (
+                    <div key={code} style={{ border:"1.5px solid #e2e8f0", borderRadius:14, overflow:"hidden" }}>
+                      <div style={{ padding:"12px 16px", background:"#fffbeb", borderBottom:"1px solid #e2e8f0",
+                        display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+                          <span style={{ fontWeight:700, fontSize:16, color:"#134e4a" }}>{student?.name ?? code}</span>
+                          <span style={{ fontSize:12, color:"#64748b" }}>{student?.school} {student?.grade && `${student.grade}학년`}</span>
+                          <span style={{ fontSize:12, color:"#b45309", fontWeight:600 }}>모의고사 미제출 · 과제 {subs.length}건</span>
+                        </div>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button onClick={() => createMsg(code)}
+                            style={{ padding:"6px 12px", borderRadius:8, border:"none", background:"#0f766e",
+                              color:"#fff", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                            처방 생성
+                          </button>
+                          <button onClick={() => { setReportModal({code, name: roster.find(r=>r.studentCode===code)?.name ?? ""}); }}
+                            style={{ padding:"6px 12px", borderRadius:8, border:"1.5px solid #0f766e", background:"#fff",
+                              color:"#0f766e", fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                            상담평가서
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ padding:"14px 16px", fontSize:13, color:"#475569" }}>
+                        {lastSub ? (
+                          <>
+                            <div style={{ marginBottom:6 }}>최근 과제 제출: {lastSub.submittedAt.slice(0,10)}{lastSub.item ? ` · ${lastSub.item}` : ""}</div>
+                            {avgMinutes != null && <div style={{ marginBottom:6 }}>평균 풀이 시간: {avgMinutes}분</div>}
+                            {lastSub.score != null && <div>최근 과제 점수: {lastSub.score}점</div>}
+                          </>
+                        ) : (
+                          <div style={{ color:"#94a3b8" }}>제출 기록이 없습니다.</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
                 const prev = sorted[sorted.length-2];
                 const trend = prev ? latest.score - prev.score : 0;
 
@@ -865,7 +995,7 @@ ${monthLabel} 학습 상담 평가서
         <Summary8Panel
           roster={active.filter(r => (r.studentStatus ?? "active") !== "withdrawn")}
           results={results}
-          assignmentSubs={assignmentSubs}
+          assignmentSubs={allAssignmentSubs}
           summary8Map={summary8Map}
           setSummary8Map={setSummary8Map}
         />
@@ -1557,14 +1687,41 @@ interface S8Student {
   summary?: string;
 }
 
-function makeSummary8(student: RosterEntry, rows: ExamResult[]): string {
+function makeSummary8(student: RosterEntry, rows: ExamResult[], subs: AssignmentSubmission[] = []): string {
   const sorted = [...rows].sort((a,b) => a.date.localeCompare(b.date));
+  const sortedSubs = [...subs].sort((a,b) => a.submittedAt.localeCompare(b.submittedAt));
+
+  // 모의고사 데이터가 전혀 없는 경우: 과제 제출 데이터만으로 요약 생성
+  if (sorted.length === 0) {
+    const timedSubs = sortedSubs.filter(s => s.totalMinutes != null);
+    const avgMinutes = timedSubs.length
+      ? Math.round(timedSubs.reduce((a,b)=>a+(b.totalMinutes||0),0)/timedSubs.length)
+      : null;
+    const scored = sortedSubs.filter(s => s.score != null);
+    const avgSubScore = scored.length
+      ? Math.round(scored.reduce((a,b)=>a+(b.score||0),0)/scored.length)
+      : null;
+    const lastSub = sortedSubs[sortedSubs.length-1];
+    const items = Array.from(new Set(sortedSubs.map(s => s.item).filter(Boolean))).slice(0,3).join(", ");
+
+    return [
+      `① ${student.name} 학생은 이번 기간 중 제출된 모의고사 응시 기록은 없으며, 과제 제출 ${sortedSubs.length}건을 바탕으로 평가합니다.`,
+      `② ${lastSub ? `최근 제출일은 ${lastSub.submittedAt.slice(0,10)}이며${lastSub.item ? `, 항목은 '${lastSub.item}'입니다.` : "입니다."}` : "제출 기록이 확인되지 않아 참여 독려가 필요합니다."}`,
+      `③ ${items ? `주요 과제 항목은 ${items} 등이며, 꾸준한 과제 수행이 확인됩니다.` : "과제 항목 다양화를 통한 학습 습관 형성이 필요합니다."}`,
+      `④ ${avgMinutes != null ? `과제 평균 풀이 시간은 ${avgMinutes}분으로 기록되어 있으며, 시간 배분 습관을 지속 관찰하고 있습니다.` : "풀이 시간 기록이 아직 충분하지 않아 지속적인 관찰이 필요합니다."}`,
+      `⑤ ${avgSubScore != null ? `과제 평균 점수는 ${avgSubScore}점으로, 기초 이해도를 가늠하는 지표로 활용하고 있습니다.` : "학생 스스로의 자기 평가 자료 축적이 필요한 단계입니다."}`,
+      `⑥ 모의고사 응시 이력이 없어 정량적 등급 판정은 보류하며, 과제 수행 태도를 중심으로 성장 과정을 관리하고 있습니다.`,
+      `⑦ 단기적으로는 모의고사 응시를 통한 실전 감각 형성과 함께, 현재 진행 중인 과제 유형의 기초 보완을 병행할 계획입니다.`,
+      `⑧ 다음 달에는 최소 1회 이상의 모의고사 응시를 목표로 하며, 가정에서의 꾸준한 학습 독려가 성장에 큰 힘이 됩니다.`,
+    ].join("\n");
+  }
+
   const scores = sorted.map(r => r.score);
   const avg = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
   const latest = sorted[sorted.length-1];
   const prev = sorted[sorted.length-2];
   const trend = prev ? latest.score - prev.score : 0;
-  const trendStr = trend > 3 ? `${trend}점 상승` : trend < -3 ? `${Math.abs(trend)}점 하락` : "보합세";
+  const trendStr = !prev ? "첫 응시 기준" : trend > 3 ? `${trend}점 상승` : trend < -3 ? `${Math.abs(trend)}점 하락` : "보합세";
   const grade = avg >= 90 ? "1등급권" : avg >= 80 ? "2등급권" : avg >= 70 ? "3등급권" : avg >= 60 ? "4등급권" : "5등급권";
 
   const cnt: Record<string,number> = {};
@@ -1577,10 +1734,12 @@ function makeSummary8(student: RosterEntry, rows: ExamResult[]): string {
   const goals = reflections.map((r:any)=>r.nextGoal).filter(Boolean).slice(-2).join(", ");
   const hards = reflections.map((r:any)=>r.hardestReason).filter(Boolean).slice(-2).join(" / ");
 
+  const timingNote = latest?.totalMinutes ? ` (최근 풀이 시간 ${latest.totalMinutes}분)` : "";
+
   return [
     `① ${student.name} 학생의 현재 영어 수준은 ${grade}(기간 평균 ${avg}점)으로, 총 ${rows.length}회 시험 데이터를 바탕으로 평가합니다.`,
-    `② 이번 기간 점수 흐름은 ${trendStr}이며, 최근 시험에서 ${latest.score}점을 기록하였습니다.`,
-    `③ 누적 오답 원인 1위는 '${REASON_KO_S8[t1]??t1}'으로, ${REASON_FIX_S8[t1]??"집중 보완이 진행 중"}입니다.`,
+    `② 이번 기간 점수 흐름은 ${trendStr}이며, 최근 시험에서 ${latest.score}점을 기록하였습니다${timingNote}.`,
+    `③ ${t1 ? `누적 오답 원인 1위는 '${REASON_KO_S8[t1]??t1}'으로, ${REASON_FIX_S8[t1]??"집중 보완이 진행 중"}입니다.` : "오답 원인 데이터가 충분하지 않아 지속 관찰이 필요합니다."}`,
     `④ ${t2 ? `'${REASON_KO_S8[t2]??t2}'` : "부수적 취약 영역"}${t3 ? `과 '${REASON_KO_S8[t3]??t3}'` : ""}도 함께 관리 중이며, 복합적 원인 분석을 진행하고 있습니다.`,
     `⑤ 학생 스스로는 "${hards||"전반적 어려움"}"을 주요 어려움으로 인식하고 있으며, "${goals||"성적 향상"}"을 목표로 삼고 있습니다.`,
     `⑥ 이번 기간 제출 데이터 ${rows.length}건을 검토한 결과, ${avg >= 80 ? "성실한 학습 참여" : avg >= 65 ? "꾸준한 참여가 확인되나 심화 훈련 필요" : "과제 성실도 향상과 기초 보완이 시급"}합니다.`,
@@ -1606,6 +1765,14 @@ function Summary8Panel({ roster, results, assignmentSubs, summary8Map, setSummar
     return m;
   }, [results]);
 
+  const bySubs = useMemo(() => {
+    const m = new Map<string,AssignmentSubmission[]>();
+    assignmentSubs.forEach(s => {
+      const a = m.get(s.studentCode)??[]; a.push(s); m.set(s.studentCode,a);
+    });
+    return m;
+  }, [assignmentSubs]);
+
   const [period, setPeriod] = useState("3");
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
   const summaries = summary8Map;
@@ -1613,7 +1780,6 @@ function Summary8Panel({ roster, results, assignmentSubs, summary8Map, setSummar
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState("");
 
-  const MIN_EXAMS = 2;
   const cutoff = useMemo(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - parseInt(period));
@@ -1624,16 +1790,19 @@ function Summary8Panel({ roster, results, assignmentSubs, summary8Map, setSummar
     return roster.map(s => {
       const allRows = byStudent.get(s.studentCode) ?? [];
       const rows = allRows.filter(r => r.date >= cutoff);
-      const canGenerate = rows.length >= MIN_EXAMS;
+      const allSubs = bySubs.get(s.studentCode) ?? [];
+      const subs = allSubs.filter(sub => sub.submittedAt.slice(0,10) >= cutoff);
+      // 모의고사 1회 이상 또는 과제 제출 1건 이상이면 생성 가능. 둘 다 없을 때만 불가.
+      const canGenerate = rows.length >= 1 || subs.length >= 1;
       return {
         student: s,
         canGenerate,
-        reason: !canGenerate ? `시험 데이터 ${rows.length}건 (최소 ${MIN_EXAMS}건 필요)` : undefined,
+        reason: !canGenerate ? `선택 기간 내 시험/과제 제출 기록 없음` : undefined,
         examCount: rows.length,
         avgScore: rows.length ? Math.round(rows.reduce((a,b)=>a+b.score,0)/rows.length) : 0,
       };
     });
-  }, [roster, byStudent, cutoff]);
+  }, [roster, byStudent, bySubs, cutoff]);
 
   const canList = studentList.filter(s => s.canGenerate);
   const cantList = studentList.filter(s => !s.canGenerate);
@@ -1652,7 +1821,8 @@ function Summary8Panel({ roster, results, assignmentSubs, summary8Map, setSummar
       const s = targets[i];
       setProgress(`${i+1}/${targets.length} — ${s.student.name} 생성 중...`);
       const rows = (byStudent.get(s.student.studentCode)??[]).filter(r => r.date >= cutoff);
-      newMap.set(s.student.studentCode, makeSummary8(s.student, rows));
+      const subs = (bySubs.get(s.student.studentCode)??[]).filter(sub => sub.submittedAt.slice(0,10) >= cutoff);
+      newMap.set(s.student.studentCode, makeSummary8(s.student, rows, subs));
       setSummaries(new Map(newMap));
       await new Promise(r => setTimeout(r, 100));
     }

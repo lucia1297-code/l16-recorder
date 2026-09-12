@@ -136,6 +136,8 @@ create table if not exists assignment_submissions (
   completed boolean,
   -- 메모 (선택 — 관리자가 추가할 수 있음)
   memo text,
+  -- 정밀 분석 답변 (선택 — 학생이 제출 시 입력, 과제별 어려운 점/다짐/만족도 등)
+  analysis_data jsonb,
   -- 강사 2차 점검 (선택)
   review_status text check (review_status in ('pending', 'pass', 'fail')) default 'pending',
   reviewed_at timestamptz,
@@ -149,6 +151,7 @@ alter table assignment_submissions add column if not exists item text;
 alter table assignment_submissions add column if not exists scope text;
 alter table assignment_submissions add column if not exists completed boolean;
 alter table assignment_submissions add column if not exists memo text;
+alter table assignment_submissions add column if not exists analysis_data jsonb;
 alter table assignment_submissions add column if not exists review_status text default 'pending';
 alter table assignment_submissions add column if not exists reviewed_at timestamptz;
 alter table assignment_submissions add column if not exists review_note text;
