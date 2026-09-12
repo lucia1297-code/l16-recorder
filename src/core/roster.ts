@@ -61,6 +61,13 @@ export interface ClassSession {
 
 export type StudentStatus = "active" | "paused" | "withdrawn"; // 수강중/중단/퇴원
 
+export interface ExamSchedule {
+  name: string;           // 시험명 (예: "영어", "수학")
+  startDate: string;      // 시작일 (YYYY-MM-DD)
+  endDate: string;        // 종료일 (YYYY-MM-DD)
+  color?: string;         // 표시 색상
+}
+
 export interface RosterEntry {
   studentCode: string;
   name: string;
@@ -81,6 +88,7 @@ export interface RosterEntry {
   pausedAt?: string;              // 중단 시작일
   pausedReason?: string;          // 중단 사유
   lessonSchedule?: LessonSchedule;  // 수업 시간 일정 (최대 5일)
+  examSchedules?: ExamSchedule[];  // 시험 일정
 }
 
 // 수업 시수별 과제 제출 기한 (일)

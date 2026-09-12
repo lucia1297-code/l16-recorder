@@ -1,5 +1,6 @@
-import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic} from "lucide-react";
+import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3} from "lucide-react";
 import { useEffect, useMemo, useState, Fragment } from "react";
+import ExamSchedulePanel from "./ExamSchedulePanel";
 import { addScheduledSms, listScheduledSms, cancelScheduledSms, deleteScheduledSms, type ScheduledSms } from "../../lib/scheduledSms";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
@@ -117,7 +118,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -200,6 +201,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {/* ── 시험 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">시험</div>
+        <button className={tab === "examschedule" ? "on" : ""} onClick={() => setTab("examschedule")}>
+          📊 시험일정 chart
+        </button>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")}>
           📅 시험일정
         </button>
@@ -236,6 +240,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "report" && <StudentAnalysisReport rows={rows} />}
         {tab === "sms" && <SmsCenterPanel />}
         {tab === "scheduled" && <ScheduledSmsPanel />}
+        {tab === "examschedule" && <ExamSchedulePanel />}
         {tab === "examprep" && <ExamPrepPanelLazy />}
         {tab === "examplan" && <ExamPlanPanelLazy />}
         {tab === "growth" && <GrowthPanelLazy />}
