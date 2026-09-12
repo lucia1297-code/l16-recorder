@@ -1,112 +1,134 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
-import type { RosterEntry, ExamSchedule } from "../../core/roster";
+import type { RosterEntry } from "../../core/roster";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+interface ExamSchedule {
+  id: string;
+  studentCode: string;
+  semester: "1" | "2";
+  examType: "midterm" | "final";
+  subject: string;
+  examStart: string;      // 시험 시작일
+  examEnd: string;        // 시험 종료일
+  englishExamDate: string;    // 영어 시험일
+  reportDeadline: string;     // 직보일
+  nextLessonDate: string;     // 다음 수업 예정일
+  score: number | null;
+  completed: boolean;
+  memo: string;
+}
+
+const SCHEDULE_ITEMS = [
+  { key: "reportDeadline", label: "직보일", color: "#ef4444" },
+  { key: "examStart", label: "시작일", color: "#f97316" },
+  { key: "englishExamDate", label: "영어시험일", color: "#3b82f6" },
+  { key: "examEnd", label: "종료일", color: "#22c55e" },
+  { key: "nextLessonDate", label: "다음수업", color: "#8b5cf6" },
+];
 
 export default function ExamSchedulePanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [exams, setExams] = useState<ExamSchedule[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // 모달
-  const [editingStudent, setEditingStudent] = useState<RosterEntry | null>(null);
-  const [newExam, setNewExam] = useState<Omit<ExamSchedule, "color">>({
-    name: "",
-    startDate: "",
-    endDate: "",
-  });
 
   useEffect(() => {
     rosterStore.listRoster().then(r => {
-      const filtered = r.filter(s => (s.studentStatus ?? "active") !== "withdrawn");
-      setRoster(filtered);
-      setLoading(false);
+      setRoster(r.filter(s => (s.studentStatus ?? "active") !== "withdrawn"));
     });
-  }, [rosterStore]);
+    loadExams();
+  }, []);
 
-  // 모든 시험 일정에서 최소/최대 날짜 구하기
+  async function loadExams() {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/exam_schedules?order=exam_start.asc`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const mapped: ExamSchedule[] = data.map((r: any) => ({
+          id: r.id,
+          studentCode: r.student_code,
+          semester: r.semester,
+          examType: r.exam_type,
+          subject: r.subject,
+          examStart: r.exam_start,
+          examEnd: r.exam_end,
+          englishExamDate: r.english_exam_date,
+          reportDeadline: r.report_deadline,
+          nextLessonDate: r.next_lesson_date,
+          score: r.score,
+          completed: r.completed,
+          memo: r.memo,
+        }));
+        setExams(mapped);
+      }
+    } catch (e) {
+      console.error("Load failed:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 날짜 범위 계산
   const dateRange = useMemo(() => {
     let minDate = new Date();
     let maxDate = new Date();
-
     let hasData = false;
-    roster.forEach(student => {
-      student.examSchedules?.forEach(exam => {
-        const start = new Date(exam.startDate);
-        const end = new Date(exam.endDate);
-        if (!hasData || start < minDate) minDate = new Date(start);
-        if (!hasData || end > maxDate) maxDate = new Date(end);
+
+    exams.forEach(exam => {
+      const dates = [
+        exam.reportDeadline,
+        exam.examStart,
+        exam.englishExamDate,
+        exam.examEnd,
+        exam.nextLessonDate,
+      ].filter(Boolean);
+
+      dates.forEach(dateStr => {
+        const d = new Date(dateStr);
+        if (!hasData || d < minDate) minDate = new Date(d);
+        if (!hasData || d > maxDate) maxDate = new Date(d);
         hasData = true;
       });
     });
 
-    // 범위 확장 (시작 30일 전, 종료 30일 후)
-    minDate.setDate(minDate.getDate() - 30);
-    maxDate.setDate(maxDate.getDate() + 30);
+    if (!hasData) {
+      minDate = new Date();
+      maxDate = new Date();
+      minDate.setDate(minDate.getDate() - 30);
+      maxDate.setDate(maxDate.getDate() + 30);
+    } else {
+      minDate.setDate(minDate.getDate() - 10);
+      maxDate.setDate(maxDate.getDate() + 10);
+    }
 
     return { minDate, maxDate };
-  }, [roster]);
+  }, [exams]);
 
-  // 날짜 → px 위치 변환
-  function dateToPx(date: string): number {
-    const d = new Date(date);
+  // 날짜를 px로 변환
+  function dateToPx(dateStr: string): number {
+    if (!dateStr) return -100;
+    const d = new Date(dateStr);
     const range = dateRange.maxDate.getTime() - dateRange.minDate.getTime();
     if (range <= 0) return 0;
     const offset = d.getTime() - dateRange.minDate.getTime();
-    return Math.max(0, (offset / range) * 800); // 800px 너비, 최소 0
-  }
-
-  function durationToPx(startDate: string, endDate: string): number {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const range = dateRange.maxDate.getTime() - dateRange.minDate.getTime();
-    if (range <= 0) return 50;
-    const duration = end.getTime() - start.getTime();
-    return Math.max((duration / range) * 800, 50); // 최소 50px
-  }
-
-  const examColors = ["#0891b2", "#059669", "#7c3aed", "#ea580c", "#dc2626", "#475569"];
-
-  async function saveExamSchedules() {
-    if (!editingStudent) return;
-
-    try {
-      const exams = editingStudent.examSchedules || [];
-      exams.forEach((e, i) => {
-        if (!e.color) e.color = examColors[i % examColors.length];
-      });
-
-      await rosterStore.saveRoster([editingStudent]);
-      const all = await rosterStore.listRoster();
-      setRoster(all.filter(s => (s.studentStatus ?? "active") !== "withdrawn"));
-      setEditingStudent(null);
-    } catch(e) {
-      alert("저장 실패: " + (e as any)?.message);
-    }
-  }
-
-  function addExam() {
-    if (!editingStudent) return;
-    if (!newExam.name || !newExam.startDate || !newExam.endDate) {
-      alert("모든 필드를 입력해주세요");
-      return;
-    }
-
-    const exams = editingStudent.examSchedules || [];
-    const color = examColors[exams.length % examColors.length];
-    exams.push({ ...newExam, color });
-
-    setEditingStudent({ ...editingStudent, examSchedules: exams });
-    setNewExam({ name: "", startDate: "", endDate: "" });
-  }
-
-  function removeExam(index: number) {
-    if (!editingStudent) return;
-    const exams = editingStudent.examSchedules || [];
-    exams.splice(index, 1);
-    setEditingStudent({ ...editingStudent, examSchedules: exams });
+    return Math.max(0, (offset / range) * 1000);
   }
 
   if (loading) return <div className="card">로딩 중...</div>;
+
+  const studentExams = new Map<string, ExamSchedule[]>();
+  exams.forEach(exam => {
+    if (!studentExams.has(exam.studentCode)) {
+      studentExams.set(exam.studentCode, []);
+    }
+    studentExams.get(exam.studentCode)!.push(exam);
+  });
 
   return (
     <div className="card">
@@ -116,277 +138,116 @@ export default function ExamSchedulePanel() {
           📊 시험일정 chart
         </h2>
         <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>
-          학생별 시험 일정을 Gantt chart로 시각화
+          학생별 시험 일정 시각화 (직보일, 시작일, 영어시험일, 종료일, 다음수업)
         </p>
+      </div>
+
+      {/* 범례 */}
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid #f1f5f9", background: "#fafafa", display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {SCHEDULE_ITEMS.map(item => (
+          <div key={item.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <div style={{ width: 12, height: 12, background: item.color, borderRadius: 2 }} />
+            <span style={{ color: "#64748b", fontWeight: 600 }}>{item.label}</span>
+          </div>
+        ))}
       </div>
 
       {/* Gantt Chart */}
       <div style={{ padding: 20, overflowX: "auto" }}>
-        <div style={{ minWidth: 900 }}>
-          {/* 타임라인 헤더 */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", height: 30 }}>
-              <div style={{ width: 150, fontWeight: 700, fontSize: 13, color: "#1e293b" }}>
-                학생명
-              </div>
-              <div style={{ flex: 1, position: "relative", height: 30, borderLeft: "2px solid #0891b2", paddingLeft: 10 }}>
-                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
-                  시험 일정 (일정을 클릭하면 편집 가능)
-                </span>
-              </div>
+        <div style={{ minWidth: 1200 }}>
+          {/* 헤더 */}
+          <div style={{ display: "flex", alignItems: "center", height: 40, marginBottom: 20, fontWeight: 700, fontSize: 12, color: "#64748b" }}>
+            <div style={{ width: 120, flexShrink: 0 }}>학생명</div>
+            <div style={{ flex: 1, position: "relative", height: 30, borderLeft: "2px solid #0891b2", paddingLeft: 10 }}>
+              시험 일정 가시화
             </div>
           </div>
 
           {/* 학생 행 */}
-          {roster.map(student => (
-            <div
-              key={student.studentCode}
-              onClick={() => setEditingStudent({ ...student })}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                height: 60,
-                borderBottom: "1px solid #f1f5f9",
-                cursor: "pointer",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
-            >
-              {/* 학생명 */}
-              <div style={{ width: 150, fontSize: 13, fontWeight: 600, color: "#1e293b", paddingRight: 10 }}>
-                {student.name}
-              </div>
+          {Array.from(studentExams.entries()).map(([studentCode, studentExamList]) => {
+            const student = roster.find(r => r.studentCode === studentCode);
+            if (!student) return null;
 
-              {/* 시험 바 */}
-              <div style={{ flex: 1, position: "relative", height: 60, background: "#fafafa", borderLeft: "2px solid #e2e8f0" }}>
-                {student.examSchedules?.map((exam, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      position: "absolute",
-                      left: `${dateToPx(exam.startDate)}px`,
-                      width: `${durationToPx(exam.startDate, exam.endDate)}px`,
-                      height: 24,
-                      top: `${12 + i * 28}px`,
-                      background: exam.color || "#0891b2",
-                      borderRadius: 4,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#fff",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      paddingX: 6,
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                    }}
-                    title={`${exam.name}: ${exam.startDate} ~ ${exam.endDate}`}
-                  >
-                    {exam.name}
+            return (
+              <div key={studentCode} style={{ marginBottom: 2 }}>
+                <div style={{ display: "flex", alignItems: "center", height: 60, borderBottom: "1px solid #f1f5f9", background: "#fafafa" }}>
+                  {/* 학생명 */}
+                  <div style={{ width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600, color: "#1e293b", paddingRight: 10 }}>
+                    {student.name}
                   </div>
-                ))}
-                {!student.examSchedules || student.examSchedules.length === 0 && (
-                  <div style={{ padding: "8px 12px", color: "#94a3b8", fontSize: 12 }}>
-                    시험 일정 없음
+
+                  {/* 시험 바 */}
+                  <div style={{ flex: 1, position: "relative", height: 60, background: "#fff" }}>
+                    {studentExamList.map((exam, idx) => (
+                      <div
+                        key={`${exam.id}-${idx}`}
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: `${idx * 12}px`,
+                          height: 10,
+                          display: "flex",
+                          gap: 2,
+                          alignItems: "center",
+                          fontSize: 9,
+                          color: "#64748b",
+                        }}
+                      >
+                        {SCHEDULE_ITEMS.map(item => {
+                          const dateStr = exam[item.key as keyof ExamSchedule];
+                          if (!dateStr) return null;
+                          const px = dateToPx(dateStr as string);
+                          const formattedDate = new Date(dateStr as string).toLocaleDateString("ko-KR", {
+                            month: "short",
+                            day: "numeric",
+                          });
+
+                          return (
+                            <div
+                              key={`${exam.id}-${item.key}`}
+                              style={{
+                                position: "absolute",
+                                left: `${px}px`,
+                                width: 30,
+                                padding: "0 2px",
+                                background: item.color,
+                                color: "#fff",
+                                borderRadius: 2,
+                                fontSize: 9,
+                                fontWeight: 600,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                textAlign: "center",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                title: `${item.label}: ${formattedDate}`,
+                              }}
+                            >
+                              {formattedDate.split(" ")[1]}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                    {studentExamList.length === 0 && (
+                      <div style={{ padding: "8px 12px", color: "#cbd5e1", fontSize: 12 }}>
+                        시험 일정 없음
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
+            );
+          })}
+
+          {studentExams.size === 0 && (
+            <div style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
+              📋 시험 일정 데이터가 없습니다.
             </div>
-          ))}
+          )}
         </div>
       </div>
-
-      {/* 시험 일정 편집 모달 */}
-      {editingStudent && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={() => setEditingStudent(null)}
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 12,
-              width: "90%",
-              maxWidth: 500,
-              maxHeight: "80vh",
-              overflow: "auto",
-              padding: 20,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#1e293b" }}>
-              {editingStudent.name} - 시험 일정 관리
-            </h3>
-
-            {/* 기존 시험 일정 */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", marginBottom: 8, fontSize: 12, fontWeight: 700, color: "#374151" }}>
-                등록된 시험 ({editingStudent.examSchedules?.length || 0}개)
-              </label>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {editingStudent.examSchedules?.map((exam, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: 10,
-                      background: "#f8fafc",
-                      borderRadius: 8,
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 2,
-                        background: exam.color || "#0891b2",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div style={{ flex: 1, fontSize: 13 }}>
-                      <span style={{ fontWeight: 700, color: "#1e293b" }}>{exam.name}</span>
-                      <span style={{ color: "#64748b", marginLeft: 8 }}>
-                        {exam.startDate} ~ {exam.endDate}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => removeExam(i)}
-                      style={{
-                        padding: "4px 8px",
-                        fontSize: 12,
-                        background: "#fee2e2",
-                        color: "#dc2626",
-                        border: "none",
-                        borderRadius: 4,
-                        cursor: "pointer",
-                        fontWeight: 600,
-                      }}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 새 시험 추가 */}
-            <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 16 }}>
-              <label style={{ display: "block", marginBottom: 8, fontSize: 12, fontWeight: 700, color: "#374151" }}>
-                새 시험 추가
-              </label>
-              <input
-                type="text"
-                placeholder="시험명 (예: 영어, 수학)"
-                value={newExam.name}
-                onChange={(e) => setNewExam({ ...newExam, name: e.target.value })}
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  marginBottom: 8,
-                  borderRadius: 6,
-                  border: "1px solid #cbd5e1",
-                  fontSize: 13,
-                  boxSizing: "border-box",
-                }}
-              />
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <input
-                  type="date"
-                  value={newExam.startDate}
-                  onChange={(e) => setNewExam({ ...newExam, startDate: e.target.value })}
-                  style={{
-                    flex: 1,
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13,
-                  }}
-                />
-                <input
-                  type="date"
-                  value={newExam.endDate}
-                  onChange={(e) => setNewExam({ ...newExam, endDate: e.target.value })}
-                  style={{
-                    flex: 1,
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13,
-                  }}
-                />
-              </div>
-              <button
-                onClick={addExam}
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  background: "#e0f2fe",
-                  color: "#0891b2",
-                  border: "1px solid #bae6fd",
-                  borderRadius: 6,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                + 시험 추가
-              </button>
-            </div>
-
-            {/* 버튼 */}
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button
-                onClick={saveExamSchedules}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  background: "#0891b2",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                저장
-              </button>
-              <button
-                onClick={() => setEditingStudent(null)}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  background: "#f1f5f9",
-                  color: "#64748b",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 6,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
