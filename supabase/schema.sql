@@ -14,13 +14,18 @@ create table if not exists results (
   round int not null,
   total_questions int not null,
   max_score int not null,
+  provider text,
   teacher text,
   date date not null,
   score int not null,
   wrong_answers jsonb not null default '[]',
   reflection jsonb not null default '{}',
+  question_details jsonb default '[]',
   submitted_at timestamptz not null default now()
 );
+
+alter table results add column if not exists provider text;
+alter table results add column if not exists question_details jsonb default '[]';
 
 create index if not exists idx_results_school on results (school);
 create index if not exists idx_results_exam on results (exam_name);
@@ -129,6 +134,8 @@ create table if not exists assignment_submissions (
   item text,
   scope text,
   completed boolean,
+  -- 메모 (선택 — 관리자가 추가할 수 있음)
+  memo text,
   -- 강사 2차 점검 (선택)
   review_status text check (review_status in ('pending', 'pass', 'fail')) default 'pending',
   reviewed_at timestamptz,
@@ -141,6 +148,7 @@ alter table assignment_submissions add column if not exists step3_minutes int;
 alter table assignment_submissions add column if not exists item text;
 alter table assignment_submissions add column if not exists scope text;
 alter table assignment_submissions add column if not exists completed boolean;
+alter table assignment_submissions add column if not exists memo text;
 alter table assignment_submissions add column if not exists review_status text default 'pending';
 alter table assignment_submissions add column if not exists reviewed_at timestamptz;
 alter table assignment_submissions add column if not exists review_note text;
