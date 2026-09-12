@@ -11,6 +11,18 @@ const GATE_SESSION_KEY = "asx.admin.gate";
 const ADMIN_PREVIEW_KEY = "asx.admin.preview";
 const TAP_THRESHOLD = 5;
 const TAP_WINDOW_MS = 2000;
+const INSTALL_DISMISSED_KEY = "asx.install.dismissed";
+
+function isStandaloneDisplay(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as any).standalone === true
+  );
+}
+
+function isIosDevice(): boolean {
+  return /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+}
 
 export default function App() {
   const [role, setRole] = useState<"student" | "admin">("student");
@@ -52,6 +64,47 @@ export default function App() {
   const [reportParams, setReportParams] = useState<{ studentCode: string; token: string } | null>(null);
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 앱(PWA) 설치 유도
+  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showIosInstallGuide, setShowIosInstallGuide] = useState(false);
+
+  useEffect(() => {
+    if (isStandaloneDisplay()) return; // 이미 앱으로 설치되어 실행 중
+    if (localStorage.getItem(INSTALL_DISMISSED_KEY) === "1") return; // 사용자가 닫음
+
+    if (isIosDevice()) {
+      // iOS Safari는 beforeinstallprompt를 지원하지 않으므로 바로 안내 배너 노출
+      setShowInstallBanner(true);
+      return;
+    }
+
+    function handleBeforeInstallPrompt(e: Event) {
+      e.preventDefault();
+      setInstallPromptEvent(e);
+      setShowInstallBanner(true);
+    }
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  }, []);
+
+  async function handleInstallClick() {
+    if (isIosDevice()) {
+      setShowIosInstallGuide(true);
+      return;
+    }
+    if (!installPromptEvent) return;
+    installPromptEvent.prompt();
+    await installPromptEvent.userChoice;
+    setInstallPromptEvent(null);
+    setShowInstallBanner(false);
+  }
+
+  function dismissInstallBanner() {
+    setShowInstallBanner(false);
+    localStorage.setItem(INSTALL_DISMISSED_KEY, "1");
+  }
 
   // 해시 기반 리포트 라우팅
   useEffect(() => {
@@ -192,6 +245,63 @@ export default function App() {
           </button>
         )}
       </div>
+
+      {/* 앱(PWA) 설치 유도 배너 */}
+      {showInstallBanner && (
+        <div style={{
+          background: "linear-gradient(135deg,#eef2ff,#e0e7ff)",
+          border: "2px solid #6366f1",
+          borderRadius: 10,
+          padding: "10px 16px", margin: "8px 0",
+          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 22 }}>📲</span>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <p style={{ margin: 0, fontWeight: 700, color: "#3730a3", fontSize: 14 }}>
+              앱처럼 설치해서 더 편하게 사용하세요
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: "#6366f1" }}>
+              홈 화면에 추가하면 브라우저 주소창 없이 앱처럼 실행됩니다.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={handleInstallClick}
+              style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#4f46e5",
+                color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+            >
+              설치하기
+            </button>
+            <button
+              onClick={dismissInstallBanner}
+              style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #6366f1", background: "#fff",
+                color: "#6366f1", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+            >
+              나중에
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* iOS 설치 안내 모달 (Safari는 자동 설치 프롬프트 미지원) */}
+      {showIosInstallGuide && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }} onClick={() => setShowIosInstallGuide(false)}>
+          <div className="card" style={{ maxWidth: 340 }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginTop: 0 }}>📲 홈 화면에 추가하기</h2>
+            <ol style={{ paddingLeft: 20, lineHeight: 1.9, fontSize: 14 }}>
+              <li>화면 하단(또는 상단) <strong>공유 버튼</strong>( <span style={{fontSize:16}}>⬆️</span> )을 누르세요.</li>
+              <li>메뉴에서 <strong>"홈 화면에 추가"</strong>를 선택하세요.</li>
+              <li><strong>"추가"</strong>를 누르면 완료됩니다.</li>
+            </ol>
+            <button className="btn" onClick={() => { setShowIosInstallGuide(false); dismissInstallBanner(); }}>
+              확인했어요
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 관리자 미리보기 안내 배너 */}
       {isAdmin && previewMode && (

@@ -33,3 +33,11 @@
   - **진짜 근본 원인 3**: 모의고사 기록 없는 학생(`rows=[]`) 포함 시 `latest.score` 접근에서 렌더링 크래시 → 과제만 있는 학생 전용 카드 UI 추가로 해결
   - 검증: SQL로 `students_with_any_data=18` 확인, 브라우저에서 18명 카드 정상 렌더링 확인
   - 기록: [memory/incident_2026_09_12_growthpanel.md](memory/incident_2026_09_12_growthpanel.md), CLAUDE.md 업데이트
+
+- [x] ~~**과제 정밀분석 질문 확장/로테이션/저장 + 관리자 확인 UI**~~ (2026-09-12 완료)
+  - 요청: 모든 과제(모의고사 외)에도 학생 어려움 확인 질문, 과제별 다른 질문, 매주 안 겹치게 로테이션, 다짐/목표, 만족도
+  - `ANALYSIS_QUESTIONS` 카테고리별 4→7~8개로 확장, `pickRotatingQuestions()`로 회차별 순환 노출, `COMMON_ANALYSIS_QUESTIONS`(다짐/목표+만족도)는 매번 고정 노출
+  - 조사 중 발견: `analysisData` 답변은 UI만 있고 Supabase에 저장된 적이 없었음(스토어 매핑 누락) → `analysis_data` jsonb 컬럼 추가 + `assignmentStore.supabase.ts` 저장/조회 매핑 추가
+  - 관리자 "과제 점검" 화면에 "🔬 정밀분석 보기" 토글 추가
+  - **⚠️ 배포 사고 (반복된 실수)**: 로컬 개발 서버+DB 직접 조회로만 검증하고 "완료"라고 보고했으나, **git commit/push를 하지 않아** 실제 GitHub Pages 배포본에는 전혀 반영되지 않음. 사용자가 실제 화면에서 "정밀분석이 보이지 않는다"고 재보고한 뒤에야 `git status`로 미커밋 상태를 발견. 커밋 a9ed6da로 뒤늦게 push.
+  - **이 프로젝트에서 두 번째로 겪는 동일 패턴의 사고**임 — 최초 사고(2026-09-12, ExamSchedulePanel 건)의 원인 중 하나도 "Code not pushed to remote"였음. 즉 한 번 기록해둔 교훈이 재발을 막지 못함 → 아래 CLAUDE.md 및 스킬 메모리에 "코드 수정 후 검증 완료 = commit+push까지 끝난 상태"로 재정의하여 기록.
