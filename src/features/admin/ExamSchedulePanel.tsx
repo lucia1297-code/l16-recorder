@@ -119,19 +119,16 @@ export default function ExamSchedulePanel() {
       {/* Gantt Chart */}
       <div style={{ padding: 20, overflowX: "auto" }}>
         <div style={{ minWidth: 900 }}>
-          {/* 타임라인 */}
-          <div style={{ marginBottom: 20 }}>
+          {/* 타임라인 헤더 */}
+          <div style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", height: 30 }}>
-              <div style={{ width: 150, fontWeight: 700, fontSize: 12, color: "#64748b" }}>
+              <div style={{ width: 150, fontWeight: 700, fontSize: 13, color: "#1e293b" }}>
                 학생명
               </div>
-              <div style={{ flex: 1, position: "relative", height: 30, borderLeft: "2px solid #e2e8f0" }}>
-                <div style={{ position: "absolute", left: 0, top: 0, fontSize: 10, color: "#94a3b8" }}>
-                  {dateRange.minDate.toLocaleDateString()}
-                </div>
-                <div style={{ position: "absolute", right: 0, top: 0, fontSize: 10, color: "#94a3b8" }}>
-                  {dateRange.maxDate.toLocaleDateString()}
-                </div>
+              <div style={{ flex: 1, position: "relative", height: 30, borderLeft: "2px solid #0891b2", paddingLeft: 10 }}>
+                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
+                  시험 일정 (일정을 클릭하면 편집 가능)
+                </span>
               </div>
             </div>
           </div>
