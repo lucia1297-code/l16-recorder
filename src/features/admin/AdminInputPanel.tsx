@@ -191,10 +191,22 @@ export default function AdminInputPanel() {
       };
 
       if (isUpdate) {
+        const updateData = {
+          exam_name: result.exam.examName,
+          year: result.exam.year,
+          month: result.exam.month,
+          round: result.exam.round,
+          provider: result.exam.provider ?? null,
+          date: result.date,
+          score: result.score,
+          wrong_answers: result.wrongAnswers,
+          reflection: result.reflection,
+          submitted_at: result.submittedAt,
+        };
         await fetch(`${SUPABASE_URL}/rest/v1/results?id=eq.${result.id}`, {
           method: "PATCH",
           headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify(result),
+          body: JSON.stringify(updateData),
         }).then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
