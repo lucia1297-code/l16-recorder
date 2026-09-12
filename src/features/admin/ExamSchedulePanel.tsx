@@ -45,7 +45,7 @@ export default function ExamSchedulePanel() {
   async function loadExams() {
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/exam_schedules?order=exam_start.asc`,
+        `${SUPABASE_URL}/rest/v1/admin_exam_schedules?order=created_at.asc`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       if (res.ok) {
@@ -55,15 +55,15 @@ export default function ExamSchedulePanel() {
           studentCode: r.student_code,
           semester: r.semester,
           examType: r.exam_type,
-          subject: r.subject,
-          examStart: r.exam_start,
-          examEnd: r.exam_end,
-          englishExamDate: r.english_exam_date,
-          reportDeadline: r.report_deadline,
-          nextLessonDate: r.next_lesson_date,
-          score: r.score,
-          completed: r.completed,
-          memo: r.memo,
+          subject: r.subject ?? "영어",
+          examStart: r.exam_start ?? "",
+          examEnd: r.exam_end ?? "",
+          englishExamDate: r.english_exam_date ?? "",
+          reportDeadline: r.report_deadline ?? "",
+          nextLessonDate: r.next_lesson_date ?? "",
+          score: r.score ?? null,
+          completed: r.completed ?? false,
+          memo: r.memo ?? "",
         }));
         setExams(mapped);
       }
