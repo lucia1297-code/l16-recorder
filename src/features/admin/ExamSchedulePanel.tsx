@@ -29,6 +29,12 @@ const SCHEDULE_ITEMS = [
   { key: "nextLessonDate", label: "다음수업", color: "#8b5cf6" },
 ];
 
+// 학생별 고유색
+const STUDENT_COLORS = [
+  "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+  "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B88B", "#A8D8EA",
+];
+
 export default function ExamSchedulePanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -154,88 +160,144 @@ export default function ExamSchedulePanel() {
 
       {/* Gantt Chart */}
       <div style={{ padding: 20, overflowX: "auto" }}>
-        <div style={{ minWidth: 1200 }}>
-          {/* 헤더 */}
-          <div style={{ display: "flex", alignItems: "center", height: 40, marginBottom: 20, fontWeight: 700, fontSize: 12, color: "#64748b" }}>
-            <div style={{ width: 120, flexShrink: 0 }}>학생명</div>
-            <div style={{ flex: 1, position: "relative", height: 30, borderLeft: "2px solid #0891b2", paddingLeft: 10 }}>
-              시험 일정 가시화
+        <div style={{ minWidth: 1400 }}>
+          {/* 타임라인 헤더 */}
+          <div style={{ display: "flex", marginBottom: 20, position: "sticky", top: 0, zIndex: 10 }}>
+            <div style={{ width: 120, flexShrink: 0 }}></div>
+            <div style={{ flex: 1, display: "flex", position: "relative", height: 40 }}>
+              {Array.from({ length: Math.ceil((dateRange.maxDate.getTime() - dateRange.minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1 }, (_, i) => {
+                const date = new Date(dateRange.minDate);
+                date.setDate(date.getDate() + i);
+                const px = dateToPx(date.toISOString().split('T')[0]);
+                const monthDay = `${date.getMonth() + 1}.${date.getDate()}`;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      position: "absolute",
+                      left: `${px}px`,
+                      fontSize: 11,
+                      color: "#94a3b8",
+                      borderBottom: "1px solid #e2e8f0",
+                      paddingBottom: 4,
+                      minWidth: 40,
+                      textAlign: "center",
+                    }}
+                  >
+                    {monthDay}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* 학생 행 */}
-          {Array.from(studentExams.entries()).map(([studentCode, studentExamList]) => {
+          {Array.from(studentExams.entries()).map(([studentCode, studentExamList], studentIdx) => {
             const student = roster.find(r => r.studentCode === studentCode);
             if (!student) return null;
+            const studentColor = STUDENT_COLORS[studentIdx % STUDENT_COLORS.length];
 
             return (
-              <div key={studentCode} style={{ marginBottom: 2 }}>
-                <div style={{ display: "flex", alignItems: "center", height: 60, borderBottom: "1px solid #f1f5f9", background: "#fafafa" }}>
-                  {/* 학생명 */}
-                  <div style={{ width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600, color: "#1e293b", paddingRight: 10 }}>
-                    {student.name}
-                  </div>
+              <div key={studentCode} style={{ marginBottom: 1, display: "flex", position: "relative" }}>
+                {/* 학생명 - Sticky */}
+                <div
+                  style={{
+                    width: 120,
+                    flexShrink: 0,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#1e293b",
+                    paddingRight: 10,
+                    paddingTop: 12,
+                    position: "sticky",
+                    left: 0,
+                    background: "#fafafa",
+                    zIndex: 5,
+                    borderRight: "1px solid #e2e8f0",
+                  }}
+                >
+                  {student.name}
+                </div>
 
-                  {/* 시험 바 */}
-                  <div style={{ flex: 1, position: "relative", height: 60, background: "#fff" }}>
-                    {studentExamList.map((exam, idx) => (
+                {/* 시험 일정 바 */}
+                <div style={{ flex: 1, position: "relative", height: 40, background: "#fff", borderBottom: "1px solid #f1f5f9" }}>
+                  {/* 시작일-종료일 연결 선 */}
+                  {studentExamList.map((exam) => {
+                    if (!exam.examStart || !exam.examEnd) return null;
+                    const startPx = dateToPx(exam.examStart);
+                    const endPx = dateToPx(exam.examEnd);
+                    const width = endPx - startPx;
+                    if (width <= 0) return null;
+
+                    return (
                       <div
-                        key={`${exam.id}-${idx}`}
+                        key={`range-${exam.id}`}
                         style={{
                           position: "absolute",
-                          left: 0,
-                          right: 0,
-                          top: `${idx * 12}px`,
-                          height: 10,
-                          display: "flex",
-                          gap: 2,
-                          alignItems: "center",
-                          fontSize: 9,
-                          color: "#64748b",
+                          left: `${startPx}px`,
+                          width: `${Math.max(2, width)}px`,
+                          height: 3,
+                          background: studentColor,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          borderRadius: 2,
+                          opacity: 0.7,
                         }}
-                      >
-                        {SCHEDULE_ITEMS.map(item => {
-                          const dateStr = exam[item.key as keyof ExamSchedule];
-                          if (!dateStr) return null;
-                          const px = dateToPx(dateStr as string);
-                          const formattedDate = new Date(dateStr as string).toLocaleDateString("ko-KR", {
-                            month: "short",
-                            day: "numeric",
-                          });
+                      />
+                    );
+                  })}
 
-                          return (
-                            <div
-                              key={`${exam.id}-${item.key}`}
-                              style={{
-                                position: "absolute",
-                                left: `${px}px`,
-                                width: 30,
-                                padding: "0 2px",
-                                background: item.color,
-                                color: "#fff",
-                                borderRadius: 2,
-                                fontSize: 9,
-                                fontWeight: 600,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                textAlign: "center",
-                                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                                title: `${item.label}: ${formattedDate}`,
-                              }}
-                            >
-                              {formattedDate.split(" ")[1]}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                    {studentExamList.length === 0 && (
-                      <div style={{ padding: "8px 12px", color: "#cbd5e1", fontSize: 12 }}>
-                        시험 일정 없음
-                      </div>
-                    )}
-                  </div>
+                  {/* 각 일정의 포인트 */}
+                  {studentExamList.map((exam, idx) => (
+                    <div
+                      key={`${exam.id}-${idx}`}
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: `${12 + idx * 14}px`,
+                        height: 10,
+                        display: "flex",
+                        gap: 3,
+                        alignItems: "center",
+                        fontSize: 8,
+                        color: "#64748b",
+                      }}
+                    >
+                      {SCHEDULE_ITEMS.map(item => {
+                        const dateStr = exam[item.key as keyof ExamSchedule];
+                        if (!dateStr) return null;
+                        const px = dateToPx(dateStr as string);
+                        const formattedDate = new Date(dateStr as string).toLocaleDateString("ko-KR", {
+                          month: "short",
+                          day: "numeric",
+                        });
+
+                        return (
+                          <div
+                            key={`${exam.id}-${item.key}`}
+                            style={{
+                              position: "absolute",
+                              left: `${px}px`,
+                              width: 24,
+                              height: 6,
+                              background: item.color,
+                              borderRadius: 1,
+                              opacity: 0.8,
+                              title: `${item.label}: ${formattedDate}`,
+                              cursor: "pointer",
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+
+                  {studentExamList.length === 0 && (
+                    <div style={{ padding: "8px 12px", color: "#cbd5e1", fontSize: 12 }}>
+                      시험 일정 없음
+                    </div>
+                  )}
                 </div>
               </div>
             );
