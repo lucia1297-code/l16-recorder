@@ -19,6 +19,11 @@ const EXAM_TYPES = [
   "10월 학력평가", "11월 수능", "학교 시험", "자체 시험", "기타",
 ];
 
+const EXAM_PROVIDERS = [
+  "EBS", "메가스터디", "대성마이맞", "강남구청", "강남교육청",
+  "학교", "학원", "개인 강사", "기타",
+];
+
 const now = new Date();
 // RFC4122 UUID v4 생성
 function uuidv4(): string {
@@ -34,6 +39,7 @@ const EMPTY_EXAM = {
   month: now.getMonth() + 1,
   round: 1,
   date: now.toISOString().slice(0, 10),
+  provider: "",
   score: "",
   wrongNos: "",
   memo: "",
@@ -134,6 +140,7 @@ export default function AdminInputPanel() {
           round: examForm.round,
           totalQuestions: 45,
           maxScore: 100,
+          provider: examForm.provider || undefined,
         },
         teacher: "관리자 직접 입력",
         date: examForm.date,
@@ -351,6 +358,24 @@ export default function AdminInputPanel() {
                 </div>
               </div>
 
+              {/* 시행처 */}
+              <div style={{ marginBottom:12 }}>
+                <label style={{ fontSize:12, fontWeight:600,
+                  display:"block", marginBottom:5, color:"#374151" }}>
+                  시행처
+                </label>
+                <select value={examForm.provider}
+                  onChange={e => setExamForm({...examForm, provider: e.target.value})}
+                  style={{ width:"100%", padding:"9px 11px", borderRadius:8,
+                    border:"1.5px solid #c4b5fd", fontSize:13,
+                    boxSizing:"border-box" as const }}>
+                  <option value="">── 시행처 선택 (선택) ──</option>
+                  {EXAM_PROVIDERS.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* 점수 — 강조 */}
               <div style={{ marginBottom:14 }}>
                 <label style={{ fontSize:13, fontWeight:700,
@@ -456,6 +481,11 @@ export default function AdminInputPanel() {
                           <span style={{ fontSize:12, color:"#475569" }}>
                             {ex.exam.examName}
                           </span>
+                          {ex.exam.provider && (
+                            <span style={{ fontSize:11, color:"#7c3aed", fontWeight:600 }}>
+                              ({ex.exam.provider})
+                            </span>
+                          )}
                           <span style={{ fontSize:11, color:"#94a3b8" }}>
                             {ex.date}
                           </span>

@@ -42,6 +42,7 @@ export interface ExamInfo {
   round: number; // 회차
   totalQuestions: number; // 총문항수
   maxScore: number; // 총점(만점)
+  provider?: string; // 시행처 (예: EBS, 메가스터디, 대성마이맞 등)
 }
 
 // ===== 문항별 오답 =====
