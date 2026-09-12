@@ -10,6 +10,13 @@ export default defineConfig({
     VitePWA({
       registerType: "prompt",          // 업데이트 감지 시 앱에 알림
       includeAssets: ["favicon.svg"],
+      workbox: {
+        // SPA 네비게이션 요청이 캐시에 없거나 네트워크 실패 시 캐시된 index.html로 폴백
+        // (이게 없으면 설치된 PWA가 오래된 파일 참조를 캐시한 채로 열렸을 때 그대로 404가 노출됨)
+        navigateFallback: "/l16-recorder/index.html",
+        navigateFallbackDenylist: [/^\/l16-recorder\/api\.html/],
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: "L16 Student Recorder Lite",
         short_name: "L16 Recorder",
