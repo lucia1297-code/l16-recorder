@@ -28,18 +28,20 @@ export default function ExamSchedulePanel() {
     let minDate = new Date();
     let maxDate = new Date();
 
+    let hasData = false;
     roster.forEach(student => {
       student.examSchedules?.forEach(exam => {
         const start = new Date(exam.startDate);
         const end = new Date(exam.endDate);
-        if (start < minDate) minDate = start;
-        if (end > maxDate) maxDate = end;
+        if (!hasData || start < minDate) minDate = new Date(start);
+        if (!hasData || end > maxDate) maxDate = new Date(end);
+        hasData = true;
       });
     });
 
-    // 범위 확장 (시작 7일 전, 종료 7일 후)
-    minDate.setDate(minDate.getDate() - 7);
-    maxDate.setDate(maxDate.getDate() + 7);
+    // 범위 확장 (시작 30일 전, 종료 30일 후)
+    minDate.setDate(minDate.getDate() - 30);
+    maxDate.setDate(maxDate.getDate() + 30);
 
     return { minDate, maxDate };
   }, [roster]);
@@ -48,16 +50,18 @@ export default function ExamSchedulePanel() {
   function dateToPx(date: string): number {
     const d = new Date(date);
     const range = dateRange.maxDate.getTime() - dateRange.minDate.getTime();
+    if (range <= 0) return 0;
     const offset = d.getTime() - dateRange.minDate.getTime();
-    return (offset / range) * 800; // 800px 너비
+    return Math.max(0, (offset / range) * 800); // 800px 너비, 최소 0
   }
 
   function durationToPx(startDate: string, endDate: string): number {
     const start = new Date(startDate);
     const end = new Date(endDate);
     const range = dateRange.maxDate.getTime() - dateRange.minDate.getTime();
+    if (range <= 0) return 50;
     const duration = end.getTime() - start.getTime();
-    return Math.max((duration / range) * 800, 30); // 최소 30px
+    return Math.max((duration / range) * 800, 50); // 최소 50px
   }
 
   const examColors = ["#0891b2", "#059669", "#7c3aed", "#ea580c", "#dc2626", "#475569"];
