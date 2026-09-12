@@ -20,8 +20,8 @@ const EXAM_TYPES = [
 ];
 
 const EXAM_PROVIDERS = [
-  "EBS", "메가스터디", "대성마이맞", "강남구청", "강남교육청",
-  "학교", "학원", "개인 강사", "기타",
+  "EBS", "메가스터디", "대성", "강남구청", "강남교육청",
+  "학교", "학원", "개인 강사",
 ];
 
 const now = new Date();
@@ -431,16 +431,27 @@ export default function AdminInputPanel() {
                   display:"block", marginBottom:5, color:"#374151" }}>
                   시행처
                 </label>
-                <select value={examForm.provider}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr",
+                  gap:12, marginBottom:6 }}>
+                  <select value={examForm.provider}
+                    onChange={e => setExamForm({...examForm, provider: e.target.value})}
+                    style={{ width:"100%", padding:"9px 11px", borderRadius:8,
+                      border:"1.5px solid #c4b5fd", fontSize:13,
+                      boxSizing:"border-box" as const, background:"#fff",
+                      cursor:"pointer" }}>
+                    <option value="">── 빠른 선택 ──</option>
+                    {EXAM_PROVIDERS.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <input type="text"
+                  value={examForm.provider}
                   onChange={e => setExamForm({...examForm, provider: e.target.value})}
+                  placeholder="직접 입력 (예: 강남학원, 천재교육 등)"
                   style={{ width:"100%", padding:"9px 11px", borderRadius:8,
                     border:"1.5px solid #c4b5fd", fontSize:13,
-                    boxSizing:"border-box" as const }}>
-                  <option value="">── 시행처 선택 (선택) ──</option>
-                  {EXAM_PROVIDERS.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                    boxSizing:"border-box" as const }} />
               </div>
 
               {/* 점수 — 강조 */}
