@@ -54,6 +54,7 @@ analysis-question feature, where the user had to explicitly ask "정밀분석이
 | "Code changes not showing" (local dev) | Port collision (5173 & 5174) | Kill Node processes: `Get-Process node \| Stop-Process -Force` |
 | "Code changes not showing" (deployed site) | **Changes never committed/pushed** — happened twice already | `git status` → `git add` → `git commit` → `git push origin main`, then wait for GitHub Actions |
 | "Can't login to admin panel" | VITE_ADMIN_ACCESS_CODE not set | Set env var: `$env:VITE_ADMIN_ACCESS_CODE = "admin"` |
+| "Installed PWA shows 404" | Stale service worker (see PWA section below) | Already fixed via `registerType: "autoUpdate"` (commit fa991c4) — if it recurs, check `vite.config.ts` workbox config wasn't reverted |
 
 ## Development Setup
 
@@ -69,6 +70,26 @@ Correct project ref (verified via Supabase MCP): `grvambgnkpbufapvhvjx` → `htt
 Get-Process | Where-Object {$_.ProcessName -eq "node"} | Stop-Process -Force
 Start-Sleep -Seconds 2
 ```
+
+## PWA / Service Worker
+
+This app installs to phone home screens (VitePWA, `vite.config.ts`). Two facts that
+matter for this project specifically, because it redeploys many times per day:
+
+- `registerType: "autoUpdate"` (not `"prompt"`) — a new service worker activates as
+  soon as it's detected, no user action required. With `"prompt"`, a user's device can
+  keep running a service worker from hours ago until they notice and tap an update
+  banner; meanwhile GitHub Pages deploys (`peaceiris/actions-gh-pages`) fully replace
+  the previous build's files each time, so that stale service worker's cached
+  references point at files that no longer exist on the server → 404 on next
+  navigation. This bit the project twice in one day (2026-09-12/13) before switching
+  to `autoUpdate`.
+- `workbox.navigateFallback: "/l16-recorder/index.html"` + `cleanupOutdatedCaches: true`
+  — a safety net so a navigation that misses cache falls back to the app shell instead
+  of surfacing a raw 404.
+- If a 404-after-install report ever comes back a THIRD time: don't assume the same
+  fix regressed — check whether `registerType`/`workbox` options in `vite.config.ts`
+  still match this file, first, before re-diagnosing from scratch.
 
 ## Key Files
 
@@ -96,3 +117,5 @@ Start-Sleep -Seconds 2
   - **Lesson**: when a Supabase project URL fails, test with `nslookup <ref>.supabase.co 8.8.8.8` and compare against `list_projects` from the Supabase MCP BEFORE assuming a network/DNS problem — a bad project ref look identical to a DNS outage from inside the browser console.
 - **2026-09-12**: Built the assignment analysis-question feature (rotating questions, common goal/satisfaction questions, `analysisData` persistence, admin review UI), verified it thoroughly in the local dev server AND by reading/writing test rows directly in Supabase via MCP — but never ran `git add`/`commit`/`push`. Reported the feature as complete. The user then reported "정밀분석이 보이지 않는다" (precision analysis isn't showing) on the actual deployed site. `git status` revealed 7 modified files sitting uncommitted the entire time. This is the SAME class of mistake as the very first incident in this file (2026-09-12, ExamSchedulePanel — "Code not pushed to remote").
   - **Lesson**: local verification (dev server, direct DB queries) and "deployed and visible to the user" are two completely different claims. Never say a fix is "complete"/"verified" without first checking `git status` is clean and the commit is pushed. See the 🚨 rule at the top of this file.
+- **2026-09-12/13**: User asked to make the app phone-installable (PWA). Added an install banner (Android `beforeinstallprompt` + iOS "add to home screen" modal, commit b0a1194) — worked. Then user reported 404 after installing to home screen. Diagnosed: GitHub Pages deploy fully replaces old files each time, and workbox had no `navigateFallback`, so a stale service worker's navigation request that missed cache surfaced a raw 404 instead of falling back to the app shell. Fixed with `navigateFallback` + `cleanupOutdatedCaches` (commit 2915398) — but the user hit the SAME 404 again on their phone afterward. Root cause of the recurrence: `registerType: "prompt"` meant the phone's already-active service worker (from hours earlier, before the fix existed) never updated itself — the fix only protected devices that registered a service worker *after* it shipped, not devices already running one. Switched to `registerType: "autoUpdate"` + `skipWaiting`/`clientsClaim` (commit fa991c4) so a new service worker takes over automatically instead of waiting for a user-clicked prompt.
+  - **Lesson**: "the server has the right files" and "the user's device has the right service worker active" are independent facts. In a `registerType: "prompt"` PWA that redeploys frequently, a server-side fix (like adding navigateFallback) does NOT retroactively apply to devices already running an older service worker — only `autoUpdate` closes that gap. See PWA section above.
