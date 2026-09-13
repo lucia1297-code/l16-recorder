@@ -1,5 +1,5 @@
 import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3} from "lucide-react";
-import { useEffect, useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import ExamSchedulePanel from "./ExamSchedulePanel";
 import { addScheduledSms, listScheduledSms, cancelScheduledSms, deleteScheduledSms, type ScheduledSms } from "../../lib/scheduledSms";
 import type { ExamResult } from "../../core/types";
@@ -265,6 +265,12 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
   const [school, setSchool] = useState("");
   const [grade, setGrade] = useState("");
   const [exam, setExam] = useState("");
+  const [groupBy, setGroupBy] = useState<"week" | "month">("week");
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const [tableWidth, setTableWidth] = useState(0);
+  const syncingRef = useRef<"top" | "table" | null>(null);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -276,6 +282,70 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
       return true;
     });
   }, [rows, q, school, grade, exam]);
+
+  // 제출일 기준 주/월 단위로 그룹화 — 최신 그룹이 위로 오도록 내림차순 정렬한다.
+  const groups = useMemo(() => {
+    const sorted = [...filtered].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+    const map = new Map<string, { label: string; rows: ExamResult[] }>();
+    sorted.forEach((r) => {
+      const d = new Date(r.submittedAt);
+      let key: string, label: string;
+      if (groupBy === "month") {
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        label = `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+      } else {
+        const day = d.getDay();
+        const diffToMonday = (day === 0 ? -6 : 1) - day;
+        const monday = new Date(d);
+        monday.setDate(d.getDate() + diffToMonday);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        key = monday.toISOString().slice(0, 10);
+        label = `${monday.getMonth() + 1}월 ${monday.getDate()}일 ~ ${sunday.getMonth() + 1}월 ${sunday.getDate()}일`;
+      }
+      if (!map.has(key)) map.set(key, { label, rows: [] });
+      map.get(key)!.rows.push(r);
+    });
+    return Array.from(map.entries()).map(([key, v]) => ({ key, ...v }));
+  }, [filtered, groupBy]);
+
+  // 그룹 단위를 바꾸거나 처음 로드될 때는 가장 최근 그룹만 펼쳐서 보여준다.
+  useEffect(() => {
+    if (groups.length > 0) setExpandedGroups(new Set([groups[0].key]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupBy, rows]);
+
+  function toggleGroup(key: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // 테이블 실제 너비만큼 상단 더미 스크롤바의 폭을 맞춰, 위/아래 스크롤이 같은 지점을 가리키게 한다.
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (el) setTableWidth(el.scrollWidth);
+  });
+
+  function handleTopScroll() {
+    if (syncingRef.current === "table") return;
+    syncingRef.current = "top";
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    syncingRef.current = null;
+  }
+  function handleTableScroll() {
+    if (syncingRef.current === "top") return;
+    syncingRef.current = "table";
+    if (tableScrollRef.current && topScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    }
+    syncingRef.current = null;
+  }
 
   function exportCSV() {
     const csv = "\uFEFF" + toCSV(filtered); // BOM for Excel Korean
@@ -318,40 +388,71 @@ function ResultList({ rows }: { rows: ExamResult[] }) {
       {filtered.length === 0 ? (
         <p className="muted center">데이터가 없습니다.</p>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>코드</th>
-                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
-                <th>학교</th>
-                <th>학년</th>
-                <th>시험</th>
-                <th>제출일</th>
-                <th>점수</th>
-                <th>%</th>
-                <th>오답</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.student.studentCode}</td>
-                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{r.student.name}</td>
-                  <td>{r.student.school}</td>
-                  <td>{r.student.grade}</td>
-                  <td>{r.exam.examName} ({r.exam.month}월)</td>
-                  <td style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>
-                    {new Date(r.submittedAt).toLocaleDateString("ko-KR")}
-                  </td>
-                  <td>{r.score}/{r.exam.maxScore}</td>
-                  <td>{percentScore(r.score, r.exam.maxScore)}</td>
-                  <td>{r.wrongAnswers.map((w) => w.questionNo).join(",")}</td>
-                </tr>
+        <>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:8 }}>
+            <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
+              {([["week","주 단위"],["month","월 단위"]] as const).map(([val,label]) => (
+                <button key={val} onClick={() => setGroupBy(val)}
+                  style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
+                    background: groupBy === val ? "#0f766e" : "transparent",
+                    color: groupBy === val ? "#fff" : "#64748b" }}>
+                  {label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+          {/* 상단 가로 스크롤바 — 아래 테이블과 위치를 동기화해 맨 아래까지 안 내려가도 좌우로 넘길 수 있게 함 */}
+          <div ref={topScrollRef} onScroll={handleTopScroll}
+            style={{ overflowX:"auto", overflowY:"hidden", height:16 }}>
+            <div style={{ width: tableWidth, height:1 }} />
+          </div>
+          <div className="table-wrap" ref={tableScrollRef} onScroll={handleTableScroll}>
+            <table>
+              <thead>
+                <tr>
+                  <th>코드</th>
+                  <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
+                  <th>학교</th>
+                  <th>학년</th>
+                  <th>시험</th>
+                  <th>제출일</th>
+                  <th>점수</th>
+                  <th>%</th>
+                  <th>오답</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => {
+                  const isOpen = expandedGroups.has(g.key);
+                  return (
+                    <Fragment key={g.key}>
+                      <tr onClick={() => toggleGroup(g.key)} style={{ cursor:"pointer" }}>
+                        <td colSpan={9} style={{ background:"#eef2f6", fontWeight:700, fontSize:13, color:"#334155", padding:"9px 12px" }}>
+                          {isOpen ? "▾" : "▸"} {g.label} · {g.rows.length}건
+                        </td>
+                      </tr>
+                      {isOpen && g.rows.map((r) => (
+                        <tr key={r.id}>
+                          <td>{r.student.studentCode}</td>
+                          <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, whiteSpace:"nowrap" as const }}>{r.student.name}</td>
+                          <td>{r.student.school}</td>
+                          <td>{r.student.grade}</td>
+                          <td>{r.exam.examName} ({r.exam.month}월)</td>
+                          <td style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap" }}>
+                            {new Date(r.submittedAt).toLocaleDateString("ko-KR")}
+                          </td>
+                          <td>{r.score}/{r.exam.maxScore}</td>
+                          <td>{percentScore(r.score, r.exam.maxScore)}</td>
+                          <td>{r.wrongAnswers.map((w) => w.questionNo).join(",")}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
