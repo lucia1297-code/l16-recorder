@@ -108,6 +108,19 @@ matter for this project specifically, because it redeploys many times per day:
 5. **"Verified locally" ≠ "done"** (repeated twice now): local dev-server testing and direct
    Supabase queries only prove the code/data is correct — they say nothing about whether
    the deployed site has that code. Always `git push` before declaring a task finished.
+6. **A bug can hide behind "no data has this filled in yet"**: the `optionElimination`
+   rendering bug (see incident below) sat in the codebase without anyone noticing because
+   almost every existing row in Supabase had that field as empty strings — the buggy
+   branch only rendered once a student actually filled it in. When testing a conditional
+   render, don't stop at "the condition is usually false, so it's probably fine" — query
+   for a row where the condition IS true and check that one.
+7. **After a fix + push, if the user says "still not fixed," check the SERVER before
+   re-diagnosing**: fetch the deployed JS bundle directly and grep it for the bug string.
+   If the fix isn't there, the push/deploy failed. If it IS there, the user is very likely
+   looking at a stale cached copy (PWA service worker, browser cache) — ask them to
+   hard-refresh before assuming the code fix was wrong. This saved a wasted re-investigation
+   in the ①②③④⑤"[k]" incident below — the deployed bundle already had the fix; the user's
+   client just hadn't picked it up yet, confirmed a minute later when they refreshed.
 
 ## Related Incidents
 
@@ -119,3 +132,4 @@ matter for this project specifically, because it redeploys many times per day:
   - **Lesson**: local verification (dev server, direct DB queries) and "deployed and visible to the user" are two completely different claims. Never say a fix is "complete"/"verified" without first checking `git status` is clean and the commit is pushed. See the 🚨 rule at the top of this file.
 - **2026-09-12/13**: User asked to make the app phone-installable (PWA). Added an install banner (Android `beforeinstallprompt` + iOS "add to home screen" modal, commit b0a1194) — worked. Then user reported 404 after installing to home screen. Diagnosed: GitHub Pages deploy fully replaces old files each time, and workbox had no `navigateFallback`, so a stale service worker's navigation request that missed cache surfaced a raw 404 instead of falling back to the app shell. Fixed with `navigateFallback` + `cleanupOutdatedCaches` (commit 2915398) — but the user hit the SAME 404 again on their phone afterward. Root cause of the recurrence: `registerType: "prompt"` meant the phone's already-active service worker (from hours earlier, before the fix existed) never updated itself — the fix only protected devices that registered a service worker *after* it shipped, not devices already running one. Switched to `registerType: "autoUpdate"` + `skipWaiting`/`clientsClaim` (commit fa991c4) so a new service worker takes over automatically instead of waiting for a user-clicked prompt.
   - **Lesson**: "the server has the right files" and "the user's device has the right service worker active" are independent facts. In a `registerType: "prompt"` PWA that redeploys frequently, a server-side fix (like adding navigateFallback) does NOT retroactively apply to devices already running an older service worker — only `autoUpdate` closes that gap. See PWA section above.
+- **2026-09-13**: User reported garbage text `①②③④⑤"[k]": 값` appearing in GrowthPanel's "선지 분석" (option-elimination) display, under 발전기록 → 비교분석 → 3문항 정밀조사. Root cause: the JSX for rendering `optionElimination` (a `Record<string,string>` keyed "1"–"5") was clearly *intended* to map each key to a circled-number glyph, but the actual code had no indexing logic at all — it was the literal string `①②③④⑤"[k]": {String(v)}` hardcoded inline, so all five circled digits printed together followed by the literal characters `[k]` (not the key's value) on every row. This sat unnoticed because almost every `optionElimination` value in the real database was an empty string (the condition `Object.values(...).some(v=>v)` gates the whole block) — only two students (이예린, 강지훈) had ever actually filled in a selection-elimination note, so the buggy branch rarely rendered. Fixed with `["①","②","③","④","⑤"][Number(k)-1] ?? \`${k}번\`` (commit f7520c0). First `git push` failed with `Could not resolve host: github.com` (transient network blip, not a real error) — retried immediately and it succeeded; always confirm via `gh run list` rather than assuming a push command's own exit code tells the whole story on a flaky connection. User then said "still not gone" moments after the fix deployed; fetching the live JS bundle directly confirmed the fix WAS already live, and the user's next refresh confirmed it — a deploy/client-cache timing overlap, not a wrong fix. See Lessons Learned #6 and #7 above.
