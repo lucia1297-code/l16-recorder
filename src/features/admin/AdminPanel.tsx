@@ -3739,6 +3739,7 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
   const [rows, setRows] = useState<ExamResult[]>(initialRows);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
+  const [types, setTypes] = useState<AssignmentType[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -3747,10 +3748,12 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
       storage.listResults(),
       rosterStore.listRoster(),
       assignmentStore.listSubmissions(),
-    ]).then(([results, r, subs]) => {
+      assignmentStore.listTypes(),
+    ]).then(([results, r, subs, t]) => {
       setRows(results);
       setRoster(r);
       setSubmissions(subs);
+      setTypes(t);
       setLoading(false);
     });
   }, [storage, rosterStore, assignmentStore]);
@@ -3767,7 +3770,9 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
     return set;
   }, [rows, submissions, roster]);
 
-  // 학생별 마지막 제출일 집계 (모의고사 기준)
+  // 학생별 마지막 제출일 집계 — 모의고사든 일반 과제든, 제출한 게 하나라도 있으면 포함한다.
+  // (예전에는 모의고사 rows만 집계해서, 과제만 제출하고 모의고사는 낸 적 없는 학생이
+  //  "제출 학생" 목록에도 "미제출 학생" 목록에도 안 나타나는 사각지대가 있었음)
   const submittedMap = useMemo(() => {
     const map = new Map<string, {
       name: string; school: string; grade: string; lastDate: string; count: number;
@@ -3786,8 +3791,23 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
         map.set(r.student.studentCode, { ...prev, count: prev.count + 1 });
       }
     }
+    for (const s of submissions) {
+      const entry = roster.find((r) => r.studentCode === s.studentCode);
+      const prev = map.get(s.studentCode);
+      if (!prev || s.submittedAt > prev.lastDate) {
+        map.set(s.studentCode, {
+          name: entry?.name ?? prev?.name ?? s.studentCode,
+          school: entry?.school ?? prev?.school ?? "",
+          grade: entry?.grade ?? prev?.grade ?? "",
+          lastDate: s.submittedAt,
+          count: (prev?.count ?? 0) + 1,
+        });
+      } else {
+        map.set(s.studentCode, { ...prev, count: prev.count + 1 });
+      }
+    }
     return map;
-  }, [rows]);
+  }, [rows, submissions, roster]);
 
   const submitted = useMemo(() =>
     Array.from(submittedMap.entries())
@@ -3801,6 +3821,26 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
       !allSubmittedCodes.has(r.studentCode) && !allSubmittedCodes.has(r.name)
     ),
     [roster, allSubmittedCodes]);
+
+  // 과제별 미제출 현황: 뭔가는 제출했더라도, 등록된 과제 유형 중 한 번도
+  // 제출 기록이 없는 게 있으면 그 과제 이름을 학생별로 모아 밝힌다.
+  // (등록된 과제 + 그 과제와 실제 매칭되는 제출 기록이 있으면 인정, 없으면 미제출로 명시)
+  const activeRoster = useMemo(
+    () => roster.filter((r) => (r.studentStatus ?? "active") !== "withdrawn"),
+    [roster]
+  );
+  const perAssignmentGaps = useMemo(() => {
+    if (types.length === 0) return [];
+    return activeRoster
+      .map((student) => {
+        const missing = types
+          .filter((t) => countSubmissionsForType(submissions, student.studentCode, t.id) === 0)
+          .map((t) => t.name);
+        return { student, missing };
+      })
+      .filter((g) => g.missing.length > 0)
+      .sort((a, b) => b.missing.length - a.missing.length);
+  }, [activeRoster, types, submissions]);
 
   // CSV 다운로드
   function exportSubmittedCSV() {
@@ -3827,6 +3867,20 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
     const a = document.createElement("a");
     a.href = url;
     a.download = `미제출학생_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportAssignmentGapsCSV() {
+    const header = "이름,학생코드,학교,학년,미제출 과제 수,미제출 과제 목록";
+    const body = perAssignmentGaps.map((g) =>
+      `${g.student.name},${g.student.studentCode},${g.student.school},${g.student.grade},${g.missing.length},"${g.missing.join(", ")}"`
+    ).join("\n");
+    const blob = new Blob(["﻿" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `과제별_미제출현황_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -3927,6 +3981,65 @@ function SubmissionStatus({ rows: initialRows }: { rows: ExamResult[] }) {
                   <td>{s.school}</td>
                   <td>{s.grade}</td>
                   <td>{s.teacher}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ height: 28 }} />
+
+      {/* ── 섹션 3: 과제별 미제출 현황 — 뭔가는 냈어도, 등록된 과제 유형 중 안 낸 게 있으면 밝힌다 ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 style={{ color: "#d97706" }}>📋 과제별 미제출 현황 ({perAssignmentGaps.length}명)</h2>
+        <button className="btn" style={{ padding: "4px 12px", fontSize: 13 }}
+          onClick={exportAssignmentGapsCSV} disabled={perAssignmentGaps.length === 0}>
+          CSV 저장
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        등록된 과제 유형({types.length}개) 중 이 학생이 한 번도 제출하지 않은 항목만 나열합니다.
+        모의고사든 다른 과제든 그 과제와 실제로 매칭되는 제출 기록이 하나라도 있으면 "제출함"으로 인정합니다.
+        {types.length === 0 && " (과제 관리 탭에서 과제 유형을 등록하면 자동 표시됩니다)"}
+      </p>
+      {types.length === 0 ? (
+        <p className="muted center">등록된 과제 유형이 없습니다.</p>
+      ) : perAssignmentGaps.length === 0 ? (
+        <p className="muted center" style={{ color: "#2ecc71", fontWeight: 600 }}>
+          전원 모든 과제 유형에서 1회 이상 제출했습니다!
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style={{ position:"sticky", left:0, zIndex:2, background:"var(--table-head-bg,#f8fafc)", boxShadow:"2px 0 4px rgba(0,0,0,0.08)", whiteSpace:"nowrap" }}>이름</th>
+                <th>학교</th>
+                <th>학년</th>
+                <th>미제출 수</th>
+                <th>미제출 과제 목록</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perAssignmentGaps.map((g) => (
+                <tr key={g.student.studentCode}>
+                  <td style={{ position:"sticky", left:0, zIndex:1, background:"#fff", boxShadow:"2px 0 4px rgba(0,0,0,0.06)", fontWeight:700, color:"#d97706", whiteSpace:"nowrap" as const }}>{g.student.name}</td>
+                  <td>{g.student.school}</td>
+                  <td>{g.student.grade}</td>
+                  <td style={{ textAlign: "center", fontWeight: 700 }}>{g.missing.length}</td>
+                  <td style={{ fontSize: 12 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {g.missing.map((name) => (
+                        <span key={name} style={{
+                          background: "#fef3c7", color: "#92400e", borderRadius: 6,
+                          padding: "2px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                        }}>
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
