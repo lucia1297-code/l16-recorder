@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 
@@ -48,6 +48,8 @@ export default function ExamSchedulePanel() {
   const [exams, setExams] = useState<ExamSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredMilestone, setHoveredMilestone] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrolledToTodayRef = useRef(false);
 
   useEffect(() => {
     rosterStore.listRoster().then(r => {
@@ -88,10 +90,13 @@ export default function ExamSchedulePanel() {
     }
   }
 
-  // 날짜 범위 계산
+  // 날짜 범위 계산 — 오늘 날짜가 항상 범위 안에 들어오도록 보장한다.
   const dateRange = useMemo(() => {
-    let minDate = new Date();
-    let maxDate = new Date();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let minDate = new Date(today);
+    let maxDate = new Date(today);
     let hasData = false;
 
     exams.forEach(exam => {
@@ -112,16 +117,19 @@ export default function ExamSchedulePanel() {
     });
 
     if (!hasData) {
-      minDate = new Date();
-      maxDate = new Date();
+      minDate = new Date(today);
+      maxDate = new Date(today);
       minDate.setDate(minDate.getDate() - 30);
       maxDate.setDate(maxDate.getDate() + 30);
     } else {
       minDate.setDate(minDate.getDate() - 10);
       maxDate.setDate(maxDate.getDate() + 10);
+      // 시험 일정이 전부 과거이거나 전부 미래라도, 오늘은 항상 차트 범위 안에 있어야 한다.
+      if (today < minDate) minDate = new Date(today);
+      if (today > maxDate) maxDate = new Date(today);
     }
 
-    return { minDate, maxDate };
+    return { minDate, maxDate, today };
   }, [exams]);
 
   // 날짜를 일 인덱스로 변환
@@ -133,6 +141,21 @@ export default function ExamSchedulePanel() {
     const daysDiff = Math.floor((dTime - minTime) / (1000 * 60 * 60 * 24));
     return Math.max(0, daysDiff);
   }
+
+  const todayIndex = Math.floor(
+    (dateRange.today.getTime() - dateRange.minDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  const STUDENT_COL_WIDTH = 180;
+
+  // 차트가 데이터로 채워지면, 오늘 날짜가 화면 중앙에 오도록 한 번 자동 스크롤한다.
+  useEffect(() => {
+    if (loading || scrolledToTodayRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const todayLeft = STUDENT_COL_WIDTH + todayIndex * DAY_WIDTH + DAY_WIDTH / 2;
+    el.scrollLeft = Math.max(0, todayLeft - el.clientWidth / 2);
+    scrolledToTodayRef.current = true;
+  }, [loading, todayIndex]);
 
   // 날짜 포맷팅
   function formatDate(dateStr: string): string {
@@ -232,13 +255,47 @@ export default function ExamSchedulePanel() {
       </div>
 
       {/* Gantt Chart Container */}
-      <div style={{
+      <div ref={scrollRef} style={{
         flex: 1,
         overflowX: "auto",
         overflowY: "auto",
         background: "#fff"
       }}>
-        <div style={{ width: ganttWidth, minHeight: "100%" }}>
+        <div style={{ width: ganttWidth, minHeight: "100%", position: "relative" }}>
+          {/* 오늘 날짜 기준선 - 전체 차트를 관통 */}
+          {todayIndex >= 0 && todayIndex < dayCount && (
+            <div style={{
+              position: "absolute",
+              left: STUDENT_COL_WIDTH + todayIndex * DAY_WIDTH,
+              top: 0,
+              width: DAY_WIDTH,
+              height: "100%",
+              zIndex: 12,
+              pointerEvents: "none",
+              background: "rgba(220, 38, 38, 0.06)",
+              borderLeft: "2px solid #dc2626",
+              borderRight: "2px solid #dc2626",
+            }}>
+              <div style={{
+                position: "sticky",
+                top: 72,
+                display: "flex",
+                justifyContent: "center",
+              }}>
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "#fff",
+                  background: "#dc2626",
+                  borderRadius: 4,
+                  padding: "2px 6px",
+                  whiteSpace: "nowrap",
+                }}>
+                  오늘
+                </span>
+              </div>
+            </div>
+          )}
           {/* 타임라인 헤더 - Sticky */}
           <div style={{
             position: "sticky",
@@ -274,6 +331,7 @@ export default function ExamSchedulePanel() {
             }}>
               {days.map((date, i) => {
                 const isWeekStart = date.getDay() === 1;
+                const isToday = i === todayIndex;
                 const dayName = ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
 
                 return (
@@ -285,10 +343,10 @@ export default function ExamSchedulePanel() {
                       padding: "8px 0",
                       textAlign: "center",
                       fontSize: 10,
-                      fontWeight: isWeekStart ? 700 : 600,
-                      color: isWeekStart ? "#1f2937" : "#6b7280",
+                      fontWeight: isToday || isWeekStart ? 700 : 600,
+                      color: isToday ? "#dc2626" : isWeekStart ? "#1f2937" : "#6b7280",
                       borderLeft: isWeekStart ? "2px solid #d1d5db" : "1px solid #f3f4f6",
-                      background: isWeekStart ? "#f0f9ff" : "#fff",
+                      background: isToday ? "#fef2f2" : isWeekStart ? "#f0f9ff" : "#fff",
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "center",
@@ -299,7 +357,7 @@ export default function ExamSchedulePanel() {
                       {formatHeaderDate(date)}
                     </div>
                     <div style={{ fontSize: 9, fontWeight: 500, marginTop: 2, lineHeight: 1 }}>
-                      {dayName}
+                      {isToday ? "오늘" : dayName}
                     </div>
                   </div>
                 );
