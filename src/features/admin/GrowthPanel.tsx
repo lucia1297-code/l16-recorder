@@ -952,12 +952,15 @@ ${monthLabel} 학습 상담 평가서
                                         {d.optionElimination && Object.values(d.optionElimination).some((v: any) => v) && (
                                           <div style={{ gridColumn:"1/-1" }}>
                                             <span style={{ color:"#94a3b8", fontWeight:600 }}>선지 분석: </span>
-                                            {Object.entries(d.optionElimination).filter(([,v]) => v).map(([k,v]) => (
-                                              <span key={k} style={{ fontSize:11, marginLeft:6,
-                                                background:"#f1f5f9", padding:"1px 6px", borderRadius:4, color:"#475569" }}>
-                                                ①②③④⑤"[k]": {String(v)}
-                                              </span>
-                                            ))}
+                                            {Object.entries(d.optionElimination).filter(([,v]) => v).map(([k,v]) => {
+                                              const circled = ["①","②","③","④","⑤"][Number(k)-1] ?? `${k}번`;
+                                              return (
+                                                <span key={k} style={{ fontSize:11, marginLeft:6,
+                                                  background:"#f1f5f9", padding:"1px 6px", borderRadius:4, color:"#475569" }}>
+                                                  {circled} {String(v)}
+                                                </span>
+                                              );
+                                            })}
                                           </div>
                                         )}
                                       </div>
