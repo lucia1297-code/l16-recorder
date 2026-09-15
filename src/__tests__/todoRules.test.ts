@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { computeTodos, computeUpcomingTodos, formatDailyDigest, type TodoScheduleInput } from "../core/todoRules";
+import {
+  computeTodos, computeUpcomingTodos, computeLessonReminders, computeScheduleReminders,
+  computeWwOrderReminders, computeMaterialReminders, computeAllTodos, formatDailyDigest,
+  type TodoScheduleInput,
+} from "../core/todoRules";
 import type { RosterEntry } from "../core/roster";
 
 function roster(overrides: Partial<RosterEntry> = {}): RosterEntry {
@@ -142,14 +146,139 @@ describe("formatDailyDigest", () => {
   });
 });
 
+describe("computeLessonReminders", () => {
+  // TODAY = 2026-09-15 (화). 내일은 2026-09-16 (수)
+  it("내일이 수업 요일이면 알림", () => {
+    const items = computeLessonReminders(
+      [roster({ lessonSchedule: [{ day: "wed", startTime: "18:00", endTime: "20:00" }] })],
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "lessonPrep", studentCode: "S1", message: "정지민 내일 정규수업이 있습니다 — 자료 준비하세요." },
+    ]);
+  });
+
+  it("내일이 수업 요일이 아니면 알림 없음", () => {
+    const items = computeLessonReminders(
+      [roster({ lessonSchedule: [{ day: "mon", startTime: "18:00", endTime: "20:00" }] })],
+      TODAY,
+    );
+    expect(items).toEqual([]);
+  });
+
+  it("lessonSchedule이 없으면 건너뛴다", () => {
+    expect(computeLessonReminders([roster()], TODAY)).toEqual([]);
+  });
+});
+
+describe("computeScheduleReminders", () => {
+  it("예정 상태이고 내일이면 알림", () => {
+    const items = computeScheduleReminders(
+      [{ studentCode: "S1", studentName: "정지민", eventDate: "2026-09-16", category: "상담", title: "학부모 상담", status: "예정" }],
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "scheduleEvent", studentCode: "S1", message: "정지민 학부모 상담(상담) 일정이 내일입니다." },
+    ]);
+  });
+
+  it("완료/취소 상태면 알림 없음", () => {
+    const items = computeScheduleReminders(
+      [{ studentCode: "S1", studentName: "정지민", eventDate: "2026-09-16", category: "상담", title: "학부모 상담", status: "완료" }],
+      TODAY,
+    );
+    expect(items).toEqual([]);
+  });
+
+  it("학생 지정 없는 일정은 학생명 없이 표시", () => {
+    const items = computeScheduleReminders(
+      [{ studentCode: null, studentName: null, eventDate: "2026-09-16", category: "행사", title: "학부모 설명회", status: "예정" }],
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "scheduleEvent", studentCode: undefined, message: "학부모 설명회(행사) 일정이 내일입니다." },
+    ]);
+  });
+});
+
+describe("computeWwOrderReminders", () => {
+  it("완료 아닌 주문의 시험일이 3일 남으면 알림", () => {
+    const items = computeWwOrderReminders(
+      [{ studentCode: "S1", studentName: "정지민", examDate: "2026-09-18", status: "pending" }],
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "wwOrder", studentCode: "S1", message: "정지민 시험지 주문 시험일이 3일 남았습니다." },
+    ]);
+  });
+
+  it("완료(done) 주문이면 알림 없음", () => {
+    const items = computeWwOrderReminders(
+      [{ studentCode: "S1", studentName: "정지민", examDate: "2026-09-18", status: "done" }],
+      TODAY,
+    );
+    expect(items).toEqual([]);
+  });
+});
+
+describe("computeMaterialReminders", () => {
+  it("배부예정이고 제공일이 하루 남으면 알림", () => {
+    const items = computeMaterialReminders(
+      [{ studentCode: "S1", studentName: "정지민", providedAt: "2026-09-16", materialType: "워크북", status: "배부예정" }],
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "material", studentCode: "S1", message: "정지민 '워크북' 자료 배부 예정일이 1일 남았습니다." },
+    ]);
+  });
+
+  it("배부예정이 아니면 알림 없음", () => {
+    const items = computeMaterialReminders(
+      [{ studentCode: "S1", studentName: "정지민", providedAt: "2026-09-16", materialType: "워크북", status: "제공완료" }],
+      TODAY,
+    );
+    expect(items).toEqual([]);
+  });
+});
+
+describe("computeAllTodos", () => {
+  it("모든 소스를 합쳐서 계산한다", () => {
+    const items = computeAllTodos(
+      {
+        schedules: [schedule({ englishExamDate: "2026-09-17" })], // TODAY+2
+        roster: [roster({ lessonSchedule: [{ day: "wed", startTime: "18:00", endTime: "20:00" }] })],
+        scheduleEvents: [{ studentCode: null, studentName: null, eventDate: "2026-09-16", category: "행사", title: "설명회", status: "예정" }],
+        wwOrders: [{ studentCode: "S1", studentName: "정지민", examDate: "2026-09-18", status: "pending" }],
+        materials: [{ studentCode: "S1", studentName: "정지민", providedAt: "2026-09-16", materialType: "워크북", status: "배부예정" }],
+      },
+      TODAY,
+    );
+    expect(items.map((i) => i.type).sort()).toEqual(
+      ["englishExam", "lessonPrep", "material", "scheduleEvent", "wwOrder"].sort(),
+    );
+  });
+
+  it("추가 소스를 안 주면 시험일정+정기수업만 계산한다", () => {
+    const items = computeAllTodos(
+      { schedules: [], roster: [roster({ lessonSchedule: [{ day: "wed", startTime: "18:00", endTime: "20:00" }] })] },
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "lessonPrep", studentCode: "S1", message: "정지민 내일 정규수업이 있습니다 — 자료 준비하세요." },
+    ]);
+  });
+});
+
 describe("computeUpcomingTodos", () => {
   it("기간 안에 있는 항목을 날짜와 함께 모은다 (기본 7일)", () => {
     const items = computeUpcomingTodos(
-      [
-        schedule({ nextLessonDate: "2026-09-16", subject: "독해" }), // TODAY+1
-        schedule({ studentCode: "S2", reportDeadline: "2026-09-19" }), // TODAY+4
-      ],
-      [roster(), roster({ studentCode: "S2", name: "박서연" })],
+      {
+        schedules: [
+          schedule({ nextLessonDate: "2026-09-16", subject: "독해" }), // TODAY+1
+          schedule({ studentCode: "S2", reportDeadline: "2026-09-19" }), // TODAY+4
+        ],
+        roster: [roster(), roster({ studentCode: "S2", name: "박서연" })],
+      },
       TODAY,
     );
     expect(items).toEqual([
@@ -160,8 +289,7 @@ describe("computeUpcomingTodos", () => {
 
   it("기간 밖에 있는 항목은 빠진다", () => {
     const items = computeUpcomingTodos(
-      [schedule({ reportDeadline: "2026-09-25" })], // TODAY+10, 3일전=+7 → 7일 창 밖
-      [roster()],
+      { schedules: [schedule({ reportDeadline: "2026-09-25" })], roster: [roster()] }, // TODAY+10, 3일전=+7 → 7일 창 밖
       TODAY,
       7,
     );
@@ -170,21 +298,34 @@ describe("computeUpcomingTodos", () => {
 
   it("days를 다르게 주면 그만큼만 훑는다", () => {
     const items = computeUpcomingTodos(
-      [schedule({ examStart: "2026-09-17" })], // TODAY+2
-      [roster()],
+      { schedules: [schedule({ examStart: "2026-09-17" })], roster: [roster()] }, // TODAY+2
       TODAY,
       2,
     );
     expect(items).toEqual([]); // 2일(0,1)만 보므로 +2는 안 걸림
 
     const items2 = computeUpcomingTodos(
-      [schedule({ examStart: "2026-09-17" })],
-      [roster()],
+      { schedules: [schedule({ examStart: "2026-09-17" })], roster: [roster()] },
       TODAY,
       3,
     );
     expect(items2).toEqual([
       { type: "examStart", date: "2026-09-17", message: "광영고 시험 시작일입니다." },
+    ]);
+  });
+
+  it("정기수업(내일 요일 일치)도 기간 안에서 훑는다", () => {
+    // TODAY=화(09-15). 3일 창이면 09-15,16,17을 봄. 09-16(수)의 "내일"=09-17(목)에 수업 있으면 09-16 체크포인트에서 걸림
+    const items = computeUpcomingTodos(
+      {
+        schedules: [],
+        roster: [roster({ lessonSchedule: [{ day: "thu", startTime: "18:00", endTime: "20:00" }] })],
+      },
+      TODAY,
+      3,
+    );
+    expect(items).toEqual([
+      { type: "lessonPrep", studentCode: "S1", date: "2026-09-16", message: "정지민 내일 정규수업이 있습니다 — 자료 준비하세요." },
     ]);
   });
 });

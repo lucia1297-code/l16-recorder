@@ -1,4 +1,8 @@
-import { computeTodos, computeUpcomingTodos, formatDailyDigest, toDateStr, type TodoItem, type TodoScheduleInput, type UpcomingTodoItem } from "../../core/todoRules";
+import {
+  computeAllTodos, computeUpcomingTodos, formatDailyDigest, toDateStr,
+  type AllTodoInputs, type MaterialInput, type ScheduleEventInput,
+  type TodoItem, type TodoScheduleInput, type UpcomingTodoItem, type WwOrderInput,
+} from "../../core/todoRules";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -24,6 +28,65 @@ async function fetchSchedules(): Promise<TodoScheduleInput[]> {
     reportDeadline: r.report_deadline ?? "",
     nextLessonDate: r.next_lesson_date ?? "",
   }));
+}
+
+async function fetchScheduleEvents(): Promise<ScheduleEventInput[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/student_schedules?select=student_code,student_name,event_date,category,title,status`,
+    { headers: SB_H },
+  );
+  if (!res.ok) throw new Error(`student_schedules fetch 실패 (${res.status})`);
+  const rows = await res.json();
+  return (rows as any[]).map((r) => ({
+    studentCode: r.student_code ?? null,
+    studentName: r.student_name ?? null,
+    eventDate: r.event_date ?? "",
+    category: r.category ?? "",
+    title: r.title ?? "",
+    status: r.status ?? "",
+  }));
+}
+
+async function fetchWwOrders(): Promise<WwOrderInput[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/ww_orders?select=student_code,student_name,exam_date,status`,
+    { headers: SB_H },
+  );
+  if (!res.ok) throw new Error(`ww_orders fetch 실패 (${res.status})`);
+  const rows = await res.json();
+  return (rows as any[]).map((r) => ({
+    studentCode: r.student_code ?? "",
+    studentName: r.student_name ?? "",
+    examDate: r.exam_date ?? "",
+    status: r.status ?? "",
+  }));
+}
+
+async function fetchMaterials(): Promise<MaterialInput[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/material_records?select=student_code,student_name,provided_at,material_type,status`,
+    { headers: SB_H },
+  );
+  if (!res.ok) throw new Error(`material_records fetch 실패 (${res.status})`);
+  const rows = await res.json();
+  return (rows as any[]).map((r) => ({
+    studentCode: r.student_code ?? "",
+    studentName: r.student_name ?? "",
+    providedAt: r.provided_at ?? "",
+    materialType: r.material_type ?? "",
+    status: r.status ?? "",
+  }));
+}
+
+async function fetchAllTodoInputs(): Promise<AllTodoInputs> {
+  const [schedules, roster, scheduleEvents, wwOrders, materials] = await Promise.all([
+    fetchSchedules(),
+    createRosterStore().listRoster(),
+    fetchScheduleEvents(),
+    fetchWwOrders(),
+    fetchMaterials(),
+  ]);
+  return { schedules, roster, scheduleEvents, wwOrders, materials };
 }
 
 function upsertMemo(id: string, title: string, digest: string): string {
@@ -55,8 +118,8 @@ export async function ensureDailyTodoMemo(
   const dateStr = toDateStr(today);
   if (!force && localStorage.getItem(LAST_RUN_KEY) === dateStr) return { items: [], memoId: null };
 
-  const [schedules, roster] = await Promise.all([fetchSchedules(), createRosterStore().listRoster()]);
-  const items = computeTodos(schedules, roster, today);
+  const input = await fetchAllTodoInputs();
+  const items = computeAllTodos(input, today);
   localStorage.setItem(LAST_RUN_KEY, dateStr);
   const memoId = items.length > 0
     ? upsertMemo(`todo-${dateStr}`, `오늘의 할일 (${dateStr})`, formatDailyDigest(items))
@@ -82,8 +145,8 @@ export async function checkUpcomingWeek(
   startDate: Date = new Date(),
   days = 7,
 ): Promise<WeekTodoResult> {
-  const [schedules, roster] = await Promise.all([fetchSchedules(), createRosterStore().listRoster()]);
-  const items = computeUpcomingTodos(schedules, roster, startDate, days);
+  const input = await fetchAllTodoInputs();
+  const items = computeUpcomingTodos(input, startDate, days);
   if (items.length === 0) return { items: [], memoId: null };
 
   const startStr = toDateStr(startDate);
