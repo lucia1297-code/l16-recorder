@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, Plus, Trash2, Save, Bell, BellOff, Tag, Calendar,
   FileText, ChevronLeft, ChevronRight, Download, Star, Lightbulb,
-  BookOpen, User, Briefcase, AlertCircle, X
+  BookOpen, User, Briefcase, AlertCircle, X, CheckCircle2
 } from "lucide-react";
 
 // ── 타입 ──────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ const TAG_META: Record<string, { color: string; bg: string; icon: React.ReactNod
   학생:     { color: "#4c1d95", bg: "#ede9fe", icon: <User size={12} /> },
   중요:     { color: "#991b1b", bg: "#fee2e2", icon: <AlertCircle size={12} /> },
   개인:     { color: "#831843", bg: "#fce7f3", icon: <Star size={12} /> },
+  할일:     { color: "#0f766e", bg: "#ccfbf1", icon: <CheckCircle2 size={12} /> },
 };
 
 const HOLIDAYS: Record<string, string> = {
