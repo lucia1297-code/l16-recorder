@@ -1,0 +1,28 @@
+name: Daily TODO SMS
+
+on:
+  schedule:
+    - cron: "0 23 * * *"   # 매일 08:00 KST (23:00 UTC 전날)
+  workflow_dispatch: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm run todo:sms
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SOLAPI_API_KEY: ${{ secrets.VITE_SOLAPI_API_KEY }}
+          VITE_SOLAPI_API_SECRET: ${{ secrets.VITE_SOLAPI_API_SECRET }}
+          VITE_SOLAPI_SENDER: ${{ secrets.VITE_SOLAPI_SENDER }}
+          VITE_ADMIN_PHONE: ${{ secrets.VITE_ADMIN_PHONE }}
