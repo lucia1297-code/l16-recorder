@@ -58,4 +58,26 @@ describe("ensureDailyTodoMemo", () => {
     const memos = JSON.parse(localStorage.getItem(MEMOS_KEY) || "[]");
     expect(memos).toHaveLength(0);
   });
+
+  it("결과로 items와 memoId를 돌려준다", async () => {
+    const result = await ensureDailyTodoMemo(TODAY);
+    expect(result.memoId).toBe("todo-2026-09-15");
+    expect(result.items).toHaveLength(1);
+  });
+
+  it("force=true면 이미 오늘 실행했어도 다시 계산해서 fetch를 또 호출한다", async () => {
+    await ensureDailyTodoMemo(TODAY);
+    await ensureDailyTodoMemo(TODAY, true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("force=true인데 할일이 없으면 memoId는 null, items는 빈 배열", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    });
+    const result = await ensureDailyTodoMemo(TODAY, true);
+    expect(result.memoId).toBeNull();
+    expect(result.items).toEqual([]);
+  });
 });

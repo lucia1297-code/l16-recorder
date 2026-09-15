@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, Plus, Trash2, Save, Bell, BellOff, Tag, Calendar,
   FileText, ChevronLeft, ChevronRight, Download, Star, Lightbulb,
-  BookOpen, User, Briefcase, AlertCircle, X, CheckCircle2
+  BookOpen, User, Briefcase, AlertCircle, X, CheckCircle2, RefreshCw
 } from "lucide-react";
+import { ensureDailyTodoMemo } from "./dailyTodoMemo";
 
 // ── 타입 ──────────────────────────────────────────────────────
 interface Memo {
@@ -66,6 +67,7 @@ export default function MemoPanel() {
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [alarmToast, setAlarmToast] = useState<string | null>(null);
+  const [checkingTodo, setCheckingTodo] = useState(false);
 
   // 편집 상태
   const [title, setTitle] = useState("");
@@ -146,6 +148,29 @@ export default function MemoPanel() {
     setCurrentId(m.id); setTitle(""); setBody(""); setTag(""); setAlarm(""); setDirty(false);
     setView("list");
     setTimeout(() => document.getElementById("memo-title-input")?.focus(), 50);
+  }
+
+  // 지금 바로 오늘의 할일을 확인 — 8시 자동 실행과 같은 계산을 즉시(강제로) 다시 돌린다
+  async function handleCheckTodoNow() {
+    if (checkingTodo) return;
+    setCheckingTodo(true);
+    try {
+      const { items, memoId } = await ensureDailyTodoMemo(new Date(), true);
+      if (!memoId) { alert("오늘 해당되는 할일이 없습니다."); return; }
+      const next: Memo[] = JSON.parse(localStorage.getItem("l16_memos") || "[]");
+      setMemos(next);
+      const created = next.find((m) => m.id === memoId);
+      if (created) {
+        setCurrentId(created.id); setTitle(created.title); setBody(created.body);
+        setTag(created.tag); setAlarm(created.alarm ? fmtDatetime(created.alarm) : ""); setDirty(false);
+      }
+      setView("list"); setFilterTag("할일");
+      alert(`오늘의 할일 ${items.length}건을 확인했습니다.`);
+    } catch (e) {
+      alert(`할일 확인 중 오류가 발생했습니다: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setCheckingTodo(false);
+    }
   }
 
   function handleSave() {
@@ -299,6 +324,13 @@ export default function MemoPanel() {
           style={{ padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:700,
             background:"#0f766e",color:"#fff",display:"flex",alignItems:"center",gap:5 }}>
           <Plus size={14}/>새 메모
+        </button>
+        <button onClick={handleCheckTodoNow} disabled={checkingTodo}
+          style={{ padding:"6px 14px",borderRadius:8,border:"1px solid #0f766e",cursor:checkingTodo?"default":"pointer",
+            fontSize:13,fontWeight:700,background:"#ccfbf1",color:"#0f766e",display:"flex",alignItems:"center",gap:5,
+            opacity:checkingTodo?0.6:1 }} title="오늘의 할일을 지금 다시 확인">
+          <RefreshCw size={14} style={checkingTodo?{ animation:"spin 1s linear infinite" }:undefined}/>
+          {checkingTodo?"확인 중…":"오늘의 할일 확인"}
         </button>
         <button onClick={exportAll}
           style={{ padding:"6px 10px",borderRadius:8,border:"1px solid #e2e8f0",cursor:"pointer",
