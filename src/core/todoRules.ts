@@ -83,3 +83,33 @@ export function computeTodos(
 export function formatDailyDigest(items: TodoItem[]): string {
   return items.map((i) => i.message).join("\n");
 }
+
+export function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export interface UpcomingTodoItem extends TodoItem {
+  date: string; // YYYY-MM-DD — 이 항목이 해당되는 날짜
+}
+
+/**
+ * startDate부터 days일 동안, 하루하루 computeTodos를 돌려서 모은 결과.
+ * 날짜 하나만 확인하고 싶으면 computeTodos를, 기간(예: 일주일)을 훑어보고
+ * 싶으면 이 함수를 쓴다.
+ */
+export function computeUpcomingTodos(
+  schedules: TodoScheduleInput[],
+  roster: RosterEntry[],
+  startDate: Date = new Date(),
+  days: number = 7,
+): UpcomingTodoItem[] {
+  const results: UpcomingTodoItem[] = [];
+  for (let offset = 0; offset < days; offset++) {
+    const d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + offset);
+    const dateStr = toDateStr(d);
+    for (const item of computeTodos(schedules, roster, d)) {
+      results.push({ ...item, date: dateStr });
+    }
+  }
+  return results;
+}

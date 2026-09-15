@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTodos, formatDailyDigest, type TodoScheduleInput } from "../core/todoRules";
+import { computeTodos, computeUpcomingTodos, formatDailyDigest, type TodoScheduleInput } from "../core/todoRules";
 import type { RosterEntry } from "../core/roster";
 
 function roster(overrides: Partial<RosterEntry> = {}): RosterEntry {
@@ -139,5 +139,52 @@ describe("formatDailyDigest", () => {
 
   it("빈 배열이면 빈 문자열", () => {
     expect(formatDailyDigest([])).toBe("");
+  });
+});
+
+describe("computeUpcomingTodos", () => {
+  it("기간 안에 있는 항목을 날짜와 함께 모은다 (기본 7일)", () => {
+    const items = computeUpcomingTodos(
+      [
+        schedule({ nextLessonDate: "2026-09-16", subject: "독해" }), // TODAY+1
+        schedule({ studentCode: "S2", reportDeadline: "2026-09-19" }), // TODAY+4
+      ],
+      [roster(), roster({ studentCode: "S2", name: "박서연" })],
+      TODAY,
+    );
+    expect(items).toEqual([
+      { type: "classPrep", studentCode: "S1", date: "2026-09-15", message: "정지민 '독해' 수업자료 준비가 1일 남았습니다." },
+      { type: "reportDeadline", studentCode: "S2", date: "2026-09-16", message: "박서연 직보 예정일이 3일 남았습니다." },
+    ]);
+  });
+
+  it("기간 밖에 있는 항목은 빠진다", () => {
+    const items = computeUpcomingTodos(
+      [schedule({ reportDeadline: "2026-09-25" })], // TODAY+10, 3일전=+7 → 7일 창 밖
+      [roster()],
+      TODAY,
+      7,
+    );
+    expect(items).toEqual([]);
+  });
+
+  it("days를 다르게 주면 그만큼만 훑는다", () => {
+    const items = computeUpcomingTodos(
+      [schedule({ examStart: "2026-09-17" })], // TODAY+2
+      [roster()],
+      TODAY,
+      2,
+    );
+    expect(items).toEqual([]); // 2일(0,1)만 보므로 +2는 안 걸림
+
+    const items2 = computeUpcomingTodos(
+      [schedule({ examStart: "2026-09-17" })],
+      [roster()],
+      TODAY,
+      3,
+    );
+    expect(items2).toEqual([
+      { type: "examStart", date: "2026-09-17", message: "광영고 시험 시작일입니다." },
+    ]);
   });
 });

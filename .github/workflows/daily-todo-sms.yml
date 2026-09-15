@@ -20,6 +20,10 @@ jobs:
 
       - run: npm run todo:sms
         env:
+          # 러너 기본 TZ(UTC)로 두면 23:00 UTC(=08:00 KST) 직후 실행 시
+          # new Date()의 연/월/일이 KST보다 하루 전으로 계산돼 D-day 판정이
+          # 전부 하루씩 어긋난다 — 반드시 KST로 고정해야 함.
+          TZ: "Asia/Seoul"
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_SOLAPI_API_KEY: ${{ secrets.VITE_SOLAPI_API_KEY }}
