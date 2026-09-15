@@ -156,7 +156,7 @@ textarea { min-height: 92px; resize: vertical; }
 .btn:active:not(:disabled) { transform: scale(0.98); }
 .btn.secondary { background: var(--mark-tint); color: var(--mark-deep); box-shadow: none; }
 .btn.secondary:hover:not(:disabled) { background: #dbe5f2; }
-.btn.ghost { background: none; color: var(--mark); font-weight: 600; box-shadow: none; padding: 10px 14px; width: auto; }
+.btn.ghost { background: none; color: var(--mark); font-weight: 600; box-shadow: none; padding: 10px 14px; width: auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .btn.ghost:hover:not(:disabled) { background: var(--mark-tint); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn:focus-visible, .chip:focus-visible, .qbox:focus-visible, input:focus-visible, select:focus-visible {
@@ -275,21 +275,22 @@ textarea { min-height: 92px; resize: vertical; }
   to   { transform: rotate(360deg); }
 }
 
-/* ── Admin shell : 모바일 탭 → PC 좌측 레일 ──────────────────── */
+/* ── Admin shell : 모바일 탭 → PC 좌측 레일(shadcn 사이드바 느낌) ──── */
 .admin-shell { display: block; }
 @media (min-width: 1024px) {
-  .admin-shell { display: grid; grid-template-columns: 220px 1fr; gap: 28px; align-items: start; }
+  .admin-shell { display: grid; grid-template-columns: 240px 1fr; gap: 24px; align-items: start; }
 }
 
 /* 사이드바 그룹 레이블 */
 .rail-group-label {
-  font-size: 10px; font-weight: 700; color: var(--ink-faint);
-  letter-spacing: 0.08em; text-transform: uppercase;
-  padding: 4px 12px 2px; margin-top: 2px;
+  font-size: 10.5px; font-weight: 700; color: var(--ink-faint);
+  letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 14px 10px 6px; margin-top: 0;
   display: none;
 }
 @media (min-width: 1024px) {
   .rail-group-label { display: block; }
+  .rail-group-label:first-child { padding-top: 2px; }
 }
 
 /* 사이드바 구분선 — 모바일에서는 세로 막대로, PC에서는 가로 줄로 */
@@ -298,7 +299,7 @@ textarea { min-height: 92px; resize: vertical; }
   width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px;
 }
 @media (min-width: 1024px) {
-  .rail-divider { width: auto; align-self: auto; height: 1px; margin: 6px 8px; }
+  .rail-divider { width: auto; align-self: auto; height: 1px; margin: 6px 8px; background: var(--line); }
 }
 
 .admin-rail.tabs {
@@ -309,21 +310,43 @@ textarea { min-height: 92px; resize: vertical; }
 }
 @media (min-width: 1024px) {
   .admin-rail.tabs {
-    flex-direction: column; gap: 2px; margin-bottom: 0;
+    flex-direction: column; gap: 1px; margin-bottom: 0;
     position: sticky; top: 24px;
-    padding-bottom: 0;
+    padding: 8px;
+    background: var(--paper-raised); border: 1px solid var(--line);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
     scroll-snap-type: none;
+    max-height: calc(100vh - 48px); overflow-y: auto;
   }
 }
 .tabs button {
   padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--line);
   background: var(--paper-raised); font-weight: 500; font-size: 12.5px; color: var(--ink-soft);
-  cursor: pointer; white-space: nowrap; transition: all 0.12s var(--ease);
+  cursor: pointer; white-space: nowrap; transition: background 0.12s var(--ease), color 0.12s var(--ease), border-color 0.12s var(--ease);
   flex: 0 0 auto; scroll-snap-align: start;
+  display: flex; align-items: center; gap: 8px;
 }
-@media (min-width: 1024px) { .tabs button { text-align: left; padding: 9px 14px; font-size: 13px; } }
+.tabs button svg { flex: 0 0 auto; }
+@media (min-width: 1024px) {
+  .tabs button {
+    text-align: left; padding: 7px 10px 7px 9px; font-size: 13px;
+    border: none; border-left: 2px solid transparent; border-radius: 7px;
+    background: transparent;
+  }
+}
 .tabs button.on, nav.admin-rail button.on { background: var(--mark); color: #fff; border-color: var(--mark); }
+@media (min-width: 1024px) {
+  .tabs button.on, nav.admin-rail button.on {
+    background: var(--mark-tint); color: var(--mark-deep); font-weight: 600;
+    border-color: transparent; border-left-color: var(--mark);
+  }
+}
 .tabs button:hover:not(.on), nav.admin-rail button:hover:not(.on) { border-color: var(--mark); color: var(--mark); }
+@media (min-width: 1024px) {
+  .tabs button:hover:not(.on), nav.admin-rail button:hover:not(.on) {
+    background: var(--highlight); color: var(--ink); border-left-color: var(--line-strong);
+  }
+}
 
 .admin-content { min-width: 0; }
 .admin-content, .step-fade { animation: cardIn 0.3s var(--ease); }

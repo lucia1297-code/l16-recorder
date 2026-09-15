@@ -338,20 +338,20 @@ export default function MemoPanel() {
           <Plus size={14}/>새 메모
         </button>
         <div style={{ display:"flex",alignItems:"center",gap:6,padding:"3px 6px 3px 3px",
-          borderRadius:8,border:"1px solid #ccfbf1",background:"#f0fdfa" }}>
+          borderRadius:8,border:"1px solid #ccfbf1",background:"#f0fdfa",flexShrink:0 }}>
           <input type="date" value={todoCheckDate} onChange={e => setTodoCheckDate(e.target.value)}
             style={{ padding:"5px 6px",borderRadius:6,border:"1px solid #e2e8f0",fontSize:12,
-              fontFamily:"inherit",background:"#fff",color:"#374151" }}/>
+              fontFamily:"inherit",background:"#fff",color:"#374151",flexShrink:0 }}/>
           <button onClick={() => handleCheckTodo("day")} disabled={checkingTodo}
             style={{ padding:"5px 10px",borderRadius:6,border:"none",cursor:checkingTodo?"default":"pointer",
               fontSize:12,fontWeight:700,background:"#0f766e",color:"#fff",display:"flex",alignItems:"center",gap:4,
-              opacity:checkingTodo?0.6:1 }} title="선택한 날짜의 할일을 확인">
+              opacity:checkingTodo?0.6:1,flexShrink:0,whiteSpace:"nowrap" }} title="선택한 날짜의 할일을 확인">
             <RefreshCw size={12} style={checkingTodo?{ animation:"spin 1s linear infinite" }:undefined}/>확인
           </button>
           <button onClick={() => handleCheckTodo("week")} disabled={checkingTodo}
             style={{ padding:"5px 10px",borderRadius:6,border:"1px solid #0f766e",cursor:checkingTodo?"default":"pointer",
               fontSize:12,fontWeight:700,background:"#fff",color:"#0f766e",
-              opacity:checkingTodo?0.6:1 }} title="선택한 날짜부터 7일간 할일을 확인">
+              opacity:checkingTodo?0.6:1,flexShrink:0,whiteSpace:"nowrap" }} title="선택한 날짜부터 7일간 할일을 확인">
             일주일 확인
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3} from "lucide-react";
+import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3, Search, Users, UserPlus, FolderKanban, PenLine, Package, CalendarDays, Smartphone, CalendarClock, CalendarRange, Calendar, FileText, Calculator, LogOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import ExamSchedulePanel from "./ExamSchedulePanel";
 import { addScheduledSms, listScheduledSms, cancelScheduledSms, deleteScheduledSms, type ScheduledSms } from "../../lib/scheduledSms";
@@ -148,93 +148,93 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {/* ── 모의고사 ── */}
         <div className="rail-group-label">모의고사</div>
         <button className={tab === "list" ? "on" : ""} onClick={() => setTab("list")}>
-          📊 제출목록
+          <ClipboardList size={15}/>제출목록
         </button>
         <button className={tab === "admininput" ? "on" : ""} onClick={() => setTab("admininput")}>
-          ✏️ 직접 입력
+          <FileInput size={15}/>직접 입력
         </button>
         <button className={tab === "dash" ? "on" : ""} onClick={() => setTab("dash")}>
-          📈 대시보드
+          <LayoutDashboard size={15}/>대시보드
         </button>
         <button className={tab === "report" ? "on" : ""} onClick={() => setTab("report")}>
-          🔍 학생 분석
+          <Search size={15}/>학생 분석
         </button>
 
         {/* ── 학생 관리 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">학생 관리</div>
         <button className={tab === "roster" ? "on" : ""} onClick={() => setTab("roster")}>
-          👥 명부 관리
+          <Users size={15}/>명부 관리
         </button>
         <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
-          📝 등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
+          <UserPlus size={15}/>등록 신청{pendingCount > 0 ? ` (${pendingCount})` : ""}
         </button>
 
         {/* ── 과제 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">과제</div>
         <button className={tab === "assignment" ? "on" : ""} onClick={() => setTab("assignment")}>
-          📋 과제 관리
+          <FolderKanban size={15}/>과제 관리
         </button>
         <button className={tab === "review" ? "on" : ""} onClick={() => setTab("review")}>
-          ✅ 과제 점검
+          <CheckCircle size={15}/>과제 점검
         </button>
         <button className={tab === "teacherlog" ? "on" : ""} onClick={() => setTab("teacherlog")}>
-          🖊 과제 입력
+          <PenLine size={15}/>과제 입력
         </button>
         <button className={tab === "submit" ? "on" : ""} onClick={() => setTab("submit")}>
-          📌 제출 현황
+          <Send size={15}/>제출 현황
         </button>
         <button className={tab === "material" ? "on" : ""} onClick={() => setTab("material")}>
-          📦 자료 제공
+          <Package size={15}/>자료 제공
         </button>
 
         {/* ── 수업 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">수업</div>
         <button className={tab === "timetable" ? "on" : ""} onClick={() => setTab("timetable")}>
-          📅 수업 시간표
+          <CalendarDays size={15}/>수업 시간표
         </button>
         <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")}>
-          🎙 녹음분석
+          <Mic size={15}/>녹음분석
         </button>
         <button className={tab === "growth" ? "on" : ""} onClick={() => setTab("growth")}>
-          💬 발전기록
+          <MessageSquare size={15}/>발전기록
         </button>
         <button className={tab === "sms" ? "on" : ""} onClick={() => setTab("sms")}>
-          📱 문자알림
+          <Smartphone size={15}/>문자알림
         </button>
         <button className={tab === "scheduled" ? "on" : ""} onClick={() => setTab("scheduled")}>
-          📅 예약발송
+          <CalendarClock size={15}/>예약발송
         </button>
 
         {/* ── 시험 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">시험</div>
         <button className={tab === "examprep" ? "on" : ""} onClick={() => setTab("examprep")}>
-          📅 시험일정
+          <CalendarPlus size={15}/>시험일정
         </button>
         <button className={tab === "examschedule" ? "on" : ""} onClick={() => setTab("examschedule")}>
-          📊 시험일정 chart
+          <BarChart3 size={15}/>시험일정 chart
         </button>
         <button className={tab === "examplan" ? "on" : ""} onClick={() => setTab("examplan")}>
-          📆 시험계획
+          <CalendarRange size={15}/>시험계획
         </button>
         <button className={tab === "schedule" ? "on" : ""} onClick={() => setTab("schedule")}>
-          🗓 일정관리
+          <Calendar size={15}/>일정관리
         </button>
 
         {/* ── 기타 ── */}
         <div className="rail-divider"/>
         <button className={tab === "memo" ? "on" : ""} onClick={() => setTab("memo")}>
-          📝 메모장
+          <FileText size={15}/>메모장
         </button>
         <button className={tab === "calculator" ? "on" : ""} onClick={() => setTab("calculator")}>
-          🧮 계산기
+          <Calculator size={15}/>계산기
         </button>
         <div className="rail-divider"/>
         <button className="btn ghost" onClick={onLogout} style={{ marginTop:4 }}>
-          🔓 로그아웃
+          <LogOut size={15}/>로그아웃
         </button>
 
       </nav>
