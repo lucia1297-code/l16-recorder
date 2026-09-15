@@ -326,6 +326,27 @@ textarea { min-height: 92px; resize: vertical; }
 .admin-tools { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .admin-tools input { flex: 1; min-width: 140px; }
 
+/* 메모장 — 목록+편집기 분할 뷰: 좁은 화면(폰)에서는 세로 스택, PC(1024px~)에서만 좌우 분할.
+   고정 px 폭이 인라인 스타일에 박혀 있으면 폰에서 편집기 영역이 찌그러진다 — CSS 쪽에서 반응형으로 제어. */
+.memo-split { flex-direction: column; }
+@media (min-width: 1024px) {
+  .memo-split { flex-direction: row; }
+}
+.memo-split-list { max-height: 38vh; border-bottom: 1px solid #e2e8f0; }
+@media (min-width: 1024px) {
+  .memo-split-list { width: 280px; min-width: 280px; max-height: none; border-bottom: none; border-right: 1px solid #e2e8f0; }
+}
+
+/* 계산기 — 키패드+기록 분할 뷰: 좁은 화면에서는 세로 스택, PC에서만 좌우 분할 */
+.calc-split { grid-template-columns: 1fr; }
+@media (min-width: 1024px) {
+  .calc-split { grid-template-columns: minmax(0, 1fr) 250px; }
+}
+.calc-history { border-left: none; border-top: 1px solid #e2e8f0; padding-left: 0; padding-top: 18px; margin-top: 18px; }
+@media (min-width: 1024px) {
+  .calc-history { border-left: 1px solid #e2e8f0; border-top: none; padding-left: 18px; padding-top: 0; margin-top: 0; }
+}
+
 /* ── Tables ──────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; background: var(--paper-raised); border-radius: var(--radius-md); border: 1px solid var(--line); }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; }

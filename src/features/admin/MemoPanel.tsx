@@ -343,10 +343,10 @@ export default function MemoPanel() {
 
       {/* 목록 + 편집 뷰 */}
       {view === "list" && (
-        <div style={{ flex:1,display:"flex",overflow:"hidden" }}>
+        <div className="memo-split" style={{ flex:1,display:"flex",overflow:"hidden" }}>
 
           {/* 왼쪽 사이드 — 태그 + 목록 */}
-          <div style={{ display:"flex",flexDirection:"column",width:280,minWidth:280,borderRight:"1px solid #e2e8f0",overflow:"hidden" }}>
+          <div className="memo-split-list" style={{ display:"flex",flexDirection:"column",overflow:"hidden" }}>
             {/* 태그 필터 */}
             <div style={{ padding:"10px 12px 8px",borderBottom:"1px solid #e2e8f0",background:"#fafafa" }}>
               <div style={{ display:"flex",gap:5,flexWrap:"wrap" }}>
