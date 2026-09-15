@@ -14,6 +14,7 @@ import { useStorage } from "../../lib/useStorage";
 
 
 import { createRosterStore } from "../../lib/rosterStoreFactory";
+import { ensureDailyTodoMemo } from "./dailyTodoMemo";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
 import { createMockExamTimingStore } from "../../lib/mockExamTimingStoreFactory";
@@ -133,6 +134,12 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     pendingStore.listPending().then((p) => setPendingCount(p.length));
   }, [pendingStore, tab]);
+
+  useEffect(() => {
+    ensureDailyTodoMemo().catch(() => {
+      // 실패해도 조용히 무시 — 다음 세션(다음 로그인)에 재시도됨
+    });
+  }, []);
 
   return (
     <div className="admin-shell">
