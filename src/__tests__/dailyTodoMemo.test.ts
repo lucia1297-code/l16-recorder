@@ -20,8 +20,12 @@ function makeFetchMock(rows: {
   scheduleEvents?: unknown[];
   wwOrders?: unknown[];
   materials?: unknown[];
+  /** 이 이름을 포함한 URL은 404를 응답한다 (예: 아직 없는 테이블 시뮬레이션) */
+  failing?: string[];
 }) {
+  const notFound = { ok: false, status: 404, json: async () => ({}) };
   return vi.fn(async (url: string) => {
+    if (rows.failing?.some((name) => url.includes(name))) return notFound;
     if (url.includes("admin_exam_schedules")) return jsonRes(rows.schedules ?? []);
     if (url.includes("student_schedules")) return jsonRes(rows.scheduleEvents ?? []);
     if (url.includes("ww_orders")) return jsonRes(rows.wwOrders ?? []);
@@ -111,6 +115,27 @@ describe("ensureDailyTodoMemo", () => {
     }));
     const result = await ensureDailyTodoMemo(TODAY);
     expect(result.items.map((i) => i.type).sort()).toEqual(["material", "scheduleEvent", "wwOrder"].sort());
+  });
+
+  it("소스 하나(예: 아직 없는 테이블)가 404여도 나머지 소스는 계속 계산된다", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("fetch", makeFetchMock({
+      schedules: [
+        {
+          student_code: "S1", subject: "독해",
+          exam_start: "", exam_end: "",
+          english_exam_date: "", report_deadline: "",
+          next_lesson_date: "2026-09-16",
+        },
+      ],
+      failing: ["ww_orders"],
+    }));
+    const result = await ensureDailyTodoMemo(TODAY);
+    expect(result.items).toEqual([
+      { type: "classPrep", studentCode: "S1", message: "정지민 '독해' 수업자료 준비가 1일 남았습니다." },
+    ]);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 

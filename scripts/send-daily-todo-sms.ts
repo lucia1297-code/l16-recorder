@@ -94,9 +94,23 @@ async function fetchMaterials(): Promise<MaterialInput[]> {
   }));
 }
 
+/** 소스 하나(예: 아직 없는 테이블)가 실패해도 나머지는 계속 계산하도록 격리한다 */
+async function safeFetch<T>(label: string, fn: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.warn(`${label} 조회 실패 — 이 소스는 건너뜁니다:`, e);
+    return [];
+  }
+}
+
 async function main() {
   const [schedules, roster, scheduleEvents, wwOrders, materials] = await Promise.all([
-    fetchSchedules(), fetchRoster(), fetchScheduleEvents(), fetchWwOrders(), fetchMaterials(),
+    safeFetch("시험일정", fetchSchedules),
+    fetchRoster(),
+    safeFetch("일정관리", fetchScheduleEvents),
+    safeFetch("시험지 주문", fetchWwOrders),
+    safeFetch("자료 배부", fetchMaterials),
   ]);
   const input: AllTodoInputs = { schedules, roster, scheduleEvents, wwOrders, materials };
   const items = computeAllTodos(input, new Date());

@@ -78,13 +78,27 @@ async function fetchMaterials(): Promise<MaterialInput[]> {
   }));
 }
 
+/**
+ * 소스 하나(예: 아직 테이블이 없는 ww_orders)가 실패해도 나머지 소스는 계속
+ * 계산되도록, 각 fetch를 독립적으로 격리한다 — 실패하면 빈 배열로 취급하고
+ * 콘솔에만 경고를 남긴다.
+ */
+async function safeFetch<T>(label: string, fn: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.warn(`[할일 확인] ${label} 조회 실패 — 이 소스는 건너뜁니다:`, e);
+    return [];
+  }
+}
+
 async function fetchAllTodoInputs(): Promise<AllTodoInputs> {
   const [schedules, roster, scheduleEvents, wwOrders, materials] = await Promise.all([
-    fetchSchedules(),
+    safeFetch("시험일정", fetchSchedules),
     createRosterStore().listRoster(),
-    fetchScheduleEvents(),
-    fetchWwOrders(),
-    fetchMaterials(),
+    safeFetch("일정관리", fetchScheduleEvents),
+    safeFetch("시험지 주문", fetchWwOrders),
+    safeFetch("자료 배부", fetchMaterials),
   ]);
   return { schedules, roster, scheduleEvents, wwOrders, materials };
 }
