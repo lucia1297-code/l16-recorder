@@ -101,6 +101,7 @@ async function sendExamPaperRequestSMS(phone: string, studentName: string, subje
 export default function ExamPrepPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [rosterLoadFailed, setRosterLoadFailed] = useState(false);
   const [exams, setExams] = useState<ExamSchedule[]>([]);
   const [selectedStudent, setSelectedStudent] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -119,8 +120,24 @@ export default function ExamPrepPanel() {
   const [papersLoading, setPapersLoading] = useState(false);
   const [smsSending, setSmsSending] = useState<string | null>(null);
 
+  // 명부 로딩 — 네트워크가 불안정하면 조용히 실패해서 학생 이름이 전부 "?"로
+  // 보이는 사고가 있었음(2026-09-17). 실패 시 한 번 자동 재시도하고, 그래도
+  // 안 되면 배너로 명확히 알려서 "?"가 버그가 아니라 로딩 실패임을 알 수 있게 한다.
+  function loadRoster(isRetry = false) {
+    rosterStore.listRoster()
+      .then(r => { setRoster(r); setRosterLoadFailed(false); })
+      .catch(e => {
+        console.warn("[ExamPrepPanel] 명부 로딩 실패:", e);
+        if (!isRetry) {
+          setTimeout(() => loadRoster(true), 2000);
+        } else {
+          setRosterLoadFailed(true);
+        }
+      });
+  }
+
   useEffect(() => {
-    rosterStore.listRoster().then(setRoster);
+    loadRoster();
     // Supabase 우선 로드 (localStorage는 오프라인 폴백)
     loadExamsFromSupabase().then(sbExams => {
       if (sbExams.length > 0) {
@@ -356,6 +373,21 @@ export default function ExamPrepPanel() {
       </div>
 
       {notice && <p style={{ color:"#7c3aed", fontWeight:600, marginBottom:10 }}>{notice}</p>}
+
+      {rosterLoadFailed && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+          background:"#fef2f2", border:"1.5px solid #fca5a5", borderRadius:10,
+          padding:"10px 14px", marginBottom:14, flexWrap:"wrap" }}>
+          <span style={{ fontSize:13, color:"#991b1b", fontWeight:600 }}>
+            ⚠️ 학생 명부를 불러오지 못했습니다 — 네트워크 연결을 확인해주세요. 이름 대신 "?"가 표시된 카드는 실제 데이터가 아니라 로딩 실패입니다.
+          </span>
+          <button onClick={() => loadRoster()}
+            style={{ padding:"5px 12px", borderRadius:7, border:"1.5px solid #dc2626",
+              background:"#fff", color:"#dc2626", fontWeight:700, fontSize:12, cursor:"pointer", flexShrink:0 }}>
+            다시 시도
+          </button>
+        </div>
+      )}
 
       {/* ── 학생 직접 등록 시험 ── */}
       {viewMode === "student" && (
