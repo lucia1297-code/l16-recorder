@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarDays, Locate, CheckCircle, Settings, Plus, X, Repeat, Pin } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 
@@ -513,8 +514,9 @@ export default function TimetablePanel() {
         display:"flex", alignItems:"center", justifyContent:"space-between",
         flexWrap:"wrap", gap:10, background:"#f8fafc" }}>
         <div>
-          <h2 style={{ margin:0, fontSize:18, fontWeight:700, color:"#1e293b" }}>
-            📅 수업 시간표
+          <h2 style={{ margin:0, fontSize:18, fontWeight:700, color:"#1e293b",
+            display:"flex", alignItems:"center", gap:6 }}>
+            <CalendarDays size={17}/> 수업 시간표
           </h2>
           <p style={{ margin:"3px 0 0", fontSize:12, color:"#64748b" }}>
             06:00 ~ 24:00 · 30분 단위 · 일~토
@@ -523,20 +525,23 @@ export default function TimetablePanel() {
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           <button onClick={scrollToThisWeek}
             style={{ padding:"8px 14px", borderRadius:8, border:"1px solid #cbd5e1",
-              background:"#fff", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer" }}>
-            📍 이번 주로 이동
+              background:"#fff", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer",
+              display:"flex", alignItems:"center", gap:5 }}>
+            <Locate size={14}/> 이번 주로 이동
           </button>
           <button onClick={() => setAutoMode(!autoMode)}
             style={{ padding:"8px 16px", borderRadius:8, border:"1px solid #cbd5e1",
               background: autoMode ? "#e0f2fe" : "#fff", color: autoMode ? "#0891b2" : "#64748b",
-              fontWeight:700, fontSize:12, cursor:"pointer" }}>
-            {autoMode ? "✅ 자동생성" : "⚙️ 수동편집"}
+              fontWeight:700, fontSize:12, cursor:"pointer",
+              display:"flex", alignItems:"center", gap:5 }}>
+            {autoMode ? <CheckCircle size={14}/> : <Settings size={14}/>}
+            {autoMode ? "자동생성" : "수동편집"}
           </button>
           <button onClick={() => openAdd()}
             style={{ padding:"8px 18px", borderRadius:8, border:"none",
               background:"#0891b2", color:"#fff", fontWeight:700, fontSize:13,
               cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
-            + 수업 추가
+            <Plus size={15}/> 수업 추가
           </button>
         </div>
       </div>
@@ -756,8 +761,9 @@ export default function TimetablePanel() {
                 {modal==="edit" ? "수업 수정" : "수업 추가"}
               </h3>
               <button onClick={() => setModal(null)}
-                style={{ background:"none", border:"none", fontSize:20,
-                  color:"#94a3b8", cursor:"pointer", lineHeight:1 }}>✕</button>
+                style={{ background:"none", border:"none",
+                  color:"#94a3b8", cursor:"pointer", lineHeight:1,
+                  display:"flex", alignItems:"center" }}><X size={20}/></button>
             </div>
 
             <div style={{ padding:20, display:"flex", flexDirection:"column", gap:14 }}>
@@ -772,16 +778,18 @@ export default function TimetablePanel() {
                       border: applyMode==="recurring" ? "2px solid #0891b2" : "1px solid #e2e8f0",
                       background: applyMode==="recurring" ? "#e0f2fe" : "#f8fafc",
                       color: applyMode==="recurring" ? "#0891b2" : "#64748b",
-                      fontWeight:700, fontSize:12, cursor:"pointer" }}>
-                    🔁 상시 적용 (매주 반복)
+                      fontWeight:700, fontSize:12, cursor:"pointer",
+                      display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                    <Repeat size={14}/> 상시 적용 (매주 반복)
                   </button>
                   <button onClick={() => setApplyMode("once")}
                     style={{ flex:1, padding:"9px", borderRadius:8,
                       border: applyMode==="once" ? "2px solid #0891b2" : "1px solid #e2e8f0",
                       background: applyMode==="once" ? "#e0f2fe" : "#f8fafc",
                       color: applyMode==="once" ? "#0891b2" : "#64748b",
-                      fontWeight:700, fontSize:12, cursor:"pointer" }}>
-                    📌 일시 적용 (하루만)
+                      fontWeight:700, fontSize:12, cursor:"pointer",
+                      display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                    <Pin size={14}/> 일시 적용 (하루만)
                   </button>
                 </div>
                 {applyMode === "once" && (
