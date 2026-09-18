@@ -63,6 +63,11 @@ interface TimetableBlock {
   // 블록 색은 그대로 두고 그 학생 이름만 회색 취소선으로 표시한다.
   // weekStart가 있으면(일시 적용) 그 주만, 없으면(상시 적용) 매주 결석.
   absentStudentCodes?: string[];
+  // "일시 적용"으로 저장하면서 원래 자리(요일/시간)와 달라진 경우 true —
+  // 같은 수업이 이번 주만 임시로 자리를 옮긴 것을 표시하기 위해 노란색으로
+  // 렌더링한다. 드래그 이동, 또는 수정 모달에서 요일/시간을 바꿔 저장할 때
+  // 계산된다.
+  moved?: boolean;
 }
 
 const BLOCK_COLORS = [
@@ -159,6 +164,11 @@ export default function TimetablePanel() {
   // 고르면 요일이 자동으로 정해진다.
   const [applyMode, setApplyMode] = useState<"recurring"|"once">("recurring");
   const [onceDate, setOnceDate] = useState(""); // "YYYY-MM-DD"
+  // 모달을 열 때의 원래 요일/시간 — "일시 적용"으로 저장할 때 이것과 달라지면
+  // "임시로 자리만 옮긴 것"으로 보고 block.moved=true를 매겨 노란색으로 표시.
+  const [originalPosition, setOriginalPosition] = useState<
+    { day: typeof DAYS[number]; startSlot: string; endSlot: string } | null
+  >(null);
 
   // 학생 검색
   const [stuSearch, setStuSearch] = useState("");
@@ -324,6 +334,7 @@ export default function TimetablePanel() {
         weekStart: r.week_start ?? undefined,
         cancelled: r.cancelled ?? false,
         absentStudentCodes: JSON.parse(r.absent_student_codes || "[]"),
+        moved: r.moved ?? false,
       }));
       setBlocks(mapped);
       localStorage.setItem("l16.timetable", JSON.stringify(mapped));
@@ -344,6 +355,7 @@ export default function TimetablePanel() {
       week_start: block.weekStart ?? null,
       cancelled: block.cancelled ?? false,
       absent_student_codes: JSON.stringify(block.absentStudentCodes ?? []),
+      moved: block.moved ?? false,
     };
     try {
       const res = await fetch(`${SB_URL}/rest/v1/timetable_blocks`, {
@@ -389,6 +401,7 @@ export default function TimetablePanel() {
     setForm({ ...EMPTY_BLOCK, day: day ?? "월" });
     setEditId(null);
     setStuSearch("");
+    setOriginalPosition(null); // 새로 추가하는 블록은 "원래 자리"가 없다 — moved 대상 아님
     if (weekKey && day) {
       setApplyMode("once");
       setOnceDate(dateOf(weekKey, day));
@@ -405,6 +418,7 @@ export default function TimetablePanel() {
       absentStudentCodes:[...(block.absentStudentCodes ?? [])] });
     setEditId(block.id);
     setStuSearch("");
+    setOriginalPosition({ day: block.day, startSlot: block.startSlot, endSlot: block.endSlot });
     const effectiveWeekKey = weekKey ?? block.weekStart;
     if (effectiveWeekKey) {
       setApplyMode("once");
@@ -433,12 +447,23 @@ export default function TimetablePanel() {
     // "수동 override" 행으로 새로 저장한다 — 화면에는 같은 시간대라 자동값 대신
     // 이 override가 표시된다(위 blocksByWeekDay 참고).
     const isAutoBlock = editId?.startsWith("auto-") ?? false;
+    // "일시 적용"으로 저장하는데 원래 자리(모달을 열었을 때 자리)와 달라졌으면
+    // 임시로 자리만 옮긴 것 — 노란색으로 표시(moved). 한 번 moved가 된 override는
+    // 자리를 다시 바꾸지 않고 다른 내용만 고쳐도 계속 moved 상태를 유지한다
+    // (그래야 제목만 고쳤다고 노란색이 풀리는 일이 없다). "상시 적용"으로
+    // 전환해서 저장하면(이제 그 자리가 새 기본값이 되므로) moved는 해제된다.
+    const wasAlreadyMoved = editId ? (blocks.find(b => b.id === editId)?.moved ?? false) : false;
+    const positionChanged = !!originalPosition &&
+      (day !== originalPosition.day || form.startSlot !== originalPosition.startSlot
+        || form.endSlot !== originalPosition.endSlot);
+    const moved = applyMode === "once" && (wasAlreadyMoved || positionChanged);
     const block: TimetableBlock = {
       id: isAutoBlock ? uuid() : (editId ?? uuid()),
       ...form,
       day,
       weekStart,
       cancelled: false, // 직접 내용을 고쳐 저장하면 휴강 상태였더라도 정상 수업으로 복귀
+      moved,
     };
     await saveBlock(block);
     setModal(null);
@@ -503,7 +528,7 @@ export default function TimetablePanel() {
         id: uuid(), day: target.day, startSlot: target.startSlot, endSlot: target.endSlot,
         studentCodes: block.studentCodes, title: block.title, color: block.color,
         note: block.note === "자동생성" ? "" : block.note,
-        weekStart: target.weekKey, cancelled: false,
+        weekStart: target.weekKey, cancelled: false, moved: true,
       };
       await upsertBlockRow(cancelRow);
       await upsertBlockRow(movedRow);
@@ -511,12 +536,16 @@ export default function TimetablePanel() {
       setBlocks(next);
       localStorage.setItem("l16.timetable", JSON.stringify(next));
     } else {
-      const moved: TimetableBlock = {
+      // weekStart가 있던(일시 적용) 블록을 옮기면 여전히 "그 주만" 예외이므로
+      // moved(임시 이동)로 표시. weekStart가 없던(상시 적용) 블록을 옮기면
+      // 그 자리가 매주 반복되는 새 기본값이 되는 것이므로 moved 아님.
+      const movedBlock: TimetableBlock = {
         ...block, day: target.day, startSlot: target.startSlot, endSlot: target.endSlot,
         weekStart: block.weekStart ? target.weekKey : undefined,
+        moved: !!block.weekStart,
       };
-      await upsertBlockRow(moved);
-      const next = blocks.map(b => b.id === block.id ? moved : b);
+      await upsertBlockRow(movedBlock);
+      const next = blocks.map(b => b.id === block.id ? movedBlock : b);
       setBlocks(next);
       localStorage.setItem("l16.timetable", JSON.stringify(next));
     }
@@ -920,6 +949,9 @@ export default function TimetablePanel() {
                             }));
                             const beingDragged = isDragging && dragRef.current?.block.id === block.id
                               && dragRef.current?.fromWeekKey === weekKey;
+                            // 이번 주만 임시로 자리가 옮겨진 수업은 노란색으로 표시해서
+                            // 눈에 띄게 한다(예: 수/오후10 → 수/오전11, 목/오후6 → 수/오후6).
+                            const displayColor = block.moved && !block.cancelled ? "#eab308" : block.color;
                             return (
                               <div key={`${weekKey}-${block.id}`}
                                 onPointerDown={e => handleBlockPointerDown(e, block, weekKey)}
@@ -930,8 +962,8 @@ export default function TimetablePanel() {
                                   top:`${topPct}%`,
                                   height:`${heightPct}%`,
                                   left:2, right:2, zIndex: beingDragged ? 5 : 2,
-                                  background: block.cancelled ? "#f1f5f9" : block.color + "22",
-                                  border: block.cancelled ? "2px dashed #cbd5e1" : `2px solid ${block.color}`,
+                                  background: block.cancelled ? "#f1f5f9" : displayColor + "22",
+                                  border: block.cancelled ? "2px dashed #cbd5e1" : `2px solid ${displayColor}`,
                                   borderRadius:8, padding:"4px 6px",
                                   cursor: block.cancelled ? "pointer" : "grab",
                                   overflow:"hidden",
@@ -948,7 +980,7 @@ export default function TimetablePanel() {
                                 ) : (
                                   <>
                                     <div style={{ fontSize:11, fontWeight:800,
-                                      color: block.color, whiteSpace:"nowrap",
+                                      color: displayColor, whiteSpace:"nowrap",
                                       overflow:"hidden", textOverflow:"ellipsis" }}>
                                       {block.title}
                                     </div>
