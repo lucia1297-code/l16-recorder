@@ -117,12 +117,11 @@ function isToday(day: typeof DAYS[number], weekDates: Record<typeof DAYS[number]
     && d.getMonth() === today.getMonth()
     && d.getDate() === today.getDate();
 }
-// "YYYY-MM-DD" 주 시작일 → "M/D ~ M/D" 라벨 (모달에 적용 범위 표시용)
-function weekLabel(weekKey: string) {
-  const sunday = new Date(`${weekKey}T00:00:00`);
-  const saturday = new Date(sunday);
-  saturday.setDate(sunday.getDate() + 6);
-  return `${fmtMD(sunday)} ~ ${fmtMD(saturday)}`;
+// 주 시작일("YYYY-MM-DD") + 요일 → 그 요일의 실제 날짜("YYYY-MM-DD")
+function dateOf(weekKey: string, day: typeof DAYS[number]) {
+  const d = new Date(`${weekKey}T00:00:00`);
+  d.setDate(d.getDate() + DAYS.indexOf(day));
+  return ymd(d);
 }
 
 export default function TimetablePanel() {
@@ -137,6 +136,11 @@ export default function TimetablePanel() {
   const [modal, setModal] = useState<null | "add" | "edit">(null);
   const [form,  setForm]  = useState<Omit<TimetableBlock,"id">>(EMPTY_BLOCK);
   const [editId, setEditId] = useState<string|null>(null);
+  // 적용 방식: "recurring"=상시 적용(매주 반복, weekStart 없음), "once"=일시
+  // 적용(특정 날짜 하루만, weekStart=그 주 일요일). "once"일 때는 날짜를
+  // 고르면 요일이 자동으로 정해진다.
+  const [applyMode, setApplyMode] = useState<"recurring"|"once">("recurring");
+  const [onceDate, setOnceDate] = useState(""); // "YYYY-MM-DD"
 
   // 학생 검색
   const [stuSearch, setStuSearch] = useState("");
@@ -210,13 +214,57 @@ export default function TimetablePanel() {
     });
   }, [roster, autoMode]);
 
+  const [withdrawnCodes, setWithdrawnCodes] = useState<Set<string> | null>(null);
   useEffect(() => {
     rosterStore.listRoster().then(r => {
       const filtered = r.filter(s => (s.studentStatus ?? "active") !== "withdrawn");
       setRoster(filtered);
+      const withdrawn = new Set(
+        r.filter(s => (s.studentStatus ?? "active") === "withdrawn").map(s => s.studentCode)
+      );
+      if (withdrawn.size > 0) setWithdrawnCodes(withdrawn);
     });
     loadBlocks();
   }, []);
+
+  // 학생이 퇴원하면 그 학생이 들어간 시간표 수정 정보(수동 override)는 그
+  // 시점부터 전부 삭제한다 — 여러 명이 같이 듣는 수업이면 그 학생 코드만
+  // 빼고, 그 결과 학생이 0명이 되면 블록 자체를 삭제한다. (자동생성 블록은
+  // roster에서 이미 퇴원생을 뺐으므로 별도 처리가 필요 없다.)
+  const sweepDoneRef = useRef(false);
+  useEffect(() => {
+    if (loading || sweepDoneRef.current) return;
+    const withdrawn = withdrawnCodes;
+    if (!withdrawn || withdrawn.size === 0) return;
+    sweepDoneRef.current = true;
+
+    const toDelete: string[] = [];
+    const toUpdate: TimetableBlock[] = [];
+    blocks.forEach(b => {
+      if (!b.studentCodes.some(c => withdrawn.has(c))) return;
+      const remaining = b.studentCodes.filter(c => !withdrawn.has(c));
+      if (remaining.length === 0) toDelete.push(b.id);
+      else toUpdate.push({ ...b, studentCodes: remaining });
+    });
+    if (toDelete.length === 0 && toUpdate.length === 0) return;
+
+    (async () => {
+      for (const id of toDelete) {
+        await fetch(`${SB_URL}/rest/v1/timetable_blocks?id=eq.${id}`,
+          { method:"DELETE", headers: SB_H }).catch(() => {});
+      }
+      for (const b of toUpdate) {
+        await upsertBlockRow(b);
+      }
+      const next = blocks
+        .filter(b => !toDelete.includes(b.id))
+        .map(b => toUpdate.find(u => u.id === b.id) ?? b);
+      setBlocks(next);
+      localStorage.setItem("l16.timetable", JSON.stringify(next));
+      setNotice(`퇴원한 학생의 시간표 수정 정보 ${toDelete.length + toUpdate.length}건을 정리했습니다.`);
+      setTimeout(() => setNotice(""), 4000);
+    })();
+  }, [loading, blocks, withdrawnCodes]);
 
   async function loadBlocks() {
     setLoading(true);
@@ -248,8 +296,7 @@ export default function TimetablePanel() {
     }
   }
 
-  async function saveBlock(block: TimetableBlock) {
-    setSaving(true);
+  async function upsertBlockRow(block: TimetableBlock) {
     const row = {
       id: block.id, day: block.day,
       start_slot: block.startSlot, end_slot: block.endSlot,
@@ -267,6 +314,11 @@ export default function TimetablePanel() {
     } catch {
       // localStorage 폴백
     }
+  }
+
+  async function saveBlock(block: TimetableBlock) {
+    setSaving(true);
+    await upsertBlockRow(block);
     // editId가 있어도 blocks(수동 목록)에 아직 없는 경우가 있다 — 자동생성
     // 블록을 처음 수정해서 override로 저장하는 경우. 그때는 없으니 추가한다.
     const exists = editId ? blocks.some(b => b.id === editId) : false;
@@ -289,28 +341,50 @@ export default function TimetablePanel() {
     localStorage.setItem("l16.timetable", JSON.stringify(next));
   }
 
-  // weekKey: 이 수정/추가가 적용될 주(일요일 "YYYY-MM-DD"). 자동생성 모드의
-  // 주간 그리드에서 열었을 때만 넘어오며, 그 경우 저장되는 블록은 "그 주만
-  // 예외로 적용"된다 — 매주 반복되는 자동생성 시간표 자체는 바뀌지 않는다.
+  // weekKey: 어떤 주 칸에서 열었는지(일요일 "YYYY-MM-DD"). 있으면 기본
+  // 적용 방식을 "일시 적용"으로 켜고 그 칸의 실제 날짜를 채워준다 — 실제
+  // 적용 방식은 모달의 상시/일시 토글로 사용자가 바꿀 수 있다.
   function openAdd(day?: typeof DAYS[number], weekKey?: string) {
-    setForm({ ...EMPTY_BLOCK, day: day ?? "월", weekStart: weekKey });
+    setForm({ ...EMPTY_BLOCK, day: day ?? "월" });
     setEditId(null);
     setStuSearch("");
+    if (weekKey && day) {
+      setApplyMode("once");
+      setOnceDate(dateOf(weekKey, day));
+    } else {
+      setApplyMode("recurring");
+      setOnceDate("");
+    }
     setModal("add");
   }
 
   function openEdit(block: TimetableBlock, weekKey?: string) {
     setForm({ day:block.day, startSlot:block.startSlot, endSlot:block.endSlot,
-      studentCodes:[...block.studentCodes], title:block.title, color:block.color, note:block.note,
-      weekStart: weekKey ?? block.weekStart });
+      studentCodes:[...block.studentCodes], title:block.title, color:block.color, note:block.note });
     setEditId(block.id);
     setStuSearch("");
+    const effectiveWeekKey = weekKey ?? block.weekStart;
+    if (effectiveWeekKey) {
+      setApplyMode("once");
+      setOnceDate(dateOf(effectiveWeekKey, block.day));
+    } else {
+      setApplyMode("recurring");
+      setOnceDate("");
+    }
     setModal("edit");
   }
 
   async function handleSave() {
     if (!form.title.trim()) { setNotice("수업 이름을 입력해주세요."); return; }
     if (form.startSlot >= form.endSlot) { setNotice("종료 시간이 시작 시간보다 뒤여야 합니다."); return; }
+    let day = form.day;
+    let weekStart: string | undefined;
+    if (applyMode === "once") {
+      if (!onceDate) { setNotice("적용할 날짜를 선택해주세요."); return; }
+      const d = new Date(`${onceDate}T00:00:00`);
+      day = DAYS[d.getDay()];
+      weekStart = ymd(getSundayOf(d));
+    }
     // 자동생성 블록(id가 "auto-"로 시작)은 논리적으로 계산된 값일 뿐 DB에 있는
     // 행이 아니고, DB의 id 컬럼은 uuid 타입이라 "auto-..." 문자열을 그대로 넣으면
     // 저장이 실패한다. 그래서 자동 블록을 수정하는 경우엔 새 uuid를 발급해
@@ -320,6 +394,8 @@ export default function TimetablePanel() {
     const block: TimetableBlock = {
       id: isAutoBlock ? uuid() : (editId ?? uuid()),
       ...form,
+      day,
+      weekStart,
     };
     await saveBlock(block);
     setModal(null);
@@ -686,13 +762,35 @@ export default function TimetablePanel() {
 
             <div style={{ padding:20, display:"flex", flexDirection:"column", gap:14 }}>
 
-              {autoMode && form.weekStart && (
-                <div style={{ fontSize:11, color:"#0891b2", background:"#e0f2fe",
-                  padding:"7px 10px", borderRadius:7, fontWeight:600 }}>
-                  📅 적용 주: {weekLabel(form.weekStart)} — 이 주에만 적용되는 예외로 저장됩니다
-                  (매주 반복되는 자동생성 시간표 자체는 바뀌지 않아요)
+              {/* 적용 방식 */}
+              <div>
+                <label style={{ fontSize:12, fontWeight:700, display:"block",
+                  marginBottom:6, color:"#374151" }}>적용 방식</label>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={() => setApplyMode("recurring")}
+                    style={{ flex:1, padding:"9px", borderRadius:8,
+                      border: applyMode==="recurring" ? "2px solid #0891b2" : "1px solid #e2e8f0",
+                      background: applyMode==="recurring" ? "#e0f2fe" : "#f8fafc",
+                      color: applyMode==="recurring" ? "#0891b2" : "#64748b",
+                      fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                    🔁 상시 적용 (매주 반복)
+                  </button>
+                  <button onClick={() => setApplyMode("once")}
+                    style={{ flex:1, padding:"9px", borderRadius:8,
+                      border: applyMode==="once" ? "2px solid #0891b2" : "1px solid #e2e8f0",
+                      background: applyMode==="once" ? "#e0f2fe" : "#f8fafc",
+                      color: applyMode==="once" ? "#0891b2" : "#64748b",
+                      fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                    📌 일시 적용 (하루만)
+                  </button>
                 </div>
-              )}
+                {applyMode === "once" && (
+                  <p style={{ fontSize:11, color:"#94a3b8", margin:"6px 0 0" }}>
+                    선택한 날짜에만 적용되는 예외입니다. 매주 반복되는 자동생성
+                    시간표 자체는 바뀌지 않아요.
+                  </p>
+                )}
+              </div>
 
               {/* 수업 이름 */}
               <div>
@@ -706,23 +804,42 @@ export default function TimetablePanel() {
                     boxSizing:"border-box" as const }} />
               </div>
 
-              {/* 요일 */}
-              <div>
-                <label style={{ fontSize:12, fontWeight:700, display:"block",
-                  marginBottom:6, color:"#374151" }}>요일</label>
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                  {DAYS.map(d => (
-                    <button key={d} onClick={() => setForm(f => ({...f, day:d}))}
-                      style={{ width:38, height:38, borderRadius:8,
-                        border: form.day===d ? `2px solid ${DAY_COLORS[d].head}` : "1px solid #e2e8f0",
-                        background: form.day===d ? DAY_COLORS[d].light : "#f8fafc",
-                        color: form.day===d ? DAY_COLORS[d].head : "#64748b",
-                        fontWeight: form.day===d ? 800 : 500, fontSize:14, cursor:"pointer" }}>
-                      {d}
-                    </button>
-                  ))}
+              {/* 요일 (상시 적용) / 날짜 (일시 적용) */}
+              {applyMode === "once" ? (
+                <div>
+                  <label style={{ fontSize:12, fontWeight:700, display:"block",
+                    marginBottom:6, color:"#374151" }}>날짜</label>
+                  <input type="date" value={onceDate}
+                    min={ymd(weekStarts[0])}
+                    max={ymd(new Date(weekStarts[weekStarts.length-1].getTime() + 6*86400000))}
+                    onChange={e => setOnceDate(e.target.value)}
+                    style={{ width:"100%", padding:"10px 12px", borderRadius:8,
+                      border:"1px solid #e2e8f0", fontSize:13, fontWeight:600,
+                      background:"#fff", boxSizing:"border-box" as const }} />
+                  {onceDate && (
+                    <p style={{ fontSize:12, color:"#0891b2", fontWeight:700, margin:"6px 0 0" }}>
+                      → {DAYS[new Date(`${onceDate}T00:00:00`).getDay()]}요일
+                    </p>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize:12, fontWeight:700, display:"block",
+                    marginBottom:6, color:"#374151" }}>요일</label>
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                    {DAYS.map(d => (
+                      <button key={d} onClick={() => setForm(f => ({...f, day:d}))}
+                        style={{ width:38, height:38, borderRadius:8,
+                          border: form.day===d ? `2px solid ${DAY_COLORS[d].head}` : "1px solid #e2e8f0",
+                          background: form.day===d ? DAY_COLORS[d].light : "#f8fafc",
+                          color: form.day===d ? DAY_COLORS[d].head : "#64748b",
+                          fontWeight: form.day===d ? 800 : 500, fontSize:14, cursor:"pointer" }}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* 시작 / 종료 */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
