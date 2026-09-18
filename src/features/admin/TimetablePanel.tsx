@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 
@@ -49,6 +49,10 @@ interface TimetableBlock {
   title: string;
   color: string;
   note: string;
+  // 특정 주(일요일 날짜, "YYYY-MM-DD")에만 적용되는 예외 수정. 비어있으면
+  // 매주 반복 적용(기존 동작, 자동생성 대비 override). 있으면 그 주에서만
+  // 자동생성 값을 덮어쓰고 다른 주는 그대로 자동생성 값을 보여준다.
+  weekStart?: string;
 }
 
 const BLOCK_COLORS = [
@@ -79,11 +83,22 @@ function toMin(slot: string) {
 }
 const TOTAL_MIN = (24-6)*60; // 1080분
 
-// 이번 주(일~토) 실제 날짜 — 요일 헤더에 함께 표시하기 위함
-function getThisWeekDates(): Record<typeof DAYS[number], Date> {
-  const now = new Date();
-  const sunday = new Date(now);
-  sunday.setDate(now.getDate() - now.getDay());
+// 과거/미래로 몇 주까지 스크롤해서 보여줄지 (좌우 스크롤로 주 단위 이동)
+const WEEKS_BEFORE = 4;
+const WEEKS_AFTER = 12;
+
+function getSundayOf(date: Date): Date {
+  const s = new Date(date);
+  s.setHours(0, 0, 0, 0);
+  s.setDate(s.getDate() - s.getDay());
+  return s;
+}
+// 주의 일요일 날짜 → "YYYY-MM-DD" (weekStart 키로 사용)
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+// 특정 일요일 기준 해당 주(일~토) 실제 날짜 — 요일 헤더에 함께 표시하기 위함
+function getWeekDates(sunday: Date): Record<typeof DAYS[number], Date> {
   const map = {} as Record<typeof DAYS[number], Date>;
   DAYS.forEach((d, i) => {
     const date = new Date(sunday);
@@ -101,6 +116,13 @@ function isToday(day: typeof DAYS[number], weekDates: Record<typeof DAYS[number]
   return d.getFullYear() === today.getFullYear()
     && d.getMonth() === today.getMonth()
     && d.getDate() === today.getDate();
+}
+// "YYYY-MM-DD" 주 시작일 → "M/D ~ M/D" 라벨 (모달에 적용 범위 표시용)
+function weekLabel(weekKey: string) {
+  const sunday = new Date(`${weekKey}T00:00:00`);
+  const saturday = new Date(sunday);
+  saturday.setDate(sunday.getDate() + 6);
+  return `${fmtMD(sunday)} ~ ${fmtMD(saturday)}`;
 }
 
 export default function TimetablePanel() {
@@ -214,6 +236,7 @@ export default function TimetablePanel() {
         id: r.id, day: r.day, startSlot: r.start_slot, endSlot: r.end_slot,
         studentCodes: JSON.parse(r.student_codes || "[]"),
         title: r.title, color: r.color, note: r.note ?? "",
+        weekStart: r.week_start ?? undefined,
       }));
       setBlocks(mapped);
       localStorage.setItem("l16.timetable", JSON.stringify(mapped));
@@ -232,6 +255,7 @@ export default function TimetablePanel() {
       start_slot: block.startSlot, end_slot: block.endSlot,
       student_codes: JSON.stringify(block.studentCodes),
       title: block.title, color: block.color, note: block.note,
+      week_start: block.weekStart ?? null,
     };
     try {
       const res = await fetch(`${SB_URL}/rest/v1/timetable_blocks`, {
@@ -265,16 +289,20 @@ export default function TimetablePanel() {
     localStorage.setItem("l16.timetable", JSON.stringify(next));
   }
 
-  function openAdd(day?: typeof DAYS[number]) {
-    setForm({ ...EMPTY_BLOCK, day: day ?? "월" });
+  // weekKey: 이 수정/추가가 적용될 주(일요일 "YYYY-MM-DD"). 자동생성 모드의
+  // 주간 그리드에서 열었을 때만 넘어오며, 그 경우 저장되는 블록은 "그 주만
+  // 예외로 적용"된다 — 매주 반복되는 자동생성 시간표 자체는 바뀌지 않는다.
+  function openAdd(day?: typeof DAYS[number], weekKey?: string) {
+    setForm({ ...EMPTY_BLOCK, day: day ?? "월", weekStart: weekKey });
     setEditId(null);
     setStuSearch("");
     setModal("add");
   }
 
-  function openEdit(block: TimetableBlock) {
+  function openEdit(block: TimetableBlock, weekKey?: string) {
     setForm({ day:block.day, startSlot:block.startSlot, endSlot:block.endSlot,
-      studentCodes:[...block.studentCodes], title:block.title, color:block.color, note:block.note });
+      studentCodes:[...block.studentCodes], title:block.title, color:block.color, note:block.note,
+      weekStart: weekKey ?? block.weekStart });
     setEditId(block.id);
     setStuSearch("");
     setModal("edit");
@@ -287,7 +315,7 @@ export default function TimetablePanel() {
     // 행이 아니고, DB의 id 컬럼은 uuid 타입이라 "auto-..." 문자열을 그대로 넣으면
     // 저장이 실패한다. 그래서 자동 블록을 수정하는 경우엔 새 uuid를 발급해
     // "수동 override" 행으로 새로 저장한다 — 화면에는 같은 시간대라 자동값 대신
-    // 이 override가 표시된다(위 blocksByDay 참고).
+    // 이 override가 표시된다(위 blocksByWeekDay 참고).
     const isAutoBlock = editId?.startsWith("auto-") ?? false;
     const block: TimetableBlock = {
       id: isAutoBlock ? uuid() : (editId ?? uuid()),
@@ -310,29 +338,65 @@ export default function TimetablePanel() {
 
   // ── 그리드 계산 ──────────────────────────────────────────
   const gridH = 1200; // px (전체 높이)
-  const weekDates = useMemo(() => getThisWeekDates(), []);
-  const blocksByDay = useMemo(() => {
-    const m: Record<string, TimetableBlock[]> = {};
-    DAYS.forEach(d => m[d] = []);
 
-    if (autoMode) {
+  // 과거 WEEKS_BEFORE주 ~ 미래 WEEKS_AFTER주를 가로로 이어서 렌더링 —
+  // 좌우로 스크롤하면 지난 주/다음 주 시간표가 이어서 나오고, 각 주 칸을
+  // 눌러 수정하면 "그 주만" 예외로 저장된다(자동생성 반복 시간표 자체는 유지).
+  const thisWeekStart = useMemo(() => getSundayOf(new Date()), []);
+  const thisWeekKey = useMemo(() => ymd(thisWeekStart), [thisWeekStart]);
+  const weekStarts = useMemo(() => {
+    return Array.from({ length: WEEKS_BEFORE + WEEKS_AFTER + 1 }, (_, i) => {
+      const d = new Date(thisWeekStart);
+      d.setDate(thisWeekStart.getDate() + (i - WEEKS_BEFORE) * 7);
+      return d;
+    });
+  }, [thisWeekStart]);
+
+  const blocksByWeekDay = useMemo(() => {
+    const map: Record<string, Record<string, TimetableBlock[]>> = {};
+    weekStarts.forEach(ws => {
+      const weekKey = ymd(ws);
+      const dayMap: Record<string, TimetableBlock[]> = {};
+      DAYS.forEach(d => dayMap[d] = []);
+
+      if (!autoMode) {
+        blocks.forEach(b => { if (dayMap[b.day]) dayMap[b.day].push(b); });
+        map[weekKey] = dayMap;
+        return;
+      }
+
       // 자동 생성 블록을 기본으로 쓰되, 같은 시간대(요일+시작+종료)에 수동
-      // 수정(override)된 블록이 있으면 그걸 우선한다 — 이게 없으면 자동생성
-      // 모드에서 블록을 눌러 "수정 저장"을 해도 화면은 계속 자동 계산값만
-      // 보여줘서 수정이 반영 안 되는 것처럼 보임. id가 아니라 시간대로
-      // 매칭하는 이유는 자동 블록의 id("auto-...")가 DB의 uuid 컬럼에
-      // 그대로 저장될 수 없어서, override 저장 시 새 uuid를 발급하기 때문.
-      const overrideMap = new Map(blocks.map(b => [`${b.day}|${b.startSlot}|${b.endSlot}`, b]));
-      autoGeneratedBlocks.forEach(auto => {
-        const key = `${auto.day}|${auto.startSlot}|${auto.endSlot}`;
-        const b = overrideMap.get(key) ?? auto;
-        if (m[b.day]) m[b.day].push(b);
+      // 수정(override)이 있으면 그걸 우선한다. override 중 weekStart가 없는
+      // 것은 "매주 반복 적용"(기존 동작), weekStart가 이 주와 일치하는 것은
+      // "이 주만 예외 적용"으로 우선순위가 더 높다.
+      DAYS.forEach(day => {
+        const dayAuto = autoGeneratedBlocks.filter(b => b.day === day);
+        const dayOverrides = blocks.filter(b => b.day === day);
+        const recurring = new Map<string, TimetableBlock>();
+        const exact = new Map<string, TimetableBlock>();
+        dayOverrides.forEach(b => {
+          const key = `${b.startSlot}|${b.endSlot}`;
+          if (!b.weekStart) recurring.set(key, b);
+          else if (b.weekStart === weekKey) exact.set(key, b);
+        });
+        const usedKeys = new Set<string>();
+        dayAuto.forEach(auto => {
+          const key = `${auto.startSlot}|${auto.endSlot}`;
+          usedKeys.add(key);
+          dayMap[day].push(exact.get(key) ?? recurring.get(key) ?? auto);
+        });
+        // 자동생성 시간대와 겹치지 않는, 이 주에 직접 추가된 블록
+        dayOverrides.forEach(b => {
+          const key = `${b.startSlot}|${b.endSlot}`;
+          if (usedKeys.has(key)) return;
+          if (b.weekStart && b.weekStart !== weekKey) return;
+          dayMap[day].push(b);
+        });
       });
-    } else {
-      blocks.forEach(b => { if (m[b.day]) m[b.day].push(b); });
-    }
-    return m;
-  }, [blocks, autoGeneratedBlocks, autoMode]);
+      map[weekKey] = dayMap;
+    });
+    return map;
+  }, [blocks, autoGeneratedBlocks, autoMode, weekStarts]);
 
   // 그리드 실제 너비 측정 (위쪽 동기화 스크롤바의 스페이서 폭으로 사용)
   useEffect(() => {
@@ -342,7 +406,24 @@ export default function TimetablePanel() {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [blocksByDay, loading]);
+  }, [blocksByWeekDay, loading]);
+
+  // 이번 주 칸으로 스크롤 이동 (최초 로딩 시 자동으로, 버튼으로 언제든 다시)
+  function scrollToThisWeek() {
+    const container = gridScrollRef.current;
+    const target = container?.querySelector(`[data-week-start="${thisWeekKey}"]`) as HTMLElement | null;
+    if (!container || !target) return;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const offset = targetRect.left - containerRect.left + container.scrollLeft - 4;
+    container.scrollLeft = Math.max(0, offset);
+    if (topScrollRef.current) topScrollRef.current.scrollLeft = container.scrollLeft;
+  }
+  useEffect(() => {
+    if (loading) return;
+    scrollToThisWeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const filteredRoster = roster.filter(r =>
     !stuSearch || r.name.includes(stuSearch) || r.school.includes(stuSearch)
@@ -364,6 +445,11 @@ export default function TimetablePanel() {
           </p>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <button onClick={scrollToThisWeek}
+            style={{ padding:"8px 14px", borderRadius:8, border:"1px solid #cbd5e1",
+              background:"#fff", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+            📍 이번 주로 이동
+          </button>
           <button onClick={() => setAutoMode(!autoMode)}
             style={{ padding:"8px 16px", borderRadius:8, border:"1px solid #cbd5e1",
               background: autoMode ? "#e0f2fe" : "#fff", color: autoMode ? "#0891b2" : "#64748b",
@@ -434,114 +520,125 @@ export default function TimetablePanel() {
               </div>
             </div>
 
-            {/* 요일 컬럼 */}
-            {DAYS.map(day => {
-              const dc = DAY_COLORS[day];
-              const dayBlocks = blocksByDay[day] ?? [];
+            {/* 주 단위로 이어서 렌더링 — 좌우로 스크롤하면 지난/다음 주가 계속 나옴 */}
+            {weekStarts.map(ws => {
+              const weekKey = ymd(ws);
+              const weekDates = getWeekDates(ws);
               return (
-                <div key={day} style={{ flex:1, minWidth:90, borderRight:"1px solid #e2e8f0" }}>
-                  {/* 요일 헤더 (+ 이번 주 날짜) */}
-                  <div onClick={() => openAdd(day)}
-                    style={{ height:52, borderBottom:"1px solid #e2e8f0",
-                      background: dc.light, cursor:"pointer",
-                      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-                      gap:1, position:"sticky", top:0, zIndex:5 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                      <span style={{ fontSize:13, fontWeight:800, color: dc.head }}>
-                        {day}
-                      </span>
-                      <span style={{ fontSize:10, color: dc.head, opacity:0.6 }}>+</span>
-                    </div>
-                    <span style={{
-                      fontSize:10, fontWeight: isToday(day, weekDates) ? 800 : 500,
-                      color: isToday(day, weekDates) ? "#fff" : dc.head,
-                      background: isToday(day, weekDates) ? dc.head : "transparent",
-                      padding: isToday(day, weekDates) ? "0 5px" : 0,
-                      borderRadius:4, opacity: isToday(day, weekDates) ? 1 : 0.75,
-                    }}>
-                      {fmtMD(weekDates[day])}
-                    </span>
-                  </div>
-
-                  {/* 블록 영역 */}
-                  <div style={{ position:"relative", height:gridH, background:"#fafafa" }}>
-
-                    {/* 시간 눈금선 */}
-                    {SLOTS.map((slot, i) => (
-                      <div key={slot} style={{
-                        position:"absolute",
-                        top: `${(i / (SLOTS.length-1)) * 100}%`,
-                        left:0, right:0,
-                        borderTop: slot.endsWith(":00")
-                          ? "1px solid #e2e8f0"
-                          : "1px dashed #f1f5f9",
-                      }}/>
-                    ))}
-
-                    {/* 현재 시간 표시선 */}
-                    {(() => {
-                      const now = new Date();
-                      const nowMin = now.getHours()*60 + now.getMinutes() - 6*60;
-                      if (nowMin < 0 || nowMin > TOTAL_MIN) return null;
-                      const top = (nowMin / TOTAL_MIN) * 100;
-                      const todayIdx = now.getDay();
-                      if (DAYS[todayIdx] !== day) return null;
-                      return (
-                        <div style={{ position:"absolute", top:`${top}%`,
-                          left:0, right:0, height:2,
-                          background:"#ef4444", zIndex:3,
-                          boxShadow:"0 0 4px rgba(239,68,68,0.5)" }}>
-                          <div style={{ width:8, height:8, borderRadius:"50%",
-                            background:"#ef4444", position:"absolute",
-                            left:-4, top:-3 }}/>
-                        </div>
-                      );
-                    })()}
-
-                    {/* 수업 블록 */}
-                    {dayBlocks.map(block => {
-                      const topPct  = (toMin(block.startSlot) / TOTAL_MIN) * 100;
-                      const heightPct = ((toMin(block.endSlot) - toMin(block.startSlot)) / TOTAL_MIN) * 100;
-                      const stuNames = block.studentCodes
-                        .map(c => roster.find(r => r.studentCode === c)?.name ?? c)
-                        .join(", ");
-                      return (
-                        <div key={block.id}
-                          onClick={() => openEdit(block)}
-                          style={{
-                            position:"absolute",
-                            top:`${topPct}%`,
-                            height:`${heightPct}%`,
-                            left:2, right:2, zIndex:2,
-                            background: block.color + "22",
-                            border:`2px solid ${block.color}`,
-                            borderRadius:8, padding:"4px 6px",
-                            cursor:"pointer", overflow:"hidden",
-                            display:"flex", flexDirection:"column", gap:1,
-                            transition:"all 0.15s",
-                            boxSizing:"border-box" as const,
+                <Fragment key={weekKey}>
+                  {DAYS.map(day => {
+                    const dc = DAY_COLORS[day];
+                    const dayBlocks = blocksByWeekDay[weekKey]?.[day] ?? [];
+                    return (
+                      <div key={`${weekKey}-${day}`}
+                        data-week-start={day === "일" ? weekKey : undefined}
+                        style={{ flex:1, minWidth:90, borderRight:"1px solid #e2e8f0",
+                          borderLeft: day === "일" ? "3px solid #cbd5e1" : undefined }}>
+                        {/* 요일 헤더 (+ 해당 주 날짜) */}
+                        <div onClick={() => openAdd(day, weekKey)}
+                          style={{ height:52, borderBottom:"1px solid #e2e8f0",
+                            background: dc.light, cursor:"pointer",
+                            display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+                            gap:1, position:"sticky", top:0, zIndex:5 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                            <span style={{ fontSize:13, fontWeight:800, color: dc.head }}>
+                              {day}
+                            </span>
+                            <span style={{ fontSize:10, color: dc.head, opacity:0.6 }}>+</span>
+                          </div>
+                          <span style={{
+                            fontSize:10, fontWeight: isToday(day, weekDates) ? 800 : 500,
+                            color: isToday(day, weekDates) ? "#fff" : dc.head,
+                            background: isToday(day, weekDates) ? dc.head : "transparent",
+                            padding: isToday(day, weekDates) ? "0 5px" : 0,
+                            borderRadius:4, opacity: isToday(day, weekDates) ? 1 : 0.75,
                           }}>
-                          <div style={{ fontSize:11, fontWeight:800,
-                            color: block.color, whiteSpace:"nowrap",
-                            overflow:"hidden", textOverflow:"ellipsis" }}>
-                            {block.title}
-                          </div>
-                          <div style={{ fontSize:9, color:"#64748b", whiteSpace:"nowrap",
-                            overflow:"hidden", textOverflow:"ellipsis" }}>
-                            {block.startSlot}–{block.endSlot}
-                          </div>
-                          {stuNames && (
-                            <div style={{ fontSize:9, color:"#94a3b8",
-                              overflow:"hidden", textOverflow:"ellipsis",
-                              whiteSpace:"nowrap" }}>
-                              {stuNames}
-                            </div>
-                          )}
+                            {fmtMD(weekDates[day])}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+
+                        {/* 블록 영역 */}
+                        <div style={{ position:"relative", height:gridH, background:"#fafafa" }}>
+
+                          {/* 시간 눈금선 */}
+                          {SLOTS.map((slot, i) => (
+                            <div key={slot} style={{
+                              position:"absolute",
+                              top: `${(i / (SLOTS.length-1)) * 100}%`,
+                              left:0, right:0,
+                              borderTop: slot.endsWith(":00")
+                                ? "1px solid #e2e8f0"
+                                : "1px dashed #f1f5f9",
+                            }}/>
+                          ))}
+
+                          {/* 현재 시간 표시선 (이번 주에만) */}
+                          {weekKey === thisWeekKey && (() => {
+                            const now = new Date();
+                            const nowMin = now.getHours()*60 + now.getMinutes() - 6*60;
+                            if (nowMin < 0 || nowMin > TOTAL_MIN) return null;
+                            const top = (nowMin / TOTAL_MIN) * 100;
+                            const todayIdx = now.getDay();
+                            if (DAYS[todayIdx] !== day) return null;
+                            return (
+                              <div style={{ position:"absolute", top:`${top}%`,
+                                left:0, right:0, height:2,
+                                background:"#ef4444", zIndex:3,
+                                boxShadow:"0 0 4px rgba(239,68,68,0.5)" }}>
+                                <div style={{ width:8, height:8, borderRadius:"50%",
+                                  background:"#ef4444", position:"absolute",
+                                  left:-4, top:-3 }}/>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 수업 블록 */}
+                          {dayBlocks.map(block => {
+                            const topPct  = (toMin(block.startSlot) / TOTAL_MIN) * 100;
+                            const heightPct = ((toMin(block.endSlot) - toMin(block.startSlot)) / TOTAL_MIN) * 100;
+                            const stuNames = block.studentCodes
+                              .map(c => roster.find(r => r.studentCode === c)?.name ?? c)
+                              .join(", ");
+                            return (
+                              <div key={`${weekKey}-${block.id}`}
+                                onClick={() => openEdit(block, weekKey)}
+                                style={{
+                                  position:"absolute",
+                                  top:`${topPct}%`,
+                                  height:`${heightPct}%`,
+                                  left:2, right:2, zIndex:2,
+                                  background: block.color + "22",
+                                  border:`2px solid ${block.color}`,
+                                  borderRadius:8, padding:"4px 6px",
+                                  cursor:"pointer", overflow:"hidden",
+                                  display:"flex", flexDirection:"column", gap:1,
+                                  transition:"all 0.15s",
+                                  boxSizing:"border-box" as const,
+                                }}>
+                                <div style={{ fontSize:11, fontWeight:800,
+                                  color: block.color, whiteSpace:"nowrap",
+                                  overflow:"hidden", textOverflow:"ellipsis" }}>
+                                  {block.title}
+                                </div>
+                                <div style={{ fontSize:9, color:"#64748b", whiteSpace:"nowrap",
+                                  overflow:"hidden", textOverflow:"ellipsis" }}>
+                                  {block.startSlot}–{block.endSlot}
+                                </div>
+                                {stuNames && (
+                                  <div style={{ fontSize:9, color:"#94a3b8",
+                                    overflow:"hidden", textOverflow:"ellipsis",
+                                    whiteSpace:"nowrap" }}>
+                                    {stuNames}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </Fragment>
               );
             })}
           </div>
@@ -588,6 +685,14 @@ export default function TimetablePanel() {
             </div>
 
             <div style={{ padding:20, display:"flex", flexDirection:"column", gap:14 }}>
+
+              {autoMode && form.weekStart && (
+                <div style={{ fontSize:11, color:"#0891b2", background:"#e0f2fe",
+                  padding:"7px 10px", borderRadius:7, fontWeight:600 }}>
+                  📅 적용 주: {weekLabel(form.weekStart)} — 이 주에만 적용되는 예외로 저장됩니다
+                  (매주 반복되는 자동생성 시간표 자체는 바뀌지 않아요)
+                </div>
+              )}
 
               {/* 수업 이름 */}
               <div>
