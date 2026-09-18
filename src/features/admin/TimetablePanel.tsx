@@ -59,6 +59,10 @@ interface TimetableBlock {
   // 매주 휴강 — 기존 수업을 다른 자리로 옮길 때 먼저 이 슬롯을 취소하고
   // 새 자리에 수업을 추가하는 방식으로 "이동"을 구현한다.
   cancelled?: boolean;
+  // 이 블록 전체가 아니라 studentCodes 중 특정 학생만 결석(휴강) 처리.
+  // 블록 색은 그대로 두고 그 학생 이름만 회색 취소선으로 표시한다.
+  // weekStart가 있으면(일시 적용) 그 주만, 없으면(상시 적용) 매주 결석.
+  absentStudentCodes?: string[];
 }
 
 const BLOCK_COLORS = [
@@ -73,6 +77,7 @@ const BLOCK_COLORS = [
 const EMPTY_BLOCK: Omit<TimetableBlock,"id"> = {
   day: "월", startSlot: "14:00", endSlot: "16:00",
   studentCodes: [], title: "", color: "#0891b2", note: "",
+  absentStudentCodes: [],
 };
 
 function uuid() {
@@ -299,6 +304,7 @@ export default function TimetablePanel() {
         title: r.title, color: r.color, note: r.note ?? "",
         weekStart: r.week_start ?? undefined,
         cancelled: r.cancelled ?? false,
+        absentStudentCodes: JSON.parse(r.absent_student_codes || "[]"),
       }));
       setBlocks(mapped);
       localStorage.setItem("l16.timetable", JSON.stringify(mapped));
@@ -318,6 +324,7 @@ export default function TimetablePanel() {
       title: block.title, color: block.color, note: block.note,
       week_start: block.weekStart ?? null,
       cancelled: block.cancelled ?? false,
+      absent_student_codes: JSON.stringify(block.absentStudentCodes ?? []),
     };
     try {
       const res = await fetch(`${SB_URL}/rest/v1/timetable_blocks`, {
@@ -375,7 +382,8 @@ export default function TimetablePanel() {
 
   function openEdit(block: TimetableBlock, weekKey?: string) {
     setForm({ day:block.day, startSlot:block.startSlot, endSlot:block.endSlot,
-      studentCodes:[...block.studentCodes], title:block.title, color:block.color, note:block.note });
+      studentCodes:[...block.studentCodes], title:block.title, color:block.color, note:block.note,
+      absentStudentCodes:[...(block.absentStudentCodes ?? [])] });
     setEditId(block.id);
     setStuSearch("");
     const effectiveWeekKey = weekKey ?? block.weekStart;
@@ -566,7 +574,20 @@ export default function TimetablePanel() {
       studentCodes: f.studentCodes.includes(code)
         ? f.studentCodes.filter(c => c !== code)
         : [...f.studentCodes, code],
+      // 수업에서 빼면 결석 표시도 같이 지운다
+      absentStudentCodes: (f.absentStudentCodes ?? []).filter(c => c !== code),
     }));
+  }
+
+  // 블록에서 빼지는 않고(다른 학생은 정상 수업), 이 학생만 결석(휴강)
+  // 표시 — 이름에 회색 취소선. 적용 범위(상시/일시)는 위 "적용 방식"
+  // 토글을 그대로 따른다.
+  function toggleAbsent(code: string) {
+    setForm(f => {
+      const set = new Set(f.absentStudentCodes ?? []);
+      set.has(code) ? set.delete(code) : set.add(code);
+      return { ...f, absentStudentCodes: Array.from(set) };
+    });
   }
 
   // ── 그리드 계산 ──────────────────────────────────────────
@@ -858,9 +879,11 @@ export default function TimetablePanel() {
                           {dayBlocks.map(block => {
                             const topPct  = (toMin(block.startSlot) / TOTAL_MIN) * 100;
                             const heightPct = ((toMin(block.endSlot) - toMin(block.startSlot)) / TOTAL_MIN) * 100;
-                            const stuNames = block.studentCodes
-                              .map(c => roster.find(r => r.studentCode === c)?.name ?? c)
-                              .join(", ");
+                            const stuList = block.studentCodes.map(c => ({
+                              code: c,
+                              name: roster.find(r => r.studentCode === c)?.name ?? c,
+                              absent: (block.absentStudentCodes ?? []).includes(c),
+                            }));
                             const beingDragged = isDragging && dragRef.current?.block.id === block.id
                               && dragRef.current?.fromWeekKey === weekKey;
                             return (
@@ -899,11 +922,18 @@ export default function TimetablePanel() {
                                       overflow:"hidden", textOverflow:"ellipsis" }}>
                                       {block.startSlot}–{block.endSlot}
                                     </div>
-                                    {stuNames && (
+                                    {stuList.length > 0 && (
                                       <div style={{ fontSize:9, color:"#94a3b8",
                                         overflow:"hidden", textOverflow:"ellipsis",
                                         whiteSpace:"nowrap" }}>
-                                        {stuNames}
+                                        {stuList.map((s, i) => (
+                                          <span key={s.code}
+                                            style={ s.absent
+                                              ? { color:"#94a3b8", textDecoration:"line-through" }
+                                              : undefined }>
+                                            {i > 0 ? ", " : ""}{s.name}
+                                          </span>
+                                        ))}
                                       </div>
                                     )}
                                   </>
@@ -1116,6 +1146,7 @@ export default function TimetablePanel() {
                       fontSize:12, padding:"12px 0", margin:0 }}>학생 없음</p>
                   ) : filteredRoster.map(r => {
                     const selected = form.studentCodes.includes(r.studentCode);
+                    const absent = (form.absentStudentCodes ?? []).includes(r.studentCode);
                     return (
                       <div key={r.studentCode} onClick={() => toggleStudent(r.studentCode)}
                         style={{ display:"flex", alignItems:"center", gap:8,
@@ -1130,10 +1161,20 @@ export default function TimetablePanel() {
                           {selected && <span style={{ color:"#fff", fontSize:12, lineHeight:1 }}>✓</span>}
                         </div>
                         <span style={{ fontSize:12, fontWeight: selected ? 700 : 400,
-                          color: selected ? "#0c4a6e" : "#374151" }}>
+                          color: absent ? "#94a3b8" : selected ? "#0c4a6e" : "#374151",
+                          textDecoration: absent ? "line-through" : "none" }}>
                           {r.name}
                         </span>
-                        <span style={{ fontSize:10, color:"#94a3b8", marginLeft:"auto" }}>
+                        {selected && (
+                          <button onClick={e => { e.stopPropagation(); toggleAbsent(r.studentCode); }}
+                            style={{ fontSize:10, fontWeight:700, padding:"2px 7px",
+                              borderRadius:5, border: absent ? "1px solid #94a3b8" : "1px solid #fca5a5",
+                              background: absent ? "#f1f5f9" : "#fff",
+                              color: absent ? "#64748b" : "#ef4444", cursor:"pointer" }}>
+                            {absent ? "결석 해제" : "결석"}
+                          </button>
+                        )}
+                        <span style={{ fontSize:10, color:"#94a3b8", marginLeft: selected ? 0 : "auto" }}>
                           {r.school} {r.grade}학년
                         </span>
                       </div>
