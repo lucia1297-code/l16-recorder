@@ -720,16 +720,21 @@ export default function TimetablePanel() {
         <>
           {/* 위쪽 동기화 가로 스크롤바 — 그리드 아래쪽 스크롤바까지 손이 멀리 가는 문제 대응 */}
           <div ref={topScrollRef} onScroll={handleTopScroll}
-            style={{ overflowX:"auto", overflowY:"hidden", height:14 }}>
-            <div style={{ width: gridWidth || 720, height:1 }} />
+            style={{ overflowX:"auto", overflowY:"hidden", height:14, marginLeft:60 }}>
+            <div style={{ width: gridWidth || 630, height:1 }} />
           </div>
-          <div ref={gridScrollRef} onScroll={handleGridScroll}
-            style={{ overflowX:"auto", overflowY:"auto", maxHeight:"80vh" }}>
-          <div style={{ display:"flex", minWidth:720 }}>
+          {/* 시간 축(왼쪽 고정 칸)과 요일 그리드(가로 스크롤 칸)를 형제로 분리하고
+              세로 스크롤만 이 바깥 컨테이너에서 함께 처리한다. 예전에는 시간 축에
+              position:sticky+left:0 을 걸어서 같은 가로 스크롤 컨테이너 안에 두었는데,
+              주가 많아져 가로로 아주 넓어지면(수천 px) 브라우저의 sticky 계산이
+              일정 거리를 지난 뒤부터 깨져서(사파리/크롬 공통) 시간 축이 사라지는
+              문제가 있었다 — sticky를 아예 쓰지 않는 "고정 칸 + 별도 스크롤 칸"
+              구조로 바꿔서 근본적으로 해결. */}
+          <div style={{ display:"flex", overflowY:"auto", maxHeight:"80vh" }}>
 
-            {/* 시간 축 */}
-            <div style={{ width:60, flexShrink:0, position:"sticky", left:0,
-              background:"#f8fafc", zIndex:10, borderRight:"1px solid #e2e8f0" }}>
+            {/* 시간 축 (가로 스크롤에서 제외된 고정 칸) */}
+            <div style={{ width:60, flexShrink:0,
+              background:"#f8fafc", borderRight:"1px solid #e2e8f0" }}>
               <div style={{ height:52, borderBottom:"1px solid #e2e8f0",
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:10, fontWeight:700, color:"#94a3b8" }}>
@@ -757,6 +762,10 @@ export default function TimetablePanel() {
                 ))}
               </div>
             </div>
+
+            {/* 요일 그리드 — 이 칸만 가로로 스크롤된다 */}
+            <div ref={gridScrollRef} onScroll={handleGridScroll} style={{ overflowX:"auto", flex:1 }}>
+            <div style={{ display:"flex", minWidth:630 }}>
 
             {/* 주 단위로 이어서 렌더링 — 좌우로 스크롤하면 지난/다음 주가 계속 나옴 */}
             {weekStarts.map(ws => {
@@ -909,7 +918,8 @@ export default function TimetablePanel() {
                 </Fragment>
               );
             })}
-          </div>
+            </div>
+            </div>
           </div>
         </>
       )}
