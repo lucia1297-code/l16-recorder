@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { CalendarDays, Locate, CheckCircle, Settings, Plus, X, Repeat, Pin } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
@@ -54,6 +55,10 @@ interface TimetableBlock {
   // 매주 반복 적용(기존 동작, 자동생성 대비 override). 있으면 그 주에서만
   // 자동생성 값을 덮어쓰고 다른 주는 그대로 자동생성 값을 보여준다.
   weekStart?: string;
+  // 이 시간대를 "휴강(취소)" 처리. weekStart가 있으면 그 주만, 없으면
+  // 매주 휴강 — 기존 수업을 다른 자리로 옮길 때 먼저 이 슬롯을 취소하고
+  // 새 자리에 수업을 추가하는 방식으로 "이동"을 구현한다.
+  cancelled?: boolean;
 }
 
 const BLOCK_COLORS = [
@@ -83,6 +88,13 @@ function toMin(slot: string) {
   return (h === 24 ? 24*60 : h*60+m) - 6*60;
 }
 const TOTAL_MIN = (24-6)*60; // 1080분
+// 분(6:00 기준) → 슬롯 문자열, 30분 단위로 스냅 (드래그 이동에 사용)
+function fromMin(min: number) {
+  const snapped = Math.round(min / 30) * 30;
+  const total = Math.max(0, Math.min(TOTAL_MIN, snapped)) + 6*60;
+  const h = Math.floor(total / 60), m = total % 60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+}
 
 // 과거/미래로 몇 주까지 스크롤해서 보여줄지 (좌우 스크롤로 주 단위 이동)
 const WEEKS_BEFORE = 4;
@@ -286,6 +298,7 @@ export default function TimetablePanel() {
         studentCodes: JSON.parse(r.student_codes || "[]"),
         title: r.title, color: r.color, note: r.note ?? "",
         weekStart: r.week_start ?? undefined,
+        cancelled: r.cancelled ?? false,
       }));
       setBlocks(mapped);
       localStorage.setItem("l16.timetable", JSON.stringify(mapped));
@@ -304,6 +317,7 @@ export default function TimetablePanel() {
       student_codes: JSON.stringify(block.studentCodes),
       title: block.title, color: block.color, note: block.note,
       week_start: block.weekStart ?? null,
+      cancelled: block.cancelled ?? false,
     };
     try {
       const res = await fetch(`${SB_URL}/rest/v1/timetable_blocks`, {
@@ -397,11 +411,153 @@ export default function TimetablePanel() {
       ...form,
       day,
       weekStart,
+      cancelled: false, // 직접 내용을 고쳐 저장하면 휴강 상태였더라도 정상 수업으로 복귀
     };
     await saveBlock(block);
     setModal(null);
     setNotice(editId ? "수업이 수정됐습니다." : "수업이 추가됐습니다.");
     setTimeout(() => setNotice(""), 3000);
+  }
+
+  // 기존 수업을 "휴강(취소)" 처리 — scope="once"는 현재 보고 있는 주만,
+  // "recurring"은 이 요일+시간대를 매주 휴강으로 만든다. 다른 자리로
+  // 수업을 옮길 때는 먼저 이걸로 원래 자리를 취소하고, 새 자리에 수업을
+  // 추가하는 두 단계로 "이동"을 구현한다. saveBlock은 editId 기준으로
+  // 병합하므로(취소는 editId와 다른 id를 쓸 수 있어) 여기선 직접 처리한다.
+  async function handleCancelBlock(scope: "once" | "recurring") {
+    const weekStart = scope === "once"
+      ? (onceDate ? ymd(getSundayOf(new Date(`${onceDate}T00:00:00`))) : thisWeekKey)
+      : undefined;
+    const existing = blocks.find(b =>
+      b.day === form.day && b.startSlot === form.startSlot && b.endSlot === form.endSlot &&
+      (scope === "once" ? b.weekStart === weekStart : !b.weekStart)
+    );
+    const block: TimetableBlock = {
+      id: existing?.id ?? uuid(),
+      day: form.day, startSlot: form.startSlot, endSlot: form.endSlot,
+      studentCodes: form.studentCodes, title: form.title || "휴강",
+      color: form.color, note: "휴강 처리됨",
+      weekStart, cancelled: true,
+    };
+    setSaving(true);
+    await upsertBlockRow(block);
+    const exists = blocks.some(b => b.id === block.id);
+    const next = exists ? blocks.map(b => b.id === block.id ? block : b) : [...blocks, block];
+    setBlocks(next);
+    localStorage.setItem("l16.timetable", JSON.stringify(next));
+    setSaving(false);
+    setModal(null);
+    setNotice(scope === "once" ? "이 날짜만 휴강 처리했습니다." : "매주 이 시간대를 휴강 처리했습니다.");
+    setTimeout(() => setNotice(""), 3000);
+  }
+
+  // 수업 블록을 드래그해서 다른 요일/시간(다른 주 포함)으로 옮긴다.
+  // - 실제 DB 행(override)이면 그 행의 day/startSlot/endSlot만 바꿔 저장.
+  //   weekStart가 있던(일시 적용) 블록이면 옮긴 주로 weekStart도 따라간다.
+  // - 자동생성 블록이면 원래 자리는 "그 주만" 휴강 처리하고, 새 자리에
+  //   "그 주만" 예외로 새 수업을 추가한다(자동생성 반복 패턴 자체는 유지).
+  async function moveBlock(
+    block: TimetableBlock,
+    fromWeekKey: string,
+    target: { weekKey: string; day: typeof DAYS[number]; startSlot: string; endSlot: string }
+  ) {
+    if (block.day === target.day && block.startSlot === target.startSlot
+      && block.endSlot === target.endSlot && fromWeekKey === target.weekKey) return;
+
+    setSaving(true);
+    const isAutoBlock = block.id.startsWith("auto-");
+    if (isAutoBlock) {
+      const cancelRow: TimetableBlock = {
+        id: uuid(), day: block.day, startSlot: block.startSlot, endSlot: block.endSlot,
+        studentCodes: block.studentCodes, title: block.title, color: block.color,
+        note: "이동으로 인한 휴강", weekStart: fromWeekKey, cancelled: true,
+      };
+      const movedRow: TimetableBlock = {
+        id: uuid(), day: target.day, startSlot: target.startSlot, endSlot: target.endSlot,
+        studentCodes: block.studentCodes, title: block.title, color: block.color,
+        note: block.note === "자동생성" ? "" : block.note,
+        weekStart: target.weekKey, cancelled: false,
+      };
+      await upsertBlockRow(cancelRow);
+      await upsertBlockRow(movedRow);
+      const next = [...blocks, cancelRow, movedRow];
+      setBlocks(next);
+      localStorage.setItem("l16.timetable", JSON.stringify(next));
+    } else {
+      const moved: TimetableBlock = {
+        ...block, day: target.day, startSlot: target.startSlot, endSlot: target.endSlot,
+        weekStart: block.weekStart ? target.weekKey : undefined,
+      };
+      await upsertBlockRow(moved);
+      const next = blocks.map(b => b.id === block.id ? moved : b);
+      setBlocks(next);
+      localStorage.setItem("l16.timetable", JSON.stringify(next));
+    }
+    setSaving(false);
+    setNotice("수업을 이동했습니다.");
+    setTimeout(() => setNotice(""), 3000);
+  }
+
+  // ── 드래그로 수업 이동 ──────────────────────────────────────
+  // pointerdown~up 동안 임계값(6px) 이상 움직이면 드래그로 간주하고,
+  // 아니면 기존처럼 클릭(수정 모달 열기)으로 처리한다. 터치에서도 동작
+  // 하도록 HTML5 draggable 대신 Pointer Events를 직접 사용한다.
+  const dragRef = useRef<{
+    block: TimetableBlock; fromWeekKey: string; durationMin: number;
+    startX: number; startY: number; moved: boolean; pointerId: number;
+  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragTarget, setDragTarget] = useState<
+    { weekKey: string; day: typeof DAYS[number]; startSlot: string; endSlot: string } | null
+  >(null);
+
+  function handleBlockPointerDown(e: ReactPointerEvent<HTMLDivElement>, block: TimetableBlock, weekKey: string) {
+    if (e.button !== 0) return;
+    const durationMin = toMin(block.endSlot) - toMin(block.startSlot);
+    dragRef.current = {
+      block, fromWeekKey: weekKey, durationMin,
+      startX: e.clientX, startY: e.clientY, moved: false, pointerId: e.pointerId,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handleBlockPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX, dy = e.clientY - d.startY;
+    if (!d.moved) {
+      if (Math.hypot(dx, dy) < 6) return;
+      d.moved = true;
+      setIsDragging(true);
+    }
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    const cell = el?.closest("[data-cell-week]") as HTMLElement | null;
+    if (!cell) { setDragTarget(null); return; }
+    const weekKey = cell.getAttribute("data-cell-week")!;
+    const day = cell.getAttribute("data-cell-day") as typeof DAYS[number];
+    const rect = cell.getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const rawMin = (relY / gridH) * TOTAL_MIN;
+    const maxStart = TOTAL_MIN - d.durationMin;
+    const startMin = Math.max(0, Math.min(maxStart, Math.round(rawMin / 30) * 30));
+    setDragTarget({
+      weekKey, day,
+      startSlot: fromMin(startMin),
+      endSlot: fromMin(startMin + d.durationMin),
+    });
+  }
+
+  async function handleBlockPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (!d) return;
+    if (!d.moved) {
+      openEdit(d.block, d.fromWeekKey);
+    } else if (dragTarget) {
+      await moveBlock(d.block, d.fromWeekKey, dragTarget);
+    }
+    setIsDragging(false);
+    setDragTarget(null);
   }
 
   function toggleStudent(code: string) {
@@ -505,6 +661,7 @@ export default function TimetablePanel() {
   const filteredRoster = roster.filter(r =>
     !stuSearch || r.name.includes(stuSearch) || r.school.includes(stuSearch)
   );
+  const editingBlock = editId ? blocks.find(b => b.id === editId) : null;
 
   return (
     <div className="card" style={{ padding:0, overflow:"hidden" }}>
@@ -639,7 +796,8 @@ export default function TimetablePanel() {
                         </div>
 
                         {/* 블록 영역 */}
-                        <div style={{ position:"relative", height:gridH, background:"#fafafa" }}>
+                        <div data-cell-week={weekKey} data-cell-day={day}
+                          style={{ position:"relative", height:gridH, background:"#fafafa" }}>
 
                           {/* 시간 눈금선 */}
                           {SLOTS.map((slot, i) => (
@@ -673,6 +831,20 @@ export default function TimetablePanel() {
                             );
                           })()}
 
+                          {/* 드래그 중인 목표 자리 미리보기 */}
+                          {dragTarget && dragTarget.weekKey === weekKey && dragTarget.day === day && (() => {
+                            const topPct = (toMin(dragTarget.startSlot) / TOTAL_MIN) * 100;
+                            const heightPct = ((toMin(dragTarget.endSlot) - toMin(dragTarget.startSlot)) / TOTAL_MIN) * 100;
+                            return (
+                              <div style={{
+                                position:"absolute", top:`${topPct}%`, height:`${heightPct}%`,
+                                left:2, right:2, zIndex:4,
+                                border:"2px dashed #0891b2", borderRadius:8,
+                                background:"rgba(8,145,178,0.12)", pointerEvents:"none",
+                              }}/>
+                            );
+                          })()}
+
                           {/* 수업 블록 */}
                           {dayBlocks.map(block => {
                             const topPct  = (toMin(block.startSlot) / TOTAL_MIN) * 100;
@@ -680,37 +852,52 @@ export default function TimetablePanel() {
                             const stuNames = block.studentCodes
                               .map(c => roster.find(r => r.studentCode === c)?.name ?? c)
                               .join(", ");
+                            const beingDragged = isDragging && dragRef.current?.block.id === block.id
+                              && dragRef.current?.fromWeekKey === weekKey;
                             return (
                               <div key={`${weekKey}-${block.id}`}
-                                onClick={() => openEdit(block, weekKey)}
+                                onPointerDown={e => handleBlockPointerDown(e, block, weekKey)}
+                                onPointerMove={handleBlockPointerMove}
+                                onPointerUp={handleBlockPointerUp}
                                 style={{
                                   position:"absolute",
                                   top:`${topPct}%`,
                                   height:`${heightPct}%`,
-                                  left:2, right:2, zIndex:2,
-                                  background: block.color + "22",
-                                  border:`2px solid ${block.color}`,
+                                  left:2, right:2, zIndex: beingDragged ? 5 : 2,
+                                  background: block.cancelled ? "#f1f5f9" : block.color + "22",
+                                  border: block.cancelled ? "2px dashed #cbd5e1" : `2px solid ${block.color}`,
                                   borderRadius:8, padding:"4px 6px",
-                                  cursor:"pointer", overflow:"hidden",
+                                  cursor: block.cancelled ? "pointer" : "grab",
+                                  overflow:"hidden",
                                   display:"flex", flexDirection:"column", gap:1,
-                                  transition:"all 0.15s",
+                                  transition: beingDragged ? "none" : "all 0.15s",
+                                  opacity: beingDragged ? 0.35 : 1,
                                   boxSizing:"border-box" as const,
+                                  touchAction:"none",
                                 }}>
-                                <div style={{ fontSize:11, fontWeight:800,
-                                  color: block.color, whiteSpace:"nowrap",
-                                  overflow:"hidden", textOverflow:"ellipsis" }}>
-                                  {block.title}
-                                </div>
-                                <div style={{ fontSize:9, color:"#64748b", whiteSpace:"nowrap",
-                                  overflow:"hidden", textOverflow:"ellipsis" }}>
-                                  {block.startSlot}–{block.endSlot}
-                                </div>
-                                {stuNames && (
-                                  <div style={{ fontSize:9, color:"#94a3b8",
-                                    overflow:"hidden", textOverflow:"ellipsis",
-                                    whiteSpace:"nowrap" }}>
-                                    {stuNames}
+                                {block.cancelled ? (
+                                  <div style={{ fontSize:11, fontWeight:800, color:"#94a3b8" }}>
+                                    휴강
                                   </div>
+                                ) : (
+                                  <>
+                                    <div style={{ fontSize:11, fontWeight:800,
+                                      color: block.color, whiteSpace:"nowrap",
+                                      overflow:"hidden", textOverflow:"ellipsis" }}>
+                                      {block.title}
+                                    </div>
+                                    <div style={{ fontSize:9, color:"#64748b", whiteSpace:"nowrap",
+                                      overflow:"hidden", textOverflow:"ellipsis" }}>
+                                      {block.startSlot}–{block.endSlot}
+                                    </div>
+                                    {stuNames && (
+                                      <div style={{ fontSize:9, color:"#94a3b8",
+                                        overflow:"hidden", textOverflow:"ellipsis",
+                                        whiteSpace:"nowrap" }}>
+                                        {stuNames}
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             );
@@ -816,7 +1003,7 @@ export default function TimetablePanel() {
               {applyMode === "once" ? (
                 <div>
                   <label style={{ fontSize:12, fontWeight:700, display:"block",
-                    marginBottom:6, color:"#374151" }}>날짜</label>
+                    marginBottom:6, color:"#374151" }}>날짜 (년 · 월 · 일)</label>
                   <input type="date" value={onceDate}
                     min={ymd(weekStarts[0])}
                     max={ymd(new Date(weekStarts[weekStarts.length-1].getTime() + 6*86400000))}
@@ -824,11 +1011,14 @@ export default function TimetablePanel() {
                     style={{ width:"100%", padding:"10px 12px", borderRadius:8,
                       border:"1px solid #e2e8f0", fontSize:13, fontWeight:600,
                       background:"#fff", boxSizing:"border-box" as const }} />
-                  {onceDate && (
-                    <p style={{ fontSize:12, color:"#0891b2", fontWeight:700, margin:"6px 0 0" }}>
-                      → {DAYS[new Date(`${onceDate}T00:00:00`).getDay()]}요일
-                    </p>
-                  )}
+                  {onceDate && (() => {
+                    const d = new Date(`${onceDate}T00:00:00`);
+                    return (
+                      <p style={{ fontSize:12, color:"#0891b2", fontWeight:700, margin:"6px 0 0" }}>
+                        → {d.getFullYear()}년 {d.getMonth()+1}월 {d.getDate()}일 ({DAYS[d.getDay()]}요일)
+                      </p>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div>
@@ -955,6 +1145,30 @@ export default function TimetablePanel() {
                     resize:"none" as const, boxSizing:"border-box" as const }} />
               </div>
 
+              {/* 휴강(취소) — 기존 수업을 다른 자리로 옮길 때는 먼저 여기서
+                  원래 자리를 취소하고, 새로 "+ 수업 추가"로 원하는 자리에
+                  추가하면 된다. (또는 블록을 직접 드래그해서 이동해도 된다.) */}
+              {modal === "edit" && !editingBlock?.cancelled && (
+                <div>
+                  <label style={{ fontSize:12, fontWeight:700, display:"block",
+                    marginBottom:6, color:"#374151" }}>휴강(취소)</label>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={() => handleCancelBlock("once")} disabled={saving}
+                      style={{ flex:1, padding:"9px", borderRadius:8,
+                        border:"1px solid #fca5a5", background:"#fff",
+                        color:"#ef4444", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                      이 날만 휴강
+                    </button>
+                    <button onClick={() => handleCancelBlock("recurring")} disabled={saving}
+                      style={{ flex:1, padding:"9px", borderRadius:8,
+                        border:"1px solid #fca5a5", background:"#fff",
+                        color:"#ef4444", fontWeight:700, fontSize:12, cursor:"pointer" }}>
+                      매주 휴강
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {notice && (
                 <div style={{ padding:"8px 12px", borderRadius:7, fontSize:12,
                   background:"#fef2f2", border:"1px solid #fca5a5", color:"#dc2626" }}>
@@ -976,7 +1190,7 @@ export default function TimetablePanel() {
                     style={{ padding:"12px 16px", borderRadius:10,
                       border:"1px solid #fca5a5", background:"#fff",
                       color:"#ef4444", fontSize:13, fontWeight:600, cursor:"pointer" }}>
-                    삭제
+                    {editingBlock?.cancelled ? "휴강 해제" : "삭제"}
                   </button>
                 )}
               </div>
