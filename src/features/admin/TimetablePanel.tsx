@@ -169,6 +169,13 @@ export default function TimetablePanel() {
   const gridScrollRef = useRef<HTMLDivElement>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const syncingScrollRef = useRef(false);
+  // 시간 축(왼쪽 고정 칸)의 세로 스크롤을 그리드와 동기화 — 시간 축은 요일
+  // 그리드와 완전히 분리된 별도 스크롤 요소라서(가로 스크롤이 아주 넓어지면
+  // sticky가 깨지는 문제 때문에 분리했다), 세로 스크롤만큼은 이렇게 JS로
+  // 맞춰준다. 그리드 쪽이 진짜 스크롤 컨테이너 역할을 해야 요일 헤더의
+  // position:sticky(top:0)도 올바르게 동작한다.
+  const axisScrollRef = useRef<HTMLDivElement>(null);
+  const syncingVScrollRef = useRef(false);
 
   function handleTopScroll() {
     if (syncingScrollRef.current) { syncingScrollRef.current = false; return; }
@@ -177,10 +184,22 @@ export default function TimetablePanel() {
     gridScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
   }
   function handleGridScroll() {
-    if (syncingScrollRef.current) { syncingScrollRef.current = false; return; }
-    if (!topScrollRef.current || !gridScrollRef.current) return;
-    syncingScrollRef.current = true;
-    topScrollRef.current.scrollLeft = gridScrollRef.current.scrollLeft;
+    if (syncingScrollRef.current) { syncingScrollRef.current = false; }
+    else if (topScrollRef.current && gridScrollRef.current) {
+      syncingScrollRef.current = true;
+      topScrollRef.current.scrollLeft = gridScrollRef.current.scrollLeft;
+    }
+    if (syncingVScrollRef.current) { syncingVScrollRef.current = false; }
+    else if (axisScrollRef.current && gridScrollRef.current) {
+      syncingVScrollRef.current = true;
+      axisScrollRef.current.scrollTop = gridScrollRef.current.scrollTop;
+    }
+  }
+  function handleAxisScroll() {
+    if (syncingVScrollRef.current) { syncingVScrollRef.current = false; return; }
+    if (!axisScrollRef.current || !gridScrollRef.current) return;
+    syncingVScrollRef.current = true;
+    gridScrollRef.current.scrollTop = axisScrollRef.current.scrollTop;
   }
 
   // 수강 시간표 → 시간표 블록 자동 변환
@@ -744,18 +763,30 @@ export default function TimetablePanel() {
             style={{ overflowX:"auto", overflowY:"hidden", height:14, marginLeft:60 }}>
             <div style={{ width: gridWidth || 630, height:1 }} />
           </div>
-          {/* 시간 축(왼쪽 고정 칸)과 요일 그리드(가로 스크롤 칸)를 형제로 분리하고
-              세로 스크롤만 이 바깥 컨테이너에서 함께 처리한다. 예전에는 시간 축에
-              position:sticky+left:0 을 걸어서 같은 가로 스크롤 컨테이너 안에 두었는데,
-              주가 많아져 가로로 아주 넓어지면(수천 px) 브라우저의 sticky 계산이
-              일정 거리를 지난 뒤부터 깨져서(사파리/크롬 공통) 시간 축이 사라지는
-              문제가 있었다 — sticky를 아예 쓰지 않는 "고정 칸 + 별도 스크롤 칸"
-              구조로 바꿔서 근본적으로 해결. */}
-          <div style={{ display:"flex", overflowY:"auto", maxHeight:"80vh" }}>
+          {/* 시간 축(왼쪽 고정 칸)과 요일 그리드(가로 스크롤 칸)를 완전히 분리된
+              두 스크롤 요소로 만들고, 세로 스크롤 위치만 JS로 서로 동기화한다.
+              예전엔 시간 축에 position:sticky+left:0 을 걸어서 같은 가로 스크롤
+              컨테이너 안에 두었는데, 주가 많아져 가로로 아주 넓어지면(수천 px)
+              브라우저의 sticky 계산이 일정 거리를 지난 뒤부터 깨져서 시간 축이
+              사라지는 문제가 있었다. 그래서 "형제 + 바깥 컨테이너 하나로 세로
+              스크롤 공유" 구조로 한 번 바꿨는데, 그 과정에서 overflowX:auto인
+              요일 그리드 칸에 overflowY를 명시하지 않으면(혹은 hidden으로 막으면)
+              (1) CSS 스펙상 x/y 중 하나만 auto/hidden이면 다른 쪽도 자동으로
+              스크롤 가능한 값으로 계산되어 그리드 칸 자체가 독립된 세로 스크롤
+              영역이 되어버리는 문제, (2) overflowY를 hidden으로 막으면 요일
+              헤더의 position:sticky(top:0)가 진짜 스크롤되는 바깥 컨테이너가
+              아니라 이 그리드 칸을 기준으로 계산되어 버려서 세로 스크롤 시
+              헤더가 고정되지 않는 문제가 새로 생겼다. 그래서 최종적으로 시간
+              축과 요일 그리드 각각 자기 자신의 overflowY:auto로 독립적으로
+              세로 스크롤하게 하고, scrollTop만 서로 맞춰주는 방식으로 정리. */}
+          <style>{`.tt-axis-scroll::-webkit-scrollbar{display:none}`}</style>
+          <div style={{ display:"flex", maxHeight:"80vh" }}>
 
-            {/* 시간 축 (가로 스크롤에서 제외된 고정 칸) */}
-            <div style={{ width:60, flexShrink:0,
-              background:"#f8fafc", borderRight:"1px solid #e2e8f0" }}>
+            {/* 시간 축 (가로 스크롤 없음, 세로 스크롤은 그리드와 동기화) */}
+            <div ref={axisScrollRef} onScroll={handleAxisScroll} className="tt-axis-scroll"
+              style={{ width:60, flexShrink:0, overflowY:"auto", overflowX:"hidden",
+                maxHeight:"80vh", scrollbarWidth:"none" as const,
+                background:"#f8fafc", borderRight:"1px solid #e2e8f0" }}>
               <div style={{ height:52, borderBottom:"1px solid #e2e8f0",
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:10, fontWeight:700, color:"#94a3b8" }}>
@@ -784,8 +815,10 @@ export default function TimetablePanel() {
               </div>
             </div>
 
-            {/* 요일 그리드 — 이 칸만 가로로 스크롤된다 */}
-            <div ref={gridScrollRef} onScroll={handleGridScroll} style={{ overflowX:"auto", flex:1 }}>
+            {/* 요일 그리드 — 가로/세로 스크롤 모두 이 칸에서 처리(진짜 스크롤
+                컨테이너라서 요일 헤더의 position:sticky(top:0)도 정상 동작) */}
+            <div ref={gridScrollRef} onScroll={handleGridScroll}
+              style={{ overflowX:"auto", overflowY:"auto", flex:1, maxHeight:"80vh" }}>
             <div style={{ display:"flex", minWidth:630 }}>
 
             {/* 주 단위로 이어서 렌더링 — 좌우로 스크롤하면 지난/다음 주가 계속 나옴 */}
@@ -801,7 +834,8 @@ export default function TimetablePanel() {
                       <div key={`${weekKey}-${day}`}
                         data-week-start={day === "일" ? weekKey : undefined}
                         style={{ flex:1, minWidth:90, borderRight:"1px solid #e2e8f0",
-                          borderLeft: day === "일" ? "3px solid #cbd5e1" : undefined }}>
+                          borderLeft: day === "일" ? "3px solid #cbd5e1" : undefined,
+                          boxSizing:"border-box" as const }}>
                         {/* 요일 헤더 (+ 해당 주 날짜) */}
                         <div onClick={() => openAdd(day, weekKey)}
                           style={{ height:52, borderBottom:"1px solid #e2e8f0",
