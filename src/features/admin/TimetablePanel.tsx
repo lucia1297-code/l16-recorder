@@ -249,10 +249,9 @@ export default function TimetablePanel() {
       });
     });
 
-    // 학생 수 업데이트
-    blockMap.forEach(block => {
-      block.title = `${block.studentCodes.length}명`;
-    });
+    // 제목은 비워둔다 — 학생 이름이 이미 블록 안에 표시되므로 "1명" 같은
+    // 인원수 표기는 거의 의미가 없다. 이 자리는 필요할 때 "보충/이동/직보"
+    // 같은 짧은 메모를 다는 용도로 비워둔다.
 
     return Array.from(blockMap.values()).sort((a, b) => {
       const aMin = toMin(a.startSlot);
@@ -431,7 +430,8 @@ export default function TimetablePanel() {
   }
 
   async function handleSave() {
-    if (!form.title.trim()) { setNotice("수업 이름을 입력해주세요."); return; }
+    // 제목(메모)은 선택 항목 — "보충/이동/직보" 등 필요할 때만 적는 용도라
+    // 비워둔 채 저장해도 된다(학생 이름이 블록 안에 이미 표시됨).
     if (form.startSlot >= form.endSlot) { setNotice("종료 시간이 시작 시간보다 뒤여야 합니다."); return; }
     let day = form.day;
     let weekStart: string | undefined;
@@ -979,11 +979,13 @@ export default function TimetablePanel() {
                                   </div>
                                 ) : (
                                   <>
-                                    <div style={{ fontSize:11, fontWeight:800,
-                                      color: displayColor, whiteSpace:"nowrap",
-                                      overflow:"hidden", textOverflow:"ellipsis" }}>
-                                      {block.title}
-                                    </div>
+                                    {block.title && (
+                                      <div style={{ fontSize:11, fontWeight:800,
+                                        color: displayColor, whiteSpace:"nowrap",
+                                        overflow:"hidden", textOverflow:"ellipsis" }}>
+                                        {block.title}
+                                      </div>
+                                    )}
                                     <div style={{ fontSize:9, color:"#64748b", whiteSpace:"nowrap",
                                       overflow:"hidden", textOverflow:"ellipsis" }}>
                                       {block.startSlot}–{block.endSlot}
@@ -1093,13 +1095,14 @@ export default function TimetablePanel() {
                 )}
               </div>
 
-              {/* 수업 이름 */}
+              {/* 수업 이름 (선택) — 자동생성 블록은 학생 이름이 이미 표시되므로
+                  보통은 비워둬도 되고, 보충/이동/직보 등 필요할 때만 짧게 적는다 */}
               <div>
                 <label style={{ fontSize:12, fontWeight:700, display:"block",
-                  marginBottom:5, color:"#374151" }}>수업 이름 *</label>
+                  marginBottom:5, color:"#374151" }}>수업 이름 (선택)</label>
                 <input value={form.title}
                   onChange={e => setForm(f => ({...f, title:e.target.value}))}
-                  placeholder="예) 수능영어 심화반, 내신특강"
+                  placeholder="예) 보충, 이동, 직보 (필요할 때만)"
                   style={{ width:"100%", padding:"10px 12px", borderRadius:8,
                     border:"1.5px solid #0891b2", fontSize:14, fontWeight:600,
                     boxSizing:"border-box" as const }} />
