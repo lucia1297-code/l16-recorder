@@ -33,6 +33,17 @@ const GANTT_BAR_COLOR = "#2563eb";
 
 const DAY_WIDTH = 50; // 각 날짜 열의 너비
 
+// "YYYY-MM-DD" 같은 날짜 전용 문자열을 new Date()로 그냥 넘기면 UTC
+// 자정으로 해석된다 — 한국(UTC+9) 등 양의 시간대에서는 "오늘" 자정
+// (로컬 기준)과 9시간 어긋나서, 날짜 차이를 일 단위로 계산할 때
+// 반올림이 하루씩 밀리는 버그가 생긴다(예: 오늘이 20일인데 19일이
+// "오늘"로 표시됨). 항상 로컬 자정으로 고정해서 파싱한다.
+function parseLocalDate(dateStr: string): Date {
+  return dateStr.length <= 10
+    ? new Date(`${dateStr}T00:00:00`)
+    : new Date(dateStr);
+}
+
 // 마일스톤 심볼 렌더 함수 (동그라미)
 function MilestoneSymbol({ color, size = 12 }: { color: string; size?: number }) {
   return (
@@ -109,7 +120,7 @@ export default function ExamSchedulePanel() {
       ].filter(Boolean);
 
       dates.forEach(dateStr => {
-        const d = new Date(dateStr);
+        const d = parseLocalDate(dateStr);
         if (!hasData || d < minDate) minDate = new Date(d);
         if (!hasData || d > maxDate) maxDate = new Date(d);
         hasData = true;
@@ -135,7 +146,7 @@ export default function ExamSchedulePanel() {
   // 날짜를 일 인덱스로 변환
   function getDateIndex(dateStr: string): number {
     if (!dateStr) return -1;
-    const d = new Date(dateStr);
+    const d = parseLocalDate(dateStr);
     const minTime = dateRange.minDate.getTime();
     const dTime = d.getTime();
     const daysDiff = Math.floor((dTime - minTime) / (1000 * 60 * 60 * 24));
@@ -159,7 +170,7 @@ export default function ExamSchedulePanel() {
 
   // 날짜 포맷팅
   function formatDate(dateStr: string): string {
-    const d = new Date(dateStr);
+    const d = parseLocalDate(dateStr);
     const month = d.getMonth() + 1;
     const day = d.getDate();
     const dayName = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
