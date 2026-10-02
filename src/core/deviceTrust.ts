@@ -1,6 +1,6 @@
 // "Remember this device": keeps admin access for a limited time.
 // Stores only an expiry timestamp in localStorage, never the password or code.
-export const TRUST_DAYS = 90;
+export const TRUST_DAYS = 365;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface StorageLike {
