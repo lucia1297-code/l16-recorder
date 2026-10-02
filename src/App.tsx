@@ -5,9 +5,14 @@ import ExamPaperUpload from "./features/student/ExamPaperUpload";
 import AdminPanel from "./features/admin/AdminPanel";
 import StudentReport from "./features/student/StudentReport";
 import { checkAdminAccessCode } from "./core/adminGate";
+import { rememberDevice, isDeviceRemembered } from "./core/deviceTrust";
 import { parseReportHash } from "./lib/reportToken";
 
 const GATE_SESSION_KEY = "asx.admin.gate";
+const GATE_TRUST_KEY = "asx.admin.gate.trust";
+function isGatePassed(): boolean {
+  return sessionStorage.getItem(GATE_SESSION_KEY) === "1" || isDeviceRemembered(localStorage, GATE_TRUST_KEY);
+}
 const ADMIN_PREVIEW_KEY = "asx.admin.preview";
 const TAP_THRESHOLD = 5;
 const TAP_WINDOW_MS = 2000;
@@ -119,7 +124,7 @@ export default function App() {
 
   // 관리자 미리보기 상태 복원
   useEffect(() => {
-    if (sessionStorage.getItem(GATE_SESSION_KEY) === "1") {
+    if (isGatePassed()) {
       setRole("admin");
     }
   }, []);
@@ -136,7 +141,7 @@ export default function App() {
         return;
       }
       // 일반 학생 화면 → 관리자 접속
-      if (sessionStorage.getItem(GATE_SESSION_KEY) === "1") {
+      if (isGatePassed()) {
         setRole("admin");
         setPreviewMode(false);
       } else {
@@ -149,6 +154,7 @@ export default function App() {
     const result = checkAdminAccessCode(gateCode, import.meta.env.VITE_ADMIN_ACCESS_CODE as string | undefined);
     if (result.ok) {
       sessionStorage.setItem(GATE_SESSION_KEY, "1");
+      rememberDevice(localStorage, GATE_TRUST_KEY);
       setShowGatePrompt(false);
       setGateCode("");
       setGateError("");

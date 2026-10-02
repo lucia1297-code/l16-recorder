@@ -9,6 +9,10 @@ const DEFAULT_DEV_PASSWORD = "asx2026";
 export class SimpleAuth implements Auth {
   requiresEmail = false;
 
+  async restore(): Promise<boolean> {
+    return this.isLoggedIn();
+  }
+
   private getPassword(): string {
     const envPw = import.meta.env.VITE_ADMIN_PASSWORD as string | undefined;
     if (!envPw) {

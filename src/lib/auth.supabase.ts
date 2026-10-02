@@ -20,21 +20,21 @@ export class SupabaseAuth implements Auth {
   requiresEmail = true;
   private loggedIn = false;
 
-  constructor() {
-    // 세션 복구 시도 (탭 재로드 대응)
-    getClient()
-      .auth.getSession()
-      .then(({ data }) => {
-        this.loggedIn = Boolean(data.session);
-      })
-      .catch(() => {
-        this.loggedIn = false;
-      });
+  constructor(private readonly client: Pick<SupabaseClient, "auth"> = getClient()) {}
+
+  async restore(): Promise<boolean> {
+    try {
+      const { data } = await this.client.auth.getSession();
+      this.loggedIn = Boolean(data.session);
+    } catch {
+      this.loggedIn = false;
+    }
+    return this.loggedIn;
   }
 
   async login(email: string, password: string): Promise<AuthResult> {
     try {
-      const { error } = await getClient().auth.signInWithPassword({
+      const { error } = await this.client.auth.signInWithPassword({
         email,
         password,
       });
@@ -47,7 +47,7 @@ export class SupabaseAuth implements Auth {
   }
 
   async logout(): Promise<void> {
-    await getClient().auth.signOut();
+    await this.client.auth.signOut();
     this.loggedIn = false;
   }
 

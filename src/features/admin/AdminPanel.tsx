@@ -11,6 +11,8 @@ import { parseRosterRows, buildManualEntry, type RosterEntry, getReminderDays, c
 import { generateStudentCode } from "../../core/studentCode";
 import type { PendingRegistration } from "../../core/pendingRegistration";
 import { useStorage } from "../../lib/useStorage";
+import { createAuth } from "../../lib/authFactory";
+import type { Auth } from "../../lib/auth";
 
 
 import { createRosterStore } from "../../lib/rosterStoreFactory";
@@ -50,69 +52,87 @@ import {
   type ExamScoreRecord,
 } from "../../core/teacherLog";
 
-const ADMIN_SESSION_KEY = "asx.admin.ok";
-
 export default function AdminPanel() {
-  const [authed, setAuthed] = useState(
-    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"
-  );
+  const auth = useMemo(() => createAuth(), []);
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
 
-  function handleLogout() {
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  useEffect(() => {
+    let active = true;
+    auth.restore().then((restored) => {
+      if (active) {
+        setAuthed(restored);
+        setReady(true);
+      }
+    });
+    return () => { active = false; };
+  }, [auth]);
+
+  async function handleLogout() {
+    await auth.logout();
     setAuthed(false);
   }
 
+  if (!ready) return <div className="card"><p className="muted">관리자 권한 확인 중...</p></div>;
+
   if (!authed)
     return (
-      <SimpleAdminLogin
-        onOk={() => {
-          sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
-          setAuthed(true);
-        }}
-      />
+      <MasterLogin auth={auth} onOk={() => setAuthed(true)} />
     );
-  return <AdminHome onLogout={handleLogout} />;
+  return <AdminHome onLogout={() => void handleLogout()} />;
 }
 
-function SimpleAdminLogin({ onOk }: { onOk: () => void }) {
-  const correctCode = import.meta.env.VITE_ADMIN_ACCESS_CODE as string | undefined ?? "129712";
-  const [code, setCode] = useState("");
+function MasterLogin({ auth, onOk }: { auth: Auth; onOk: () => void }) {
+  const [email, setEmail] = useState(() => localStorage.getItem("asx.admin.email") ?? "");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
-    if (!correctCode) {
-      setError("관리자 접속 코드가 설정되지 않았습니다.");
+  async function submit() {
+    setError("");
+    if (auth.requiresEmail && !email.trim()) return setError("관리자 이메일을 입력하세요.");
+    if (!password) return setError(auth.requiresEmail ? "비밀번호를 입력하세요." : "접속 코드를 입력하세요.");
+    setBusy(true);
+    const result = await auth.login(email.trim(), password);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error ?? "로그인에 실패했습니다.");
+      setPassword("");
       return;
     }
-    if (code.trim() === correctCode) {
-      onOk();
-    } else {
-      setError("접속 코드가 틀렸습니다.");
-      setCode("");
-    }
+    if (auth.requiresEmail) localStorage.setItem("asx.admin.email", email.trim());
+    onOk();
   }
 
   return (
     <div className="card" style={{ maxWidth: 360, margin: "60px auto" }}>
       <h2>관리자 로그인</h2>
-      <p className="muted">관리자 접속 코드를 입력하세요.</p>
+      <p className="muted">학생 화면과 분리된 Master 전용 화면입니다.</p>
       {error && (
         <div className="errors">
           <ul><li>{error}</li></ul>
         </div>
       )}
-      <label>접속 코드</label>
+      {auth.requiresEmail && (
+        <>
+          <label>관리자 이메일</label>
+          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
+          <div style={{ height: 12 }} />
+        </>
+      )}
+      <label>{auth.requiresEmail ? "비밀번호" : "접속 코드"}</label>
       <input
         type="password"
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder="접속 코드 입력"
-        autoFocus
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        onKeyDown={(event) => event.key === "Enter" && void submit()}
+        placeholder={auth.requiresEmail ? "비밀번호 입력" : "접속 코드 입력"}
+        autoComplete="current-password"
+        autoFocus={!auth.requiresEmail}
       />
       <div style={{ height: 12 }} />
-      <button className="btn" onClick={submit}>
-        입장
+      <button className="btn" onClick={() => void submit()} disabled={busy}>
+        {busy ? "확인 중" : "입장"}
       </button>
     </div>
   );

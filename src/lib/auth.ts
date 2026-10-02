@@ -4,6 +4,7 @@ export interface AuthResult {
 }
 
 export interface Auth {
+  restore(): Promise<boolean>;
   // Supabase 모드일 때만 email 사용, simple 모드는 password만 검사
   login(email: string, password: string): Promise<AuthResult>;
   logout(): Promise<void>;
