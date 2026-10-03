@@ -892,6 +892,12 @@ function StepExam({ draft, set }: StepProps) {
         placeholder="예: 3월 전국연합학력평가"
         onChange={(e) => set({ exam: { ...x, examName: e.target.value } })}
       />
+      <label>교재명 (선택)</label>
+      <input
+        value={x.provider ?? ""}
+        placeholder="예: EBS Final 실전 모의고사 1회 / 시행처가 아닌 교재로 푼 경우"
+        onChange={(e) => set({ exam: { ...x, provider: e.target.value } })}
+      />
       <div className="row">
         <div>
           <label>연도</label>
