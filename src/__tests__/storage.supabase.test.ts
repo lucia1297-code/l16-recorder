@@ -55,4 +55,9 @@ describe("Supabase result updates", () => {
     mocks.single.mockResolvedValue({ data: null, error: { message: "permission denied" } });
     await expect(new SupabaseStorage().updateResult(result)).rejects.toThrow("permission denied");
   });
+
+  it("distinguishes zero updated rows from a network failure", async () => {
+    mocks.single.mockResolvedValue({ data: null, error: { code: "PGRST116", message: "Cannot coerce the result to a single JSON object" } });
+    await expect(new SupabaseStorage().updateResult(result)).rejects.toThrow("수정된 기록이 0건입니다");
+  });
 });

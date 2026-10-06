@@ -61,6 +61,7 @@ describe("direct exam score editing", () => {
     fireEvent.change(scoreInput, { target: { value: "89" } });
     fireEvent.click(screen.getByRole("button", { name: "테스트 89점으로 수정 저장" }));
     await screen.findByText(/저장된 점수가 입력한 점수와 다릅니다/);
+    expect(screen.getByRole("alert")).toHaveTextContent("저장 실패");
     expect(screen.getByDisplayValue("89")).toBeInTheDocument();
     expect(screen.getByText("86점")).toBeInTheDocument();
     expect(screen.queryByText(/89점 수정 완료/)).not.toBeInTheDocument();

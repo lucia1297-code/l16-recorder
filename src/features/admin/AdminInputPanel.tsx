@@ -215,7 +215,7 @@ export default function AdminInputPanel() {
       setExamForm(EMPTY_EXAM);
     } catch(e: any) {
       const msg = e?.message ?? e?.details ?? (typeof e === "string" ? e : "알 수 없는 오류");
-      fail(`저장 실패: ${msg} — 네트워크를 확인하고 다시 시도해주세요.`);
+      fail(`저장 실패: ${msg}`);
       console.error("[AdminInput] 모의고사 저장 오류:", e);
     }
     setSaving(false);
@@ -314,7 +314,7 @@ export default function AdminInputPanel() {
           {notice}
         </div>
       )}
-      {error && (
+      {error && (!selectedCode || inputTab !== "exam") && (
         <div style={{ padding:"10px 14px", borderRadius:8, marginBottom:14,
           background:"#fef2f2", border:"1px solid #fca5a5",
           color:"#dc2626", fontSize:13 }}>
@@ -535,6 +535,15 @@ export default function AdminInputPanel() {
                 <Save size={18}/>
                 {saving ? "저장 중…" : scoreChanged ? `${student?.name} ${examForm.score}점으로 수정 저장` : examForm.id ? `${student?.name} 점수 수정` : `${student?.name} 점수 저장`}
               </button>
+
+              {error && (
+                <div role="alert" aria-live="assertive"
+                  style={{ marginTop:12, padding:"12px 14px", borderRadius:8,
+                    background:"#fef2f2", border:"1px solid #fca5a5",
+                    color:"#dc2626", fontSize:13 }}>
+                  {error}
+                </div>
+              )}
 
               {/* 최근 이력 */}
               {recentExams.length > 0 && (

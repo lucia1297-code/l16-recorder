@@ -79,7 +79,12 @@ export class SupabaseStorage implements Storage {
       question_details: r.questionDetails ?? [],
       submitted_at: r.submittedAt,
     }).eq("id", r.id).select("id, score").single();
-    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
+    if (error) {
+      if (error.code === "PGRST116") {
+        throw new Error("수정된 기록이 0건입니다. DB 수정 권한 또는 기록 ID를 확인해야 합니다. (PGRST116)");
+      }
+      throw new Error(`${error.message ?? error.details ?? "DB 수정 요청 실패"}${error.code ? ` (${error.code})` : ""}`);
+    }
     if (!data || data.id !== r.id || data.score !== r.score) {
       throw new Error("점수 수정이 DB에 반영되지 않았습니다. 수정 권한과 로그인 상태를 확인해주세요.");
     }
