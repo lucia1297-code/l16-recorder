@@ -21,6 +21,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Verify exam score editing
+        run: npm test -- --run src/__tests__/storage.test.ts src/__tests__/storage.supabase.test.ts src/__tests__/AdminInputPanel.test.tsx
+
       - run: npx vite build
         env:
           VITE_ADMIN_ACCESS_CODE: ${{ secrets.VITE_ADMIN_ACCESS_CODE }}

@@ -76,6 +76,8 @@ export default function AdminInputPanel() {
   // ── 모의고사 폼 ────────────────────────────────────
   const [examForm, setExamForm] = useState(EMPTY_EXAM);
   const [recentExams, setRecentExams] = useState<ExamResult[]>([]);
+  const originalExam = recentExams.find(exam => exam.id === examForm.id);
+  const scoreChanged = Boolean(originalExam && examForm.score !== "" && Number(examForm.score) !== originalExam.score);
 
   // ── 과제 폼 ────────────────────────────────────────
   const [asgForm,  setAsgForm]  = useState(EMPTY_ASG);
@@ -160,7 +162,9 @@ export default function AdminInputPanel() {
         .filter(n => !isNaN(n) && n > 0);
 
       const isUpdate = !!examForm.id;
+      const existingResult = recentExams.find(exam => exam.id === examForm.id);
       const result: ExamResult = {
+        ...existingResult,
         id: examForm.id || uuidv4(),
         student: {
           studentCode: student.studentCode,
@@ -177,52 +181,38 @@ export default function AdminInputPanel() {
           maxScore: 100,
           provider: examForm.provider || undefined,
         },
-        teacher: "관리자 직접 입력",
+        teacher: existingResult?.teacher ?? "관리자 직접 입력",
         date: examForm.date,
         score,
         wrongAnswers: wrongNos.map(n => ({
           questionNo: n, reasons: [], chosenOption: null,
         })),
         reflection: {
+          ...existingResult?.reflection,
           hardestReason: examForm.memo,
-          nextGoal: "", satisfaction: 0,
+          nextGoal: existingResult?.reflection.nextGoal ?? "",
+          satisfaction: existingResult?.reflection.satisfaction ?? 0,
         },
-        submittedAt: isUpdate ? new Date().toISOString() : new Date().toISOString(),
+        submittedAt: existingResult?.submittedAt ?? new Date().toISOString(),
       };
 
       if (isUpdate) {
-        const updateData = {
-          exam_name: result.exam.examName,
-          year: result.exam.year,
-          month: result.exam.month,
-          round: result.exam.round,
-          provider: result.exam.provider ?? null,
-          date: result.date,
-          score: result.score,
-          wrong_answers: result.wrongAnswers,
-          reflection: result.reflection,
-          submitted_at: result.submittedAt,
-        };
-        await fetch(`${SUPABASE_URL}/rest/v1/results?id=eq.${result.id}`, {
-          method: "PATCH",
-          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify(updateData),
-        }).then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        });
-        notify(`✅ ${student.name} — ${examForm.examName} ${score}점 수정 완료`);
+        await storage.updateResult(result);
       } else {
         await storage.saveResult(result);
-        notify(`✅ ${student.name} — ${examForm.examName} ${score}점 저장 완료`);
       }
 
-      setExamForm(EMPTY_EXAM);
-      storage.listResults().then(all =>
-        setRecentExams(
-          all.filter(r => r.student.studentCode === selectedCode)
-             .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15)
-        )
+      const all = await storage.listResults();
+      const savedResult = all.find(exam => exam.id === result.id);
+      if (!savedResult || savedResult.score !== score) {
+        throw new Error("저장된 점수가 입력한 점수와 다릅니다. 수정 권한과 로그인 상태를 확인해주세요.");
+      }
+      setRecentExams(
+        all.filter(exam => exam.student.studentCode === selectedCode)
+           .sort((first, second) => second.date.localeCompare(first.date)).slice(0, 15)
       );
+      notify(`✅ ${student.name} — ${examForm.examName} ${score}점 ${isUpdate ? "수정" : "저장"} 완료`);
+      setExamForm(EMPTY_EXAM);
     } catch(e: any) {
       const msg = e?.message ?? e?.details ?? (typeof e === "string" ? e : "알 수 없는 오류");
       fail(`저장 실패: ${msg} — 네트워크를 확인하고 다시 시도해주세요.`);
@@ -538,12 +528,12 @@ export default function AdminInputPanel() {
               <button onClick={saveExam} disabled={saving}
                 style={{ width:"100%", padding:"14px", borderRadius:10,
                   border:"none", fontSize:16, fontWeight:800, cursor:"pointer",
-                  background: saving ? "#e2e8f0" : "#7c3aed",
+                  background: saving ? "#e2e8f0" : scoreChanged ? "#16a34a" : "#7c3aed",
                   color: saving ? "#94a3b8" : "#fff",
                   display:"flex", alignItems:"center",
                   justifyContent:"center", gap:8 }}>
                 <Save size={18}/>
-                {saving ? "저장 중…" : examForm.id ? `${student?.name} 점수 수정` : `${student?.name} 점수 저장`}
+                {saving ? "저장 중…" : scoreChanged ? `${student?.name} ${examForm.score}점으로 수정 저장` : examForm.id ? `${student?.name} 점수 수정` : `${student?.name} 점수 저장`}
               </button>
 
               {/* 최근 이력 */}

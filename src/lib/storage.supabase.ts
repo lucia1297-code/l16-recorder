@@ -59,7 +59,7 @@ export class SupabaseStorage implements Storage {
 
   async updateResult(r: ExamResult): Promise<void> {
     const sb = await getClient();
-    const { error } = await sb.from("results").update({
+    const { data, error } = await sb.from("results").update({
       student_code: r.student.studentCode,
       name: r.student.name,
       school: r.student.school,
@@ -70,14 +70,19 @@ export class SupabaseStorage implements Storage {
       round: r.exam.round,
       total_questions: r.exam.totalQuestions,
       max_score: r.exam.maxScore,
+      provider: r.exam.provider ?? null,
       teacher: r.teacher,
       date: r.date,
       score: r.score,
       wrong_answers: r.wrongAnswers,
       reflection: r.reflection,
       question_details: r.questionDetails ?? [],
-    }).eq("id", r.id);
+      submitted_at: r.submittedAt,
+    }).eq("id", r.id).select("id, score").single();
     if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
+    if (!data || data.id !== r.id || data.score !== r.score) {
+      throw new Error("점수 수정이 DB에 반영되지 않았습니다. 수정 권한과 로그인 상태를 확인해주세요.");
+    }
   }
 
   async listResults(): Promise<ExamResult[]> {
