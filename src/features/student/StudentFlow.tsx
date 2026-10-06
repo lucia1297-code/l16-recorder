@@ -2085,7 +2085,7 @@ function AssignmentSubmitForm({
 
           <div style={{ height: 14 }} />
           <button className="btn" onClick={submit} disabled={submitting}>
-            {submitting ? "제출 중…" : "제출하기"}
+            {submitting ? (editingId ? "수정 저장 중…" : "제출 중…") : editingId ? "수정 저장" : "제출하기"}
           </button>
         </>
       )}

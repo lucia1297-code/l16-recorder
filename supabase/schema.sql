@@ -252,5 +252,7 @@ alter table otp_sessions enable row level security;
 alter table results enable row level security;
 drop policy if exists "anon insert" on results;
 drop policy if exists "authenticated select" on results;
+drop policy if exists "authenticated update" on results;
 create policy "anon insert" on results for insert to anon with check (true);
 create policy "authenticated select" on results for select to authenticated using (true);
+create policy "authenticated update" on results for update to authenticated using (true) with check (true);

@@ -57,6 +57,29 @@ export class SupabaseStorage implements Storage {
     if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
   }
 
+  async updateResult(r: ExamResult): Promise<void> {
+    const sb = await getClient();
+    const { error } = await sb.from("results").update({
+      student_code: r.student.studentCode,
+      name: r.student.name,
+      school: r.student.school,
+      grade: r.student.grade,
+      exam_name: r.exam.examName,
+      year: r.exam.year,
+      month: r.exam.month,
+      round: r.exam.round,
+      total_questions: r.exam.totalQuestions,
+      max_score: r.exam.maxScore,
+      teacher: r.teacher,
+      date: r.date,
+      score: r.score,
+      wrong_answers: r.wrongAnswers,
+      reflection: r.reflection,
+      question_details: r.questionDetails ?? [],
+    }).eq("id", r.id);
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
+  }
+
   async listResults(): Promise<ExamResult[]> {
     const sb = await getClient();
     const { data, error } = await sb

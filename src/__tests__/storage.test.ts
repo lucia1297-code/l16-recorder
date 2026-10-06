@@ -27,6 +27,17 @@ describe("LocalStorage adapter", () => {
     expect(all.length).toBe(2);
   });
 
+  it("updates an existing result without adding a duplicate", async () => {
+    const s = new LocalStorage();
+    const result = makeResult("1");
+    await s.saveResult(result);
+    await s.updateResult({ ...result, score: 95 });
+    const all = await s.listResults();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe("1");
+    expect(all[0].score).toBe(95);
+  });
+
   it("persists and loads a draft", async () => {
     const s = new LocalStorage();
     await s.saveDraft({ step: 3, teacher: "김민수", score: 70, solvingTime: null, student: {}, exam: {}, wrongAnswers: [], reflection: {} });

@@ -11,6 +11,14 @@ export class LocalStorage implements Storage {
     localStorage.setItem(RESULTS_KEY, JSON.stringify(all));
   }
 
+  async updateResult(r: ExamResult): Promise<void> {
+    const all = await this.listResults();
+    const index = all.findIndex((item) => item.id === r.id);
+    if (index < 0) throw new Error("수정할 모의고사 기록을 찾을 수 없습니다.");
+    all[index] = r;
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(all));
+  }
+
   async listResults(): Promise<ExamResult[]> {
     const raw = localStorage.getItem(RESULTS_KEY);
     if (!raw) return [];
