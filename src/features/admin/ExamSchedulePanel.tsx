@@ -491,7 +491,7 @@ export default function ExamSchedulePanel() {
                   {/* 마일스톤 마커 */}
                   {studentExamList.map((exam) =>
                     MILESTONE_ITEMS.map(item => {
-                      const dateStr = exam[item.key as keyof ExamSchedule];
+                      const dateStr = String(exam[item.key as keyof ExamSchedule] ?? "");
                       if (!dateStr) return null;
                       const dayIdx = getDateIndex(dateStr as string);
                       const milestoneId = `${exam.id}-${item.key}`;

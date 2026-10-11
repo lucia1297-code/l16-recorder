@@ -141,7 +141,7 @@ export default function AdminInputPanel() {
       round: asg.round,
       score: asg.score ? String(asg.score) : "",
       wrongNos: asg.wrongNumbers.join(", "),
-      completed: asg.completed,
+      completed: asg.completed ?? false,
       totalMinutes: asg.totalMinutes ? String(asg.totalMinutes) : "",
       memo: asg.memo ?? "",
     });

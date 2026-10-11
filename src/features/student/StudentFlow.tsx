@@ -834,12 +834,16 @@ function StepStudent({ draft, set }: StepProps) {
   const s = draft.student;
   return (
     <>
-      <label>학생코드</label>
-      <input
-        value={s.studentCode ?? ""}
-        placeholder="예: S1023"
-        onChange={(e) => set({ student: { ...s, studentCode: e.target.value } })}
-      />
+      {/* 학생코드는 명부에서 자동 부여 — 표시만 */}
+      {s.studentCode && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: "#888" }}>학생코드 (자동)</label>
+          <div style={{
+            padding: "8px 12px", background: "#f3f4f6", borderRadius: 8,
+            fontSize: 14, color: "#6b7280", letterSpacing: 1
+          }}>{s.studentCode}</div>
+        </div>
+      )}
       <label>이름</label>
       <input
         value={s.name ?? ""}
