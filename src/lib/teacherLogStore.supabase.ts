@@ -46,6 +46,13 @@ export class SupabaseTeacherLogStore implements TeacherLogStore {
     return (data ?? []).map(mapRow);
   }
 
+  async listAllLogs(): Promise<TeacherLog[]> {
+    const sb = getClient();
+    const { data, error } = await sb.from("teacher_logs").select("*").order("date", { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(mapRow);
+  }
+
   async getLog(studentCode: string, date: string): Promise<TeacherLog | null> {
     const sb = getClient();
     const { data, error } = await sb
@@ -71,3 +78,4 @@ function mapRow(r: any): TeacherLog {
     classContent: r.class_content ?? "",
   };
 }
+

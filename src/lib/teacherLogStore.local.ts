@@ -29,8 +29,13 @@ export class LocalTeacherLogStore implements TeacherLogStore {
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   }
 
+  async listAllLogs(): Promise<TeacherLog[]> {
+    return (await this.listAll()).sort((a, b) => b.date.localeCompare(a.date));
+  }
+
   async getLog(studentCode: string, date: string): Promise<TeacherLog | null> {
     const all = await this.listAll();
     return all.find((l) => l.studentCode === studentCode && l.date === date) ?? null;
   }
 }
+

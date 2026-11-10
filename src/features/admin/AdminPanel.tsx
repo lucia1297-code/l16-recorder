@@ -1,4 +1,4 @@
-import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3, Search, Users, UserPlus, FolderKanban, PenLine, Package, CalendarDays, Smartphone, CalendarClock, CalendarRange, Calendar, FileText, Calculator, LogOut, BrainCircuit } from "lucide-react";
+import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3, Search, Users, UserPlus, FolderKanban, PenLine, Package, CalendarDays, Smartphone, CalendarClock, CalendarRange, Calendar, FileText, Calculator, LogOut, BrainCircuit, BookOpen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, Fragment, lazy, Suspense } from "react";
 import ExamSchedulePanel from "./ExamSchedulePanel";
 import HelixTodayPanel from "./HelixTodayPanel";
@@ -143,7 +143,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today" | "lesson_overview"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -221,6 +221,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {/* ── 수업 ── */}
         <div className="rail-divider"/>
         <div className="rail-group-label">수업</div>
+        <button className={tab === "lesson_overview" ? "on" : ""} onClick={() => setTab("lesson_overview")}>
+          <BookOpen size={15}/>수업 기록·시험 준비
+        </button>
         <button className={tab === "timetable" ? "on" : ""} onClick={() => setTab("timetable")}>
           <CalendarDays size={15}/>수업 시간표
         </button>
@@ -292,6 +295,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "calculator" && <CalculatorPanelLazy />}
         {tab === "timetable" && <TimetablePanelLazy />}
         {tab === "helix_today" && <HelixTodayPanel />}
+        {tab === "lesson_overview" && <LessonOverviewPanelLazy />}
       </div>
     </div>
   );
@@ -4942,6 +4946,17 @@ function MemoPanelLazy() {
   return <Comp />;
 }
 
+function LessonOverviewPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./LessonOverviewPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>수업 기록 화면을 불러오지 못했습니다: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>수업 기록을 불러오는 중…</p></div>;
+  return <Comp />;
+}
+
 function MaterialPanelLazy() {
   const [Comp, setComp] = useState<React.ComponentType | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -4983,3 +4998,4 @@ function CalculatorPanelLazy() {
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }
+
