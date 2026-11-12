@@ -23,8 +23,19 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefine
 const TASKS_MARKER = "[L16 후속 처리]";
 const styles = `
   .l16-lesson-root{height:100%;min-height:0;overflow:auto;color:${ink};font-family:inherit}
-  .l16-lesson-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(340px,.8fr);gap:16px;align-items:start}
+  .l16-lesson-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:16px;align-items:start}
   .l16-lesson-card{background:#fff;border:1px solid ${line};border-radius:14px;overflow:hidden;box-shadow:0 3px 12px rgba(28,50,85,.045)}
+  .l16-lesson-card.record{background:#eaf1fd;border-color:#cddcf5}
+  .l16-lesson-card.record .l16-lesson-head{background:#dce8fa;border-bottom-color:#cddcf5}
+  .l16-lesson-card.exam{background:#fdf3e3;border-color:#f1dcb8}
+  .l16-lesson-card.exam .l16-lesson-head{background:#f9e6c6;border-bottom-color:#f1dcb8}
+  .l16-lesson-card.exam .l16-lesson-period{border-color:#f1dcb8;background:#fffaf1}
+  .l16-lesson-card.exam .l16-lesson-stat{background:#fffaf1}
+  .l16-lesson-card.record .l16-lesson-stat{background:#f6f9ff;border-color:#cddcf5}
+  .l16-lesson-card.record .l16-lesson-row{border-color:#cddcf5}
+  .l16-lesson-linked{margin-top:14px;padding:12px;background:#e3f3ea;border:1px solid #c5e3d1;border-radius:10px}
+  .l16-lesson-note{margin-top:10px;padding:11px;background:#fbe9d2;border-radius:10px;font-size:10px;color:#7a5a2d;line-height:1.55}
+  .app.l16-app-wide{max-width:none}
   .l16-lesson-head{padding:15px 17px;border-bottom:1px solid ${line};display:flex;align-items:center;justify-content:space-between;gap:10px}
   .l16-lesson-body{padding:16px}
   .l16-lesson-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -52,7 +63,7 @@ const styles = `
   .l16-lesson-table th,.l16-lesson-table td{padding:10px 9px;border-bottom:1px solid #edf0f5;text-align:left;white-space:nowrap}
   .l16-lesson-table th{background:#f6f8fb;color:#66758b;font-size:10px;position:sticky;top:0}
   .l16-lesson-notice{margin:0 0 12px;padding:10px 12px;border-radius:9px;background:#eff6ff;color:#315ba7;font-size:12px}
-  @media(max-width:1050px){.l16-lesson-grid{grid-template-columns:minmax(0,1fr) minmax(300px,.86fr);gap:10px}.l16-lesson-body{padding:12px}}
+  @media(max-width:1050px){.l16-lesson-grid{grid-template-columns:minmax(0,2fr) minmax(250px,1fr);gap:10px}.l16-lesson-body{padding:12px}}
   @media(max-width:760px){.l16-lesson-root{overflow:visible}.l16-lesson-grid{grid-template-columns:1fr}.l16-lesson-head{padding:13px}.l16-lesson-body{padding:13px}.l16-lesson-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.l16-lesson-root button{min-height:40px}.l16-lesson-modal{padding:8px;align-items:end}.l16-lesson-modalbox{max-height:94vh;border-radius:16px 16px 8px 8px}.l16-lesson-modal .l16-lesson-head{position:sticky;top:0;background:white;z-index:2}.l16-lesson-mobile-full{width:100%}}
   @media(max-width:420px){.l16-lesson-stats{grid-template-columns:1fr}.l16-lesson-controls>*{flex:1}.l16-lesson-weeknav{flex:0 0 100%;justify-content:space-between}.l16-lesson-weeknav input{flex:1}.l16-lesson-body{padding:11px}.l16-lesson-root textarea{min-height:82px}}
 `;
@@ -92,6 +103,11 @@ function mapSchedule(r: any, roster: RosterEntry[], source: ExamSchedule["source
   };
 }
 function periodKey(e: ExamSchedule) { return [e.school,e.grade,e.semester,e.examType,e.subject,(e.englishExamDate || e.examStart).slice(0,4)].join("|"); }
+// 이미 지난 시험: 영어 시험일(없으면 시험 종료일·시작일)이 오늘 이전이면 제외
+function isPastExam(e: ExamSchedule, today: string) {
+  const ref = e.englishExamDate || e.examEnd || e.examStart;
+  return !!ref && ref < today;
+}
 function periodName(e: ExamSchedule) { return `${e.school || "학교 미지정"} ${e.grade ? `${e.grade}학년` : ""} · ${e.semester}학기 ${e.examType === "midterm" ? "중간고사" : "기말고사"} · ${e.subject}`; }
 
 export default function LessonOverviewPanel() {
@@ -155,7 +171,8 @@ export default function LessonOverviewPanel() {
       if (alive) {
         setExams(remoteExams);
         setPlans(remotePlans);
-        const upcoming = remoteExams.filter(e => e.englishExamDate).sort((a,b) => a.englishExamDate.localeCompare(b.englishExamDate))[0];
+        const todayStr = dateKey(new Date());
+        const upcoming = remoteExams.filter(e => e.englishExamDate && !isPastExam(e, todayStr)).sort((a,b) => a.englishExamDate.localeCompare(b.englishExamDate))[0];
         if (upcoming) setPeriod(periodKey(upcoming));
         setLoading(false);
       }
@@ -164,13 +181,20 @@ export default function LessonOverviewPanel() {
     return () => { alive = false; };
   }, [rosterStore, logStore]);
 
+  useEffect(() => {
+    const shell = document.querySelector(".app");
+    shell?.classList.add("l16-app-wide");
+    return () => { shell?.classList.remove("l16-app-wide"); };
+  }, []);
+
   const selectedStudent = roster.find(s => s.studentCode === studentCode);
   const weekLogs = useMemo(() => logs.filter(l => l.studentCode === studentCode && l.date >= monday && l.date <= shiftDate(monday,6)).sort((a,b) => b.date.localeCompare(a.date)), [logs, studentCode, monday]);
   const weekPendingCount = weekLogs.flatMap(l => decodeLogNotes(l.notes ?? "").tasks).filter(t => !t.done).length;
   const currentLog = logs.find(l => l.studentCode === studentCode && l.date === lessonDate);
   const periodGroups = useMemo(() => {
     const groups = new Map<string, ExamSchedule[]>();
-    exams.filter(e => e.englishExamDate || e.examStart).forEach(e => { const key = periodKey(e); groups.set(key, [...(groups.get(key) ?? []), e]); });
+    const todayStr = dateKey(new Date());
+    exams.filter(e => (e.englishExamDate || e.examStart) && !isPastExam(e, todayStr)).forEach(e => { const key = periodKey(e); groups.set(key, [...(groups.get(key) ?? []), e]); });
     return [...groups.entries()].map(([key, rows]) => ({ key, rows: rows.sort((a,b) => a.englishExamDate.localeCompare(b.englishExamDate)), exemplar: rows[0] }));
   }, [exams]);
   const activePeriod = periodGroups.find(g => g.key === period) ?? periodGroups[0];
@@ -257,7 +281,7 @@ export default function LessonOverviewPanel() {
     </div>
     {notice && <p className="l16-lesson-notice">{notice}</p>}
     <div className="l16-lesson-grid">
-      <section className="l16-lesson-card">
+      <section className="l16-lesson-card record">
         <div className="l16-lesson-head"><div><strong style={{fontSize:15}}>이번 주 수업 기록</strong><div style={{fontSize:11,color:"#7b899e",marginTop:4}}>{weekLabel(monday)} · {weekLogs.length}회 기록</div></div>
           <div className="l16-lesson-weeknav"><button className="l16-lesson-ghost" aria-label="이전 주" onClick={()=>chooseWeek(shiftDate(monday,-7))}><ChevronLeft size={16}/></button><input aria-label="수업 주간 선택" type="date" className="l16-lesson-input" style={{width:150}} value={monday} onChange={e=>chooseWeek(e.target.value)}/><button className="l16-lesson-ghost" aria-label="다음 주" onClick={()=>chooseWeek(shiftDate(monday,7))}><ChevronRight size={16}/></button></div>
         </div>
@@ -280,14 +304,14 @@ export default function LessonOverviewPanel() {
             <div className="l16-lesson-controls" style={{marginTop:12}}><button className="l16-lesson-primary" onClick={()=>void saveLesson()} disabled={saving}><Save size={15}/>{saving?"저장 중":"수업 기록 저장"}</button><button className="l16-lesson-ghost" onClick={createLinkedMemo}><NotebookPen size={15}/>기존 메모장에 연결</button></div>
             <div style={{fontSize:10,color:"#8290a4",marginTop:8}}>수업 기록은 기존 teacher_logs 저장소에, 연결 메모는 L16 메모장 저장소에 각각 기록됩니다.</div>
           </div>
-          <div style={{marginTop:14,padding:12,background:pale,borderRadius:10}}><strong style={{fontSize:12}}>연결된 메모</strong>{memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).length===0?<div style={{fontSize:11,color:"#7b899e",marginTop:6}}>이 수업과 연결된 메모가 없습니다.</div>:memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).map(m=><div key={m.id} style={{fontSize:12,marginTop:6}}><FileText size={13} style={{verticalAlign:"middle",marginRight:5}}/>{m.title}</div>)}</div>
+          <div className="l16-lesson-linked"><strong style={{fontSize:12}}>연결된 메모</strong>{memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).length===0?<div style={{fontSize:11,color:"#7b899e",marginTop:6}}>이 수업과 연결된 메모가 없습니다.</div>:memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).map(m=><div key={m.id} style={{fontSize:12,marginTop:6}}><FileText size={13} style={{verticalAlign:"middle",marginRight:5}}/>{m.title}</div>)}</div>
         </div>
       </section>
 
-      <section className="l16-lesson-card">
+      <section className="l16-lesson-card exam">
         <div className="l16-lesson-head"><div><strong style={{fontSize:15}}>시험기간 준비 현황</strong><div style={{fontSize:11,color:"#7b899e",marginTop:4}}>시험 일정을 찾아 준비 계획과 진행 상황을 함께 관리합니다.</div></div><button className="l16-lesson-ghost" onClick={()=>setCompareOpen(true)} disabled={!activeExams.length}><Users size={15}/>시험기간 확인</button></div>
         <div className="l16-lesson-body">
-          {periodGroups.length===0 ? <div style={{padding:18,textAlign:"center",color:"#8290a4",fontSize:12}}>등록된 시험 일정이 없습니다. 기존 시험일정 메뉴에서 먼저 등록해 주세요.</div> : <>
+          {periodGroups.length===0 ? <div style={{padding:18,textAlign:"center",color:"#8290a4",fontSize:12}}>예정된 시험 일정이 없습니다. 지난 시험은 표시하지 않으며, 새 시험은 시험일정 메뉴에서 등록해 주세요.</div> : <>
             <label className="l16-lesson-label" style={{marginTop:0}}>확인할 시험기간</label><select className="l16-lesson-input" value={activePeriod?.key ?? ""} onChange={e=>setPeriod(e.target.value)}>{periodGroups.map(g=><option key={g.key} value={g.key}>{periodName(g.exemplar)} · {g.rows.length}명</option>)}</select>
             {activeExams.map(exam=>{
               const related=plans.filter(p=>p.exam_id===exam.id||(p.student_code===exam.studentCode&&p.english_exam_date===exam.englishExamDate));
@@ -303,7 +327,7 @@ export default function LessonOverviewPanel() {
                 <button className="l16-lesson-ghost l16-lesson-mobile-full" onClick={()=>{setEditExam(exam);setExamDraft({...exam});}}><Pencil size={14}/>일정·범위 수정</button>
               </div>;
             })}
-            <div style={{marginTop:10,padding:11,background:pale,borderRadius:10,fontSize:10,color:"#66758b",lineHeight:1.55}}>학생 간 비교는 시험일까지 남은 기간, 준비 작업 완료율, 수업 기록 횟수, 후속 처리 건수를 나란히 보여줍니다. 학업 능력 순위나 성적 비교로 사용하지 않습니다.</div>
+            <div className="l16-lesson-note">학생 간 비교는 시험일까지 남은 기간, 준비 작업 완료율, 수업 기록 횟수, 후속 처리 건수를 나란히 보여줍니다. 학업 능력 순위나 성적 비교로 사용하지 않습니다.</div>
           </>}
         </div>
       </section>
