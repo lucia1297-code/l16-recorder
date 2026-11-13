@@ -5,8 +5,8 @@
 
 :root {
   /* Color — 종이와 잉크 */
-  --paper: #d9ecfa;      /* 페이지 바탕 — 산뜻한 하늘빛 */
-  --card-face: #f0f8ff;  /* 본문 카드 면 (메뉴탭은 --paper-raised 유지) */
+  --paper: #ffffff;      /* 페이지 바탕 — 흰색 고정 */
+  --card-face: #fce4ec;  /* 본문 카드 면 — 연분홍 (lib/theme.ts 로 변경 가능) */
   --paper-raised: #ffffff;
   --ink: #1a2332;
   --ink-soft: #55606f;

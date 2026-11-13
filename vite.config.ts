@@ -29,7 +29,7 @@ export default defineConfig({
         short_name: "L16 Recorder",
         description: "학생 시험 결과 및 오답 기록 앱",
         theme_color: "#2B4C7E",
-        background_color: "#D9ECFA",
+        background_color: "#FFFFFF",
         display: "standalone",
         start_url: "/l16-recorder/",
         scope: "/l16-recorder/",

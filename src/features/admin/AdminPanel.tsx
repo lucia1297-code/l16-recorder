@@ -1,7 +1,8 @@
-import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3, Search, Users, UserPlus, FolderKanban, PenLine, Package, CalendarDays, Smartphone, CalendarClock, CalendarRange, Calendar, FileText, Calculator, LogOut, BrainCircuit, BookOpen } from "lucide-react";
+import { LayoutDashboard, ClipboardList, FileInput, MessageSquare, Download, CalendarPlus, CheckCircle, XCircle, Clock, Send , Mic, BarChart3, Search, Users, UserPlus, FolderKanban, PenLine, Package, CalendarDays, Smartphone, CalendarClock, CalendarRange, Calendar, FileText, Calculator, LogOut, BrainCircuit, BookOpen, Palette } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, Fragment, lazy, Suspense } from "react";
 import ExamSchedulePanel from "./ExamSchedulePanel";
 import HelixTodayPanel from "./HelixTodayPanel";
+import ThemePanel from "./ThemePanel";
 import { addScheduledSms, listScheduledSms, cancelScheduledSms, deleteScheduledSms, type ScheduledSms } from "../../lib/scheduledSms";
 import type { ExamResult } from "../../core/types";
 import { WRONG_REASON_LABELS, type WrongReason } from "../../core/types";
@@ -143,7 +144,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today" | "lesson_overview"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today" | "lesson_overview" | "theme"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -264,6 +265,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "calculator" ? "on" : ""} onClick={() => setTab("calculator")}>
           <Calculator size={15}/>계산기
         </button>
+        <button className={tab === "theme" ? "on" : ""} onClick={() => setTab("theme")}>
+          <Palette size={15}/>화면 색상
+        </button>
         <div className="rail-divider"/>
         <button className="btn ghost" onClick={onLogout} style={{ marginTop:4 }}>
           <LogOut size={15}/>로그아웃
@@ -293,6 +297,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "material" && <MaterialPanelLazy />}
         {tab === "schedule" && <SchedulePanelLazy />}
         {tab === "calculator" && <CalculatorPanelLazy />}
+        {tab === "theme" && <ThemePanel />}
         {tab === "timetable" && <TimetablePanelLazy />}
         {tab === "helix_today" && <HelixTodayPanel />}
         {tab === "lesson_overview" && <LessonOverviewPanelLazy />}
