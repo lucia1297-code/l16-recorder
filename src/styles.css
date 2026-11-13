@@ -5,7 +5,8 @@
 
 :root {
   /* Color — 종이와 잉크 */
-  --paper: #faf9f6;
+  --paper: #d9ecfa;      /* 페이지 바탕 — 산뜻한 하늘빛 */
+  --card-face: #f0f8ff;  /* 본문 카드 면 (메뉴탭은 --paper-raised 유지) */
   --paper-raised: #ffffff;
   --ink: #1a2332;
   --ink-soft: #55606f;
@@ -100,7 +101,7 @@ body {
 
 /* ── Card ─────────────────────────────────────────────────── */
 .card {
-  background: var(--paper-raised);
+  background: var(--card-face);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 24px 20px;
