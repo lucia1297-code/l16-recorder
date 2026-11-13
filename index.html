@@ -17,5 +17,21 @@
   <link rel="manifest" href="/l16-recorder/manifest.webmanifest"></head>
   <body>
     <div id="root"></div>
+    <script>
+      // 빈 화면 자동 복구: 새 배포로 사라진 옛 파일을 캐시(서비스워커)가 계속 내주면
+      // 앱이 그려지지 않는다. 5초 안에 화면이 안 뜨면 캐시·서비스워커를 지우고 1회 새로고침한다.
+      (function () {
+        var KEY = "l16.bootHealed";
+        function heal() {
+          try { if (sessionStorage.getItem(KEY) === "1") return; sessionStorage.setItem(KEY, "1"); } catch (e) { return; }
+          var jobs = [];
+          if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+          if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+          Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+        }
+        window.addEventListener("error", function (e) { var t = e.target; if (t && t.tagName === "SCRIPT") heal(); }, true);
+        setTimeout(function () { var r = document.getElementById("root"); if (r && !r.firstChild) heal(); }, 5000);
+      })();
+    </script>
   </body>
 </html>
