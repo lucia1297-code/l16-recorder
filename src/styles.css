@@ -137,6 +137,13 @@ input, select, textarea {
   color: var(--ink);
   transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
+/* 체크박스·라디오는 위의 width:100% / padding 을 상속하면 안 된다.
+   상속하면 줄 전체를 차지해 옆 내용이 한 글자 폭으로 밀린다. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; min-width: 0; flex: none; padding: 0; margin: 0;
+  border-radius: 0; border-width: 1px; font-size: inherit;
+}
+
 input:focus, select:focus, textarea:focus {
   outline: none; border-color: var(--mark); box-shadow: 0 0 0 3px var(--mark-tint);
 }
