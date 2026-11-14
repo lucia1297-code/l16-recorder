@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
 import ExamMaterialDropzone from "./ExamMaterialDropzone";
+import { isPastDate, isPastExamDates, localTodayStr } from "../../lib/examUtils";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -337,11 +338,15 @@ export default function ExamPrepPanel() {
   }
 
   const activeRoster = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
+  const todayStr = localTodayStr();
+  // 학생이 직접 등록한 시험도 지난 것은 숨긴다
+  const visibleStudentExams = studentExams.filter(e => !isPastDate(e.english_exam_date, todayStr));
   const filteredExams = exams.filter(ex => {
     if (selectedStudent && ex.studentCode !== selectedStudent) return false;
-    if (viewFilter === "upcoming") return !ex.completed;
-    if (viewFilter === "completed") return ex.completed;
-    return true;
+    const past = isPastExamDates(ex, todayStr);
+    if (viewFilter === "upcoming") return !ex.completed && !past; // 진행중: 아직 안 지난 시험만
+    if (viewFilter === "completed") return ex.completed || past;  // 완료·지난 시험은 여기서만 확인
+    return !past;                                                  // 전체: 지난 시험 제외
   }).sort((a, b) => (a.englishExamDate || "z").localeCompare(b.englishExamDate || "z"));
 
   return (
@@ -353,7 +358,7 @@ export default function ExamPrepPanel() {
           <div style={{ display:"flex", background:"#f1f5f9", borderRadius:8, padding:2, gap:2 }}>
             {([
               {key:"admin", label:"📋 내 관리"},
-              {key:"student", label:`📩 학생등록 ${studentExams.length > 0 ? `(${studentExams.length})` : ""}`},
+              {key:"student", label:`📩 학생등록 ${visibleStudentExams.length > 0 ? `(${visibleStudentExams.length})` : ""}`},
               {key:"consult", label:`💬 상담 ${consultMsgs.filter(m=>!m.admin_reply).length > 0 ? `(${consultMsgs.filter(m=>!m.admin_reply).length})` : ""}`},
             ] as const).map(t => (
               <button key={t.key} onClick={() => setViewMode(t.key)}
@@ -394,11 +399,11 @@ export default function ExamPrepPanel() {
       {viewMode === "student" && (
         <div>
           <p style={{ fontSize:13, color:"#64748b", marginBottom:12 }}>학생이 직접 등록한 시험 일정입니다. 확인 후 처리해주세요.</p>
-          {studentExams.length === 0 ? (
+          {visibleStudentExams.length === 0 ? (
             <p style={{ color:"#94a3b8", textAlign:"center", padding:"30px 0" }}>학생이 등록한 시험이 없습니다.</p>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {studentExams
+              {visibleStudentExams
                 .filter(e => !selectedStudent || e.student_code === selectedStudent)
                 .map((ex, i) => {
                   const dl = ex.english_exam_date
@@ -533,7 +538,7 @@ export default function ExamPrepPanel() {
               style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:600, cursor:"pointer",
                 background: viewFilter === f ? "#7c3aed" : "transparent",
                 color: viewFilter === f ? "#fff" : "#64748b" }}>
-              {f === "upcoming" ? "진행중" : f === "completed" ? "완료" : "전체"}
+              {f === "upcoming" ? "진행중" : f === "completed" ? "완료·지난" : "전체"}
             </button>
           ))}
         </div>

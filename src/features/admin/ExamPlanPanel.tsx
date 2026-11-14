@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { loadLocalExams, supabaseToUnified, mergeExams } from "../../lib/examUtils";
+import { loadLocalExams, supabaseToUnified, mergeExams, isPastDate } from "../../lib/examUtils";
 import type { UnifiedExam } from "../../lib/examUtils";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
@@ -266,6 +266,7 @@ export default function ExamPlanPanel() {
   const grades = [...new Set(exams.map(e => e.grade).filter(Boolean))];
 
   const filteredExams = exams.filter(e =>
+    !isPastDate(e.english_exam_date) && // 이미 지난 시험은 숨김
     (!filterStudent || e.student_code === filterStudent) &&
     (!filterSchool || e.school === filterSchool) &&
     (!filterGrade || e.grade === filterGrade)

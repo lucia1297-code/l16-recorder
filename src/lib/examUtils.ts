@@ -132,3 +132,24 @@ export function loadLocalExams(roster: RosterEntry[]): UnifiedExam[] {
     return [];
   }
 }
+
+// ── 지난 시험 판별 (모든 시험 화면 공통) ──────────────────────
+/** 오늘 날짜(YYYY-MM-DD, 기기 로컬 시간대 기준). toISOString은 UTC라 한국 새벽에 하루 어긋남. */
+export function localTodayStr(d: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** 이미 지난 날짜인가 (오늘은 지난 것이 아님). 날짜가 비어 있으면 판단 불가 → false. */
+export function isPastDate(date: string | null | undefined, today: string = localTodayStr()): boolean {
+  const d = (date ?? "").slice(0, 10);
+  return !!d && d < today;
+}
+
+/** 지난 시험인가: 영어 시험일(없으면 시험 종료일 → 시작일)이 오늘 이전. 날짜가 전혀 없으면 false. */
+export function isPastExamDates(
+  ex: { englishExamDate?: string | null; examEnd?: string | null; examStart?: string | null },
+  today: string = localTodayStr(),
+): boolean {
+  return isPastDate(ex.englishExamDate || ex.examEnd || ex.examStart, today);
+}

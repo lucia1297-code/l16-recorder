@@ -1,5 +1,6 @@
 import { Calendar, MessageSquare, Send, CheckCircle, XCircle, Clock, PlusCircle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { isPastDate } from "../../lib/examUtils";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -238,9 +239,9 @@ export default function StudentExamRegister({
 
           {/* 등록된 시험 목록 */}
           {loading ? <p style={{ color:"#94a3b8" }}>로딩 중…</p> :
-           exams.length === 0 ? <p style={{ color:"#94a3b8", textAlign:"center", padding:"24px 0" }}>등록된 시험이 없습니다.</p> : (
+           exams.filter(x => !isPastDate(x.english_exam_date)).length === 0 ? <p style={{ color:"#94a3b8", textAlign:"center", padding:"24px 0" }}>예정된 시험이 없습니다.</p> : (
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {exams.map((ex, i) => {
+              {exams.filter(x => !isPastDate(x.english_exam_date)).map((ex, i) => {
                 const dl = daysLeft(ex.english_exam_date);
                 const urgent = dl !== null && dl >= 0 && dl <= 7;
                 return (

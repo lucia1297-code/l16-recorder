@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
+import { isPastExamDates } from "../../lib/examUtils";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -101,6 +102,9 @@ export default function ExamSchedulePanel() {
     }
   }
 
+  // 이미 지난 시험은 차트에서 제외 (범위 계산·학생 행 모두 이 목록 기준)
+  const visibleExams = useMemo(() => exams.filter(e => !isPastExamDates(e)), [exams]);
+
   // 날짜 범위 계산 — 오늘 날짜가 항상 범위 안에 들어오도록 보장한다.
   const dateRange = useMemo(() => {
     const today = new Date();
@@ -110,7 +114,7 @@ export default function ExamSchedulePanel() {
     let maxDate = new Date(today);
     let hasData = false;
 
-    exams.forEach(exam => {
+    visibleExams.forEach(exam => {
       const dates = [
         exam.reportDeadline,
         exam.examStart,
@@ -141,7 +145,7 @@ export default function ExamSchedulePanel() {
     }
 
     return { minDate, maxDate, today };
-  }, [exams]);
+  }, [visibleExams]);
 
   // 날짜를 일 인덱스로 변환
   function getDateIndex(dateStr: string): number {
@@ -187,7 +191,7 @@ export default function ExamSchedulePanel() {
   if (loading) return <div className="card">로딩 중...</div>;
 
   const studentExams = new Map<string, ExamSchedule[]>();
-  exams.forEach(exam => {
+  visibleExams.forEach(exam => {
     if (!studentExams.has(exam.studentCode)) {
       studentExams.set(exam.studentCode, []);
     }

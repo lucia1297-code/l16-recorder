@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
+import { isPastDate, localTodayStr } from "../../lib/examUtils";
 
 const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -46,7 +47,7 @@ interface ScheduleEvent {
   created_at: string;
 }
 
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = localTodayStr();
 
 function toKey(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
@@ -191,7 +192,9 @@ export default function SchedulePanel() {
 
   const active = roster.filter(r => (r.studentStatus ?? "active") !== "withdrawn");
 
+  const todayLocal = localTodayStr();
   const filtered = events.filter(e =>
+    !isPastDate(e.end_date || e.event_date, todayLocal) && // 끝난 일정은 숨김
     (!filterStudent || e.student_code === filterStudent) &&
     (!filterCat    || e.category === filterCat) &&
     (!filterStatus || e.status === filterStatus)
