@@ -48,6 +48,7 @@ export default function ItemBankPanel() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,6 +62,7 @@ export default function ItemBankPanel() {
       setItems(i);
       setResponses(r);
       setReviews(v);
+      if (i.length === 0) setGuideOpen(true); // 처음 쓰는 화면이면 안내를 펼쳐 둔다
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     } finally {
@@ -194,6 +196,55 @@ export default function ItemBankPanel() {
         </p>
       </div>
 
+      <div className="card" style={card}>
+        <button
+          className="btn ghost"
+          onClick={() => setGuideOpen((v) => !v)}
+          style={{ marginBottom: guideOpen ? 10 : 0 }}
+        >
+          {guideOpen ? "▾" : "▸"} 사용 방법
+        </button>
+        {guideOpen && (
+          <div style={{ lineHeight: 1.75 }}>
+            <p style={{ marginTop: 0 }}>
+              <b>언제 쓰나</b> — 시험지를 만든 직후 1단계, 시험을 보고 채점한 뒤 2단계, 다음 세트를
+              만들기 전에 3단계로 어떤 문항을 다시 쓸지 고릅니다.
+            </p>
+            <p>
+              <b>1단계 · 문항 등록</b> (아래) — 문항마다 한 줄씩 적습니다. 엑셀에서 복사해 붙여 넣어도
+              됩니다. <code>id</code>는 문항마다 달라야 하고, <code>answer</code>는 정답,
+              <code> A1~A6</code>은 선생님이 매긴 6축 설계값(1 쉬움 ~ 5 어려움)입니다.
+            </p>
+            <pre style={{ background: "#f8fafc", padding: 10, overflowX: "auto", fontSize: 12 }}>
+{`id,set,school,no,source,points,answer,A1,A2,A3,A4,A5,A6
+GN2-S1-01,Set1,광남고,1,교과서,3,3,2,3,3,2,3,3
+GN2-S1-02,Set1,광남고,2,모의고사,4,5,4,4,3,4,4,4`}
+            </pre>
+            <p>
+              <b>2단계 · 응시 결과 입력</b> (아래) — 채점한 답안지를 보고 학생이 <b>고른 답</b>만
+              적습니다. 맞았는지 틀렸는지는 쓰지 않습니다. 1단계의 정답과 비교해 자동으로 계산합니다.
+              <code> session</code>은 회차 이름이라, 같은 문항을 다른 반·다른 달에 또 쓰면 회차만 바꿔
+              넣으면 됩니다.
+            </p>
+            <pre style={{ background: "#f8fafc", padding: 10, overflowX: "auto", fontSize: 12 }}>
+{`item_id,student_code,chosen,session
+GN2-S1-01,C0E8E00E,3,2026-11-기말
+GN2-S1-01,QW3PG99P,5,2026-11-기말`}
+            </pre>
+            <p>
+              <b>3단계 · 확인과 검수</b> (위 표) — 정답률·변별도·등급이 자동으로 뜹니다. 행을 누르면
+              승인·보류·수정 필요·오류 신고를 기록할 수 있습니다. 판매본에는 A등급만 씁니다.
+            </p>
+            <p style={{ marginBottom: 0, color: "#475569" }}>
+              <b>저장 위치</b> — 입력한 내용은 L16 Supabase에 남습니다(문항 item_bank, 학생 답
+              item_responses, 검수 이력 item_reviews). 화면을 닫거나 다른 기기에서 열어도 그대로
+              있습니다. 정답률·등급은 저장하지 않고 열 때마다 다시 계산하므로, 응시 결과를 더 넣으면
+              숫자가 바뀝니다.
+            </p>
+          </div>
+        )}
+      </div>
+
       {err && (
         <div className="card" style={{ ...card, borderColor: "#ef4444", color: "#b91c1c" }}>
           {err}
@@ -225,7 +276,7 @@ export default function ItemBankPanel() {
           <p style={{ color: "#94a3b8" }}>로딩 중…</p>
         ) : shown.length === 0 ? (
           <p style={{ color: "#94a3b8" }}>
-            등록된 문항이 없습니다. 아래 "문항 등록"에 붙여 넣어 시작하세요.
+            등록된 문항이 없습니다. 위 "사용 방법"을 펼쳐 보시고, 아래 "1단계 · 문항 등록"부터 시작하세요.
           </p>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -335,7 +386,7 @@ export default function ItemBankPanel() {
       </div>
 
       <div className="card" style={card}>
-        <h3 style={{ marginTop: 0 }}>문항 등록</h3>
+        <h3 style={{ marginTop: 0 }}>1단계 · 문항 등록</h3>
         <p style={{ color: "#64748b", marginTop: 0 }}>
           쉼표 또는 탭으로 구분하고 첫 줄은 헤더입니다. 필수: id, set, no, answer. A1~A6은 1(쉬움)~5(어려움).
           같은 id를 다시 올리면 설계값만 갱신되고 검수 상태는 유지됩니다.
@@ -356,7 +407,7 @@ export default function ItemBankPanel() {
       </div>
 
       <div className="card" style={card}>
-        <h3 style={{ marginTop: 0 }}>응시 결과 입력</h3>
+        <h3 style={{ marginTop: 0 }}>2단계 · 응시 결과 입력</h3>
         <p style={{ color: "#64748b", marginTop: 0 }}>
           필수: item_id, student_code, chosen(학생이 고른 답). session은 시험 회차 구분용입니다.
           같은 학생·문항·회차를 다시 올리면 덮어씁니다. 정오는 문항의 정답과 비교해 자동 계산됩니다.
