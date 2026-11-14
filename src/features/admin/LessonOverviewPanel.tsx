@@ -221,9 +221,13 @@ export default function LessonOverviewPanel() {
     setClassContent(log?.classContent ?? ""); setNextPlan(log?.nextPlan ?? ""); setTeacherMemo(decoded.memo); setFollowUps(decoded.tasks);
   }, [logs, lessonDate, studentCode]);
 
+  // 학생·날짜가 바뀌면 아직 추가하지 않은 후속 처리 초안을 비운다.
+  // 비우지 않으면 앞 학생에게 쓰던 문구가 남아 다음 학생 기록에 들어간다.
+  useEffect(() => { setNewTask(""); setNewTaskDue(""); }, [studentCode, lessonDate]);
+
   function chooseWeek(value: string) { const next = mondayOf(value); setMonday(next); setLessonDate(value >= next && value <= shiftDate(next,6) ? value : next); }
   function openLog(log: TeacherLog) { setStudentCode(log.studentCode); setMonday(mondayOf(log.date)); setLessonDate(log.date); setNotice(""); }
-  function startNewLesson() { setLessonDate(dateKey(new Date())); setClassContent(""); setNextPlan(""); setTeacherMemo(""); setFollowUps([]); }
+  function startNewLesson() { setLessonDate(dateKey(new Date())); setClassContent(""); setNextPlan(""); setTeacherMemo(""); setFollowUps([]); setNewTask(""); setNewTaskDue(""); }
   function addTask() { if (!newTask.trim()) return; setFollowUps(prev => [...prev, { id: crypto.randomUUID(), due: newTaskDue, text: newTask.trim(), done: false }]); setNewTask(""); setNewTaskDue(""); }
   function updateTask(id: string, patch: Partial<FollowUp>) { setFollowUps(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t)); }
   async function saveLesson() {
