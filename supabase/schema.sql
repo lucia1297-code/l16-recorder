@@ -300,3 +300,18 @@ create policy "anon all item_reviews" on item_reviews for all to anon using (tru
 create policy "auth all item_bank" on item_bank for all to authenticated using (true) with check (true);
 create policy "auth all item_responses" on item_responses for all to authenticated using (true) with check (true);
 create policy "auth all item_reviews" on item_reviews for all to authenticated using (true) with check (true);
+
+-- ── 시험 회차 (학생 답안 수집) ──  2026-11-14 추가, 마이그레이션 item_sessions
+create table if not exists item_sessions (
+  id uuid primary key default gen_random_uuid(),
+  set_name text not null,
+  session_name text not null,
+  school text not null default '',
+  question_count int not null default 0,
+  is_open boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (set_name, session_name)
+);
+alter table item_sessions enable row level security;
+create policy "anon all item_sessions" on item_sessions for all to anon using (true) with check (true);
+create policy "auth all item_sessions" on item_sessions for all to authenticated using (true) with check (true);

@@ -11,7 +11,7 @@ import {
   type ItemStats,
   type Response,
 } from "../../core/itemAnalytics";
-import { itemBankStore, type ReviewRow } from "../../lib/itemBankStore";
+import { itemBankStore, type ExamSession, type ReviewRow } from "../../lib/itemBankStore";
 
 const GRADE_COLOR: Record<Grade, { bg: string; fg: string }> = {
   A: { bg: "#dcfce7", fg: "#166534" },
@@ -49,19 +49,27 @@ export default function ItemBankPanel() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [sessions, setSessions] = useState<ExamSession[]>([]);
+  const [takerCount, setTakerCount] = useState<Record<string, number>>({});
+  const [newSet, setNewSet] = useState("");
+  const [newSession, setNewSession] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
-      const [i, r, v] = await Promise.all([
+      const [i, r, v, se, tc] = await Promise.all([
         itemBankStore.listItems(),
         itemBankStore.listResponses(),
         itemBankStore.listReviews(),
+        itemBankStore.listSessions(),
+        itemBankStore.countBySession(),
       ]);
       setItems(i);
       setResponses(r);
       setReviews(v);
+      setSessions(se);
+      setTakerCount(tc);
       if (i.length === 0) setGuideOpen(true); // 처음 쓰는 화면이면 안내를 펼쳐 둔다
     } catch (e: any) {
       setErr(String(e?.message ?? e));
@@ -241,6 +249,104 @@ GN2-S1-01,QW3PG99P,5,2026-11-기말`}
               있습니다. 정답률·등급은 저장하지 않고 열 때마다 다시 계산하므로, 응시 결과를 더 넣으면
               숫자가 바뀝니다.
             </p>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={card}>
+        <h3 style={{ marginTop: 0 }}>시험 회차 — 학생 답안 받기</h3>
+        <p style={{ color: "#64748b", marginTop: 0 }}>
+          회차를 열면 학생 앱 첫 화면에 "시험 답안 제출"이 뜹니다. 학생이 자기 답을 넣으면 채점과
+          통계가 자동으로 계산되므로, 선생님이 답안을 옮겨 적을 일이 없습니다. 시험이 끝나면 닫아
+          두세요.
+        </p>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          <select value={newSet} onChange={(e) => setNewSet(e.target.value)}>
+            <option value="">세트 선택</option>
+            {sets
+              .filter((x) => x !== "전체")
+              .map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+          </select>
+          <input
+            value={newSession}
+            onChange={(e) => setNewSession(e.target.value)}
+            placeholder="회차 이름 (예: 2026-11-기말)"
+            style={{ minWidth: 200 }}
+          />
+          <button
+            className="btn"
+            disabled={busy || !newSet || !newSession.trim()}
+            onClick={() =>
+              run("회차 열기", async () => {
+                const inSet = items.filter((i) => i.setName === newSet);
+                await itemBankStore.createSession(
+                  newSet,
+                  newSession.trim(),
+                  inSet[0]?.school ?? "",
+                  inSet.length,
+                );
+                const name = newSession.trim();
+                setNewSession("");
+                return `"${name}" 회차를 열었습니다. 학생 앱에서 답안을 받을 수 있습니다.`;
+              })
+            }
+          >
+            회차 열기
+          </button>
+        </div>
+        {sessions.length === 0 ? (
+          <p style={{ color: "#94a3b8", marginBottom: 0 }}>
+            아직 연 회차가 없습니다. 문항을 먼저 등록한 뒤 세트를 골라 회차를 여세요.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            {sessions.map((se) => (
+              <div
+                key={se.id}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background: se.isOpen ? "#f0f9ff" : "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <b>{se.sessionName}</b>
+                <span style={{ color: "#64748b", fontSize: 13 }}>
+                  {se.setName} · {se.questionCount}문항 · 제출 {takerCount[se.sessionName] ?? 0}명
+                </span>
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: se.isOpen ? "#dcfce7" : "#e2e8f0",
+                    color: se.isOpen ? "#166534" : "#475569",
+                  }}
+                >
+                  {se.isOpen ? "받는 중" : "닫힘"}
+                </span>
+                <button
+                  className="btn ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    run(se.isOpen ? "회차 닫기" : "회차 열기", async () => {
+                      await itemBankStore.setSessionOpen(se.id, !se.isOpen);
+                      return `${se.sessionName}: ${se.isOpen ? "닫았습니다" : "다시 엽니다"}`;
+                    })
+                  }
+                >
+                  {se.isOpen ? "닫기" : "열기"}
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>

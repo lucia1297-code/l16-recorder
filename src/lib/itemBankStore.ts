@@ -12,6 +12,16 @@ function client(): SupabaseClient {
   return cached;
 }
 
+/** 시험 회차. 학생 앱은 이 표만 읽고 item_bank(정답 포함)는 읽지 않는다. */
+export interface ExamSession {
+  id: string;
+  setName: string;
+  sessionName: string;
+  school: string;
+  questionCount: number;
+  isOpen: boolean;
+}
+
 export interface ReviewRow {
   id: string;
   itemId: string;
@@ -75,6 +85,105 @@ export const itemBankStore = {
       note: r.note,
       createdAt: r.created_at,
     }));
+  },
+
+  // ── 시험 회차 ──
+  async listSessions(): Promise<ExamSession[]> {
+    const rows = await fetchAll("item_sessions", "created_at");
+    return rows.map((r) => ({
+      id: r.id,
+      setName: r.set_name,
+      sessionName: r.session_name,
+      school: r.school,
+      questionCount: r.question_count,
+      isOpen: r.is_open,
+    }));
+  },
+
+  /** 학생 앱용: 열려 있는 회차만. 문항 정답은 내려오지 않는다. */
+  async listOpenSessions(): Promise<ExamSession[]> {
+    const { data, error } = await client()
+      .from("item_sessions")
+      .select("id,set_name,session_name,school,question_count,is_open")
+      .eq("is_open", true)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+      id: r.id,
+      setName: r.set_name,
+      sessionName: r.session_name,
+      school: r.school,
+      questionCount: r.question_count,
+      isOpen: r.is_open,
+    }));
+  },
+
+  async createSession(
+    setName: string,
+    sessionName: string,
+    school: string,
+    questionCount: number,
+  ): Promise<void> {
+    const { error } = await client().from("item_sessions").upsert(
+      {
+        set_name: setName,
+        session_name: sessionName,
+        school,
+        question_count: questionCount,
+        is_open: true,
+      },
+      { onConflict: "set_name,session_name" },
+    );
+    if (error) throw error;
+  },
+
+  async setSessionOpen(id: string, isOpen: boolean): Promise<void> {
+    const { error } = await client().from("item_sessions").update({ is_open: isOpen }).eq("id", id);
+    if (error) throw error;
+  },
+
+  async deleteSession(id: string): Promise<void> {
+    const { error } = await client().from("item_sessions").delete().eq("id", id);
+    if (error) throw error;
+  },
+
+  /** 학생 앱용 문항 목록 — 번호와 ID만. 정답(answer)은 내려받지 않는다. */
+  async listSessionItems(setName: string): Promise<{ id: string; questionNo: number }[]> {
+    const { data, error } = await client()
+      .from("item_bank")
+      .select("id,question_no")
+      .eq("set_name", setName)
+      .order("question_no");
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({ id: r.id, questionNo: r.question_no }));
+  },
+
+  /** 학생이 이미 낸 답안 (수정 제출용). 문항 ID 기준. */
+  async myAnswers(studentCode: string, sessionName: string): Promise<Record<string, string>> {
+    const { data, error } = await client()
+      .from("item_responses")
+      .select("item_id,chosen")
+      .eq("student_code", studentCode)
+      .eq("session", sessionName);
+    if (error) throw error;
+    const out: Record<string, string> = {};
+    for (const r of data ?? []) out[r.item_id as string] = r.chosen as string;
+    return out;
+  },
+
+  /** 회차별 응시 인원 (관리자 화면 표시용) */
+  async countBySession(): Promise<Record<string, number>> {
+    const { data, error } = await client().from("item_responses").select("session,student_code");
+    if (error) throw error;
+    const seen = new Map<string, Set<string>>();
+    for (const r of data ?? []) {
+      const k = r.session as string;
+      if (!seen.has(k)) seen.set(k, new Set());
+      seen.get(k)!.add(r.student_code as string);
+    }
+    const out: Record<string, number> = {};
+    for (const [k, v] of seen) out[k] = v.size;
+    return out;
   },
 
   async upsertItems(items: Item[]): Promise<void> {

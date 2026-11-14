@@ -24,6 +24,7 @@ import { OtpService } from "../../lib/otpService";
 import StudentExamRegister from "./StudentExamRegister";
 import { createSmsProvider } from "../../lib/smsFactory";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
+import AnswerSheet from "./AnswerSheet";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
 import { createMockExamTimingStore } from "../../lib/mockExamTimingStoreFactory";
@@ -85,7 +86,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [matched, setMatched] = useState(false);
-  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment" | "examregister">("select");
+  const [mode, setMode] = useState<"select" | "exam" | "examCheck" | "assignment" | "examregister" | "answersheet">("select");
 
   // 미리보기 모드 - 감아랑 학생으로 자동 설정
   useEffect(() => {
@@ -323,6 +324,16 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
     );
   }
 
+  if (mode === "answersheet") {
+    return (
+      <AnswerSheet
+        studentCode={draft.student.studentCode ?? ""}
+        studentName={draft.student.name ?? ""}
+        onBack={() => setMode("select")}
+      />
+    );
+  }
+
   if (mode === "examCheck") {
     return (
       <ExamCompletionCheckScreen
@@ -419,6 +430,7 @@ export default function StudentFlow({ previewMode = false }: { previewMode?: boo
             }}
             onChooseAssignment={() => setMode("assignment")}
             onExamRegister={() => setMode("examregister")}
+            onAnswerSheet={() => setMode("answersheet")}
           />
         )}
         {step === 1 && <StepStudent draft={draft} set={set} />}
@@ -512,6 +524,7 @@ function StepPhoneVerify({
   onChooseExam,
   onChooseAssignment,
   onExamRegister,
+  onAnswerSheet,
 }: {
   otp: OtpService;
   pendingStore: PendingStore;
@@ -527,6 +540,7 @@ function StepPhoneVerify({
   onChooseExam: () => void;
   onChooseAssignment: () => void;
   onExamRegister: () => void;
+  onAnswerSheet: () => void;
 }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -685,6 +699,27 @@ function StepPhoneVerify({
               <div style={{fontSize:11, color:"#e11d48", marginTop:2}}>완료한 과제 제출</div>
             </div>
             <span style={{color:"#fda4af", fontSize:18}}>›</span>
+          </button>
+
+          {/* 시험 답안 제출 — 하늘 */}
+          <button onClick={onAnswerSheet} style={{
+            display:"flex", alignItems:"center", gap:13,
+            padding:"14px 16px", borderRadius:13,
+            background:"#e0f2fe", border:"1px solid #7dd3fc",
+            cursor:"pointer", textAlign:"left", width:"100%",
+            boxShadow:"0 2px 10px rgba(2,132,199,.12), inset 0 1px 0 rgba(255,255,255,.6)"
+          }}>
+            <div style={{
+              width:38, height:38, borderRadius:10, flexShrink:0,
+              background:"#0284c7", display:"flex", alignItems:"center",
+              justifyContent:"center", fontSize:18,
+              boxShadow:"0 3px 8px rgba(2,132,199,.4)"
+            }}>📝</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700, fontSize:14, color:"#075985"}}>시험 답안 제출</div>
+              <div style={{fontSize:11, color:"#0369a1", marginTop:2}}>시험 본 뒤 내 답 입력하기</div>
+            </div>
+            <span style={{color:"#7dd3fc", fontSize:18}}>›</span>
           </button>
 
           {/* 시험 등록 — 레몬 */}
