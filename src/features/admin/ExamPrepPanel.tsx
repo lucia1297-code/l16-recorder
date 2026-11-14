@@ -2,6 +2,7 @@ import { ClipboardList, LayoutList, FileInput, MessageSquare, Clock, CheckCircle
 import { useEffect, useState, useMemo } from "react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
+import ExamMaterialDropzone from "./ExamMaterialDropzone";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -743,6 +744,17 @@ export default function ExamPrepPanel() {
             <h3 style={{ margin:"0 0 16px", color:"#7c3aed" }}>
               {editingExam ? "✏️ 시험 일정 수정" : " 시험 일정 추가"}
             </h3>
+            <ExamMaterialDropzone
+              roster={activeRoster.map(r => ({ studentCode: r.studentCode, name: r.name }))}
+              onApply={(f, fileName, matched) => {
+                setForm(prev => ({
+                  ...prev,
+                  ...f,
+                  memo: prev.memo ? prev.memo : `자료: ${fileName}`,
+                }));
+                if (!selectedStudent && matched.length === 1) setSelectedStudent(matched[0]);
+              }}
+            />
             <label style={{ fontSize:13, fontWeight:600 }}>학생</label>
             <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)}
               style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, marginBottom:10 }}>
