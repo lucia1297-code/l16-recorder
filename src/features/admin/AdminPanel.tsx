@@ -144,7 +144,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today" | "lesson_overview" | "theme"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today" | "lesson_overview" | "theme" | "itembank"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -256,6 +256,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "schedule" ? "on" : ""} onClick={() => setTab("schedule")}>
           <Calendar size={15}/>일정관리
         </button>
+        <button className={tab === "itembank" ? "on" : ""} onClick={() => setTab("itembank")}>
+          <BarChart3 size={15}/>문항 실측·검수
+        </button>
 
         {/* ── 기타 ── */}
         <div className="rail-divider"/>
@@ -299,6 +302,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "calculator" && <CalculatorPanelLazy />}
         {tab === "theme" && <ThemePanel />}
         {tab === "timetable" && <TimetablePanelLazy />}
+        {tab === "itembank" && <ItemBankPanelLazy />}
         {tab === "helix_today" && <HelixTodayPanel />}
         {tab === "lesson_overview" && <LessonOverviewPanelLazy />}
       </div>
@@ -4467,6 +4471,17 @@ function ExamPlanPanelLazy() {
     import("./ExamPlanPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
   }, []);
   if (err) return <div className="card"><p style={{color:"#ef4444"}}>로드 실패: {err}</p></div>;
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function ItemBankPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    import("./ItemBankPanel").then(m => setComp(() => m.default)).catch(e => setErr(String(e?.message ?? e)));
+  }, []);
+  if (err) return <div className="card"><p style={{color:"#ef4444"}}>문항 실측 로드 실패: {err}</p></div>;
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;
 }

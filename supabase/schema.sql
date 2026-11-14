@@ -256,3 +256,47 @@ drop policy if exists "authenticated update" on results;
 create policy "anon insert" on results for insert to anon with check (true);
 create policy "authenticated select" on results for select to authenticated using (true);
 create policy "authenticated update" on results for update to authenticated using (true) with check (true);
+
+-- ── 문항 실측·검수 체계 (item_bank / item_responses / item_reviews) ──
+-- 2026-11-14 추가. 운영 DB에는 마이그레이션 item_bank_tables 로 적용됨.
+create table if not exists item_bank (
+  id text primary key,
+  set_name text not null default '',
+  school text not null default '',
+  question_no int not null,
+  source text not null default '기타',
+  points numeric not null default 0,
+  answer text not null default '',
+  axes jsonb not null default '{}'::jsonb,
+  status text not null default 'draft' check (status in ('draft','approved','hold','revise')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table if not exists item_responses (
+  id uuid primary key default gen_random_uuid(),
+  item_id text not null references item_bank(id) on delete cascade,
+  student_code text not null,
+  chosen text not null default '',
+  session text not null default 'default',
+  answered_at timestamptz not null default now(),
+  unique (item_id, student_code, session)
+);
+create index if not exists item_responses_item_idx on item_responses(item_id);
+create table if not exists item_reviews (
+  id uuid primary key default gen_random_uuid(),
+  item_id text not null references item_bank(id) on delete cascade,
+  stage text not null check (stage in ('auto','ai','owner','report')),
+  result text not null default 'note' check (result in ('pass','fail','note')),
+  note text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists item_reviews_item_idx on item_reviews(item_id);
+alter table item_bank enable row level security;
+alter table item_responses enable row level security;
+alter table item_reviews enable row level security;
+create policy "anon all item_bank" on item_bank for all to anon using (true) with check (true);
+create policy "anon all item_responses" on item_responses for all to anon using (true) with check (true);
+create policy "anon all item_reviews" on item_reviews for all to anon using (true) with check (true);
+create policy "auth all item_bank" on item_bank for all to authenticated using (true) with check (true);
+create policy "auth all item_responses" on item_responses for all to authenticated using (true) with check (true);
+create policy "auth all item_reviews" on item_reviews for all to authenticated using (true) with check (true);
