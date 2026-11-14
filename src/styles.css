@@ -321,7 +321,7 @@ textarea { min-height: 92px; resize: vertical; }
     flex-direction: column; gap: 1px; margin-bottom: 0;
     position: sticky; top: 24px;
     padding: 8px;
-    background: var(--paper-raised); border: 1px solid var(--line);
+    background: var(--tab-bg, var(--paper-raised)); border: 1px solid var(--line);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
     scroll-snap-type: none;
     max-height: calc(100vh - 48px); overflow-y: auto;
@@ -329,7 +329,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .tabs button {
   padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--line);
-  background: var(--paper-raised); font-weight: 500; font-size: 12.5px; color: var(--ink-soft);
+  background: var(--tab-bg, var(--paper-raised)); font-weight: 500; font-size: 12.5px; color: var(--ink-soft);
   cursor: pointer; white-space: nowrap; transition: background 0.12s var(--ease), color 0.12s var(--ease), border-color 0.12s var(--ease);
   flex: 0 0 auto; scroll-snap-align: start;
   display: flex; align-items: center; gap: 8px;
@@ -342,14 +342,14 @@ textarea { min-height: 92px; resize: vertical; }
     background: transparent;
   }
 }
-.tabs button.on, nav.admin-rail button.on { background: var(--mark); color: #fff; border-color: var(--mark); }
+.tabs button.on, nav.admin-rail button.on { background: var(--tab-accent, var(--mark)); color: var(--tab-accent-text, #fff); border-color: var(--tab-accent, var(--mark)); }
 @media (min-width: 1024px) {
   .tabs button.on, nav.admin-rail button.on {
-    background: var(--mark-tint); color: var(--mark-deep); font-weight: 600;
-    border-color: transparent; border-left-color: var(--mark);
+    background: var(--tab-accent-tint, var(--mark-tint)); color: var(--tab-accent-deep, var(--mark-deep)); font-weight: 600;
+    border-color: transparent; border-left-color: var(--tab-accent, var(--mark));
   }
 }
-.tabs button:hover:not(.on), nav.admin-rail button:hover:not(.on) { border-color: var(--mark); color: var(--mark); }
+.tabs button:hover:not(.on), nav.admin-rail button:hover:not(.on) { border-color: var(--tab-accent, var(--mark)); color: var(--tab-accent, var(--mark)); }
 @media (min-width: 1024px) {
   .tabs button:hover:not(.on), nav.admin-rail button:hover:not(.on) {
     background: var(--highlight); color: var(--ink); border-left-color: var(--line-strong);

@@ -2,9 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
-import { applyTheme, getSavedTheme } from "./lib/theme";
+import { applyTheme, getSavedTheme, applyTabColors, getSavedTabColors } from "./lib/theme";
 
 applyTheme(getSavedTheme());
+{ const t = getSavedTabColors(); applyTabColors(t.bg, t.accent); }
 
 // 하루에도 여러 번 재배포되는 프로젝트라, 탭을 열어둔 채로 새 배포가 나가면
 // 예전 번들이 참조하는 지연 로딩(import()) 청크가 서버에서 이미 사라져
