@@ -69,6 +69,8 @@ const styles = `
 `;
 
 function dateKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+const WEEKDAY = ["일","월","화","수","목","금","토"];
+function weekdayOf(date: string) { const d = new Date(`${date}T12:00:00`); return Number.isNaN(d.getTime()) ? "" : WEEKDAY[d.getDay()]; }
 function mondayOf(date: string) { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dateKey(d); }
 function shiftDate(date: string, days: number) { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + days); return dateKey(d); }
 function weekLabel(monday: string) { const sunday = shiftDate(monday, 6); return `${monday.slice(5).replace("-","/")} ~ ${sunday.slice(5).replace("-","/")}`; }
@@ -131,6 +133,9 @@ export default function LessonOverviewPanel() {
   const [notice, setNotice] = useState("");
   const [period, setPeriod] = useState("");
   const [compareOpen, setCompareOpen] = useState(false);
+  const [historyScope, setHistoryScope] = useState<"student" | "all">("student");
+  const [historyMonth, setHistoryMonth] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
   const [editExam, setEditExam] = useState<ExamSchedule | null>(null);
   const [examDraft, setExamDraft] = useState<ExamSchedule | null>(null);
   const [memos, setMemos] = useState<LinkedMemo[]>(() => {
@@ -191,6 +196,16 @@ export default function LessonOverviewPanel() {
   const weekLogs = useMemo(() => logs.filter(l => l.studentCode === studentCode && l.date >= monday && l.date <= shiftDate(monday,6)).sort((a,b) => b.date.localeCompare(a.date)), [logs, studentCode, monday]);
   const weekPendingCount = weekLogs.flatMap(l => decodeLogNotes(l.notes ?? "").tasks).filter(t => !t.done).length;
   const currentLog = logs.find(l => l.studentCode === studentCode && l.date === lessonDate);
+  const nameOf = (code: string) => roster.find(s => s.studentCode === code)?.name ?? code;
+  const historyBase = useMemo(() => historyScope === "all" ? logs : logs.filter(l => l.studentCode === studentCode), [logs, studentCode, historyScope]);
+  const historyMonths = useMemo(() => [...new Set(historyBase.map(l => l.date.slice(0,7)))].sort((a,b) => b.localeCompare(a)), [historyBase]);
+  const historyLogs = useMemo(() => {
+    const q = historyQuery.trim();
+    return historyBase
+      .filter(l => !historyMonth || l.date.startsWith(historyMonth))
+      .filter(l => !q || `${l.classContent} ${l.nextPlan} ${l.notes ?? ""} ${nameOf(l.studentCode)}`.includes(q))
+      .sort((a,b) => b.date.localeCompare(a.date) || nameOf(a.studentCode).localeCompare(nameOf(b.studentCode)));
+  }, [historyBase, historyMonth, historyQuery, roster]);
   const periodGroups = useMemo(() => {
     const groups = new Map<string, ExamSchedule[]>();
     const todayStr = dateKey(new Date());
@@ -207,6 +222,7 @@ export default function LessonOverviewPanel() {
   }, [logs, lessonDate, studentCode]);
 
   function chooseWeek(value: string) { const next = mondayOf(value); setMonday(next); setLessonDate(value >= next && value <= shiftDate(next,6) ? value : next); }
+  function openLog(log: TeacherLog) { setStudentCode(log.studentCode); setMonday(mondayOf(log.date)); setLessonDate(log.date); setNotice(""); }
   function startNewLesson() { setLessonDate(dateKey(new Date())); setClassContent(""); setNextPlan(""); setTeacherMemo(""); setFollowUps([]); }
   function addTask() { if (!newTask.trim()) return; setFollowUps(prev => [...prev, { id: crypto.randomUUID(), due: newTaskDue, text: newTask.trim(), done: false }]); setNewTask(""); setNewTaskDue(""); }
   function updateTask(id: string, patch: Partial<FollowUp>) { setFollowUps(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t)); }
@@ -293,8 +309,43 @@ export default function LessonOverviewPanel() {
           </div>
           {weekLogs.length>0 && <div className="l16-lesson-list">{weekLogs.map(log=><button key={log.id} className={`l16-lesson-row ${log.date===lessonDate?"selected":""}`} onClick={()=>setLessonDate(log.date)}><span className="l16-lesson-chip">{log.date.slice(5).replace("-","/")}</span><span style={{flex:1,minWidth:0}}><strong style={{fontSize:12,display:"block"}}>{log.classContent.split("\n")[0] || "수업 내용 미입력"}</strong><small style={{color:"#8290a4"}}>{log.nextPlan ? `다음: ${log.nextPlan.slice(0,48)}` : "다음 수업 계획을 기록해 주세요."}</small></span><Pencil size={14}/></button>)}</div>}
           {loading && <div style={{padding:16,color:"#8090a5",fontSize:12}}>학생·수업 기록을 불러오는 중입니다.</div>}
+          <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${line}`}}>
+            <div className="l16-lesson-controls" style={{justifyContent:"space-between"}}>
+              <strong style={{fontSize:13}}>지난 수업 기록</strong>
+              <span style={{fontSize:11,color:"#7b899e"}}>{historyLogs.length}건</span>
+            </div>
+            <div className="l16-lesson-controls" style={{marginTop:8}}>
+              <select aria-label="기록 범위" className="l16-lesson-input" style={{width:"auto"}} value={historyScope} onChange={e=>setHistoryScope(e.target.value as "student"|"all")}>
+                <option value="student">이 학생만</option>
+                <option value="all">전체 학생</option>
+              </select>
+              <select aria-label="기간 선택" className="l16-lesson-input" style={{width:"auto"}} value={historyMonth} onChange={e=>setHistoryMonth(e.target.value)}>
+                <option value="">전체 기간</option>
+                {historyMonths.map(m=><option key={m} value={m}>{m.slice(0,4)}년 {Number(m.slice(5,7))}월</option>)}
+              </select>
+              <input aria-label="기록 검색" className="l16-lesson-input" style={{flex:1,minWidth:140}} placeholder="내용·학생 이름 검색" value={historyQuery} onChange={e=>setHistoryQuery(e.target.value)}/>
+            </div>
+            {historyLogs.length===0
+              ? <div style={{fontSize:12,color:"#8290a4",padding:"12px 2px"}}>조건에 맞는 수업 기록이 없습니다.</div>
+              : <div className="l16-lesson-list" style={{maxHeight:280,overflowY:"auto",paddingRight:2}}>
+                  {historyLogs.slice(0,200).map(log=>{
+                    const pend = decodeLogNotes(log.notes ?? "").tasks.filter(t=>!t.done).length;
+                    const active = log.studentCode===studentCode && log.date===lessonDate;
+                    return <button key={log.id} className={`l16-lesson-row ${active?"selected":""}`} onClick={()=>openLog(log)}>
+                      <span className="l16-lesson-chip">{log.date.slice(5).replace("-","/")} {weekdayOf(log.date)}</span>
+                      <span style={{flex:1,minWidth:0}}>
+                        {historyScope==="all" && <small style={{color:"#315ba7",fontWeight:700,display:"block"}}>{nameOf(log.studentCode)}</small>}
+                        <strong style={{fontSize:12,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{log.classContent.split("\n")[0] || "수업 내용 미입력"}</strong>
+                        <small style={{color:"#8290a4"}}>{pend?`미완료 ${pend}건 · `:""}{log.nextPlan ? `다음: ${log.nextPlan.slice(0,40)}` : "다음 수업 계획 미기록"}</small>
+                      </span>
+                      <Pencil size={14}/>
+                    </button>;
+                  })}
+                </div>}
+            {historyLogs.length>200 && <div style={{fontSize:10,color:"#8290a4",marginTop:6}}>최근 200건만 표시합니다. 기간이나 검색어로 좁혀 주세요.</div>}
+          </div>
           <div style={{marginTop:16,paddingTop:15,borderTop:`1px solid ${line}`}}>
-            <div className="l16-lesson-controls" style={{justifyContent:"space-between"}}><strong>{selectedStudent?.name ?? "학생"} 수업 내용</strong><input aria-label="수업 날짜" type="date" className="l16-lesson-input" style={{width:"auto"}} value={lessonDate} onChange={e=>{setLessonDate(e.target.value);setMonday(mondayOf(e.target.value));}}/></div>
+            <div className="l16-lesson-controls" style={{justifyContent:"space-between"}}><span style={{display:"inline-flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><strong>{selectedStudent?.name ?? "학생"} 수업 내용</strong>{currentLog ? <span className="l16-lesson-badge">저장된 기록 수정 중</span> : <span className="l16-lesson-chip">새 기록</span>}<span style={{fontSize:11,color:"#7b899e"}}>{weekdayOf(lessonDate)}요일</span></span><input aria-label="수업 날짜" type="date" className="l16-lesson-input" style={{width:"auto"}} value={lessonDate} onChange={e=>{setLessonDate(e.target.value);setMonday(mondayOf(e.target.value));}}/></div>
             <label className="l16-lesson-label">오늘 수업한 내용</label><textarea className="l16-lesson-input" value={classContent} onChange={e=>setClassContent(e.target.value)} placeholder="오늘 다룬 교재·범위·핵심 개념·학생 반응을 기록하세요."/>
             <label className="l16-lesson-label">다음 수업에서 정리할 내용</label><textarea className="l16-lesson-input" value={nextPlan} onChange={e=>setNextPlan(e.target.value)} placeholder="다음 수업의 학습 내용과 확인할 지점을 적으세요."/>
             <label className="l16-lesson-label">이후 필요한 처리 사항</label>
