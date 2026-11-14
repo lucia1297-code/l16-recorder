@@ -136,6 +136,7 @@ export default function LessonOverviewPanel() {
   const [historyScope, setHistoryScope] = useState<"student" | "all">("student");
   const [historyMonth, setHistoryMonth] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
+  const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
   const [editExam, setEditExam] = useState<ExamSchedule | null>(null);
   const [examDraft, setExamDraft] = useState<ExamSchedule | null>(null);
   const [memos, setMemos] = useState<LinkedMemo[]>(() => {
@@ -196,6 +197,13 @@ export default function LessonOverviewPanel() {
   const weekLogs = useMemo(() => logs.filter(l => l.studentCode === studentCode && l.date >= monday && l.date <= shiftDate(monday,6)).sort((a,b) => b.date.localeCompare(a.date)), [logs, studentCode, monday]);
   const weekPendingCount = weekLogs.flatMap(l => decodeLogNotes(l.notes ?? "").tasks).filter(t => !t.done).length;
   const currentLog = logs.find(l => l.studentCode === studentCode && l.date === lessonDate);
+  // 저장된 내용과 화면 내용을 같은 인코더로 정규화해 비교한다.
+  const savedDecoded = decodeLogNotes(currentLog?.notes ?? "");
+  const savedNotes = encodeLogNotes(savedDecoded.memo, savedDecoded.tasks);
+  const isDirty = classContent !== (currentLog?.classContent ?? "")
+    || nextPlan !== (currentLog?.nextPlan ?? "")
+    || encodeLogNotes(teacherMemo, followUps) !== savedNotes
+    || newTask.trim() !== "";
   const nameOf = (code: string) => roster.find(s => s.studentCode === code)?.name ?? code;
   const historyBase = useMemo(() => historyScope === "all" ? logs : logs.filter(l => l.studentCode === studentCode), [logs, studentCode, historyScope]);
   const historyMonths = useMemo(() => [...new Set(historyBase.map(l => l.date.slice(0,7)))].sort((a,b) => b.localeCompare(a)), [historyBase]);
@@ -225,20 +233,27 @@ export default function LessonOverviewPanel() {
   // 비우지 않으면 앞 학생에게 쓰던 문구가 남아 다음 학생 기록에 들어간다.
   useEffect(() => { setNewTask(""); setNewTaskDue(""); }, [studentCode, lessonDate]);
 
-  function chooseWeek(value: string) { const next = mondayOf(value); setMonday(next); setLessonDate(value >= next && value <= shiftDate(next,6) ? value : next); }
-  function openLog(log: TeacherLog) { setStudentCode(log.studentCode); setMonday(mondayOf(log.date)); setLessonDate(log.date); setNotice(""); }
-  function startNewLesson() { setLessonDate(dateKey(new Date())); setClassContent(""); setNextPlan(""); setTeacherMemo(""); setFollowUps([]); setNewTask(""); setNewTaskDue(""); }
+  function chooseWeek(value: string) { guard(() => { const next = mondayOf(value); setMonday(next); setLessonDate(value >= next && value <= shiftDate(next,6) ? value : next); }); }
+  function openLog(log: TeacherLog) { guard(() => { setStudentCode(log.studentCode); setMonday(mondayOf(log.date)); setLessonDate(log.date); setNotice(""); }); }
+  function startNewLesson() { guard(() => { setLessonDate(dateKey(new Date())); setClassContent(""); setNextPlan(""); setTeacherMemo(""); setFollowUps([]); setNewTask(""); setNewTaskDue(""); }); }
   function addTask() { if (!newTask.trim()) return; setFollowUps(prev => [...prev, { id: crypto.randomUUID(), due: newTaskDue, text: newTask.trim(), done: false }]); setNewTask(""); setNewTaskDue(""); }
+  // 아직 '추가'를 누르지 않은 입력 칸의 내용. 저장할 때 같이 담는다.
+  function draftTask(): FollowUp[] { return newTask.trim() ? [{ id: crypto.randomUUID(), due: newTaskDue, text: newTask.trim(), done: false }] : []; }
+  // 저장하지 않은 내용이 있으면 먼저 묻는다.
+  function guard(run: () => void) { if (isDirty) setPendingNav({ run }); else run(); }
   function updateTask(id: string, patch: Partial<FollowUp>) { setFollowUps(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t)); }
-  async function saveLesson() {
-    if (!studentCode) { setNotice("학생을 선택해 주세요."); return; }
+  async function saveLesson(): Promise<boolean> {
+    if (!studentCode) { setNotice("학생을 선택해 주세요."); return false; }
     setSaving(true); setNotice("");
-    const log: TeacherLog = { id: makeLogId(studentCode, lessonDate), studentCode, date: lessonDate, rows: currentLog?.rows ?? [], examRecords: currentLog?.examRecords ?? [], classContent, nextPlan, notes: encodeLogNotes(teacherMemo, followUps) };
+    const tasks = [...followUps, ...draftTask()];
+    const log: TeacherLog = { id: makeLogId(studentCode, lessonDate), studentCode, date: lessonDate, rows: currentLog?.rows ?? [], examRecords: currentLog?.examRecords ?? [], classContent, nextPlan, notes: encodeLogNotes(teacherMemo, tasks) };
     try {
       await logStore.saveLog(log);
       setLogs(prev => [log, ...prev.filter(item => item.id !== log.id)].sort((a,b) => b.date.localeCompare(a.date)));
+      setFollowUps(tasks); setNewTask(""); setNewTaskDue("");
       setNotice("수업 기록을 저장했습니다.");
-    } catch (error) { setNotice(`저장하지 못했습니다: ${String((error as Error).message ?? error)}`); }
+      return true;
+    } catch (error) { setNotice(`저장하지 못했습니다: ${String((error as Error).message ?? error)}`); return false; }
     finally { setSaving(false); }
   }
   function createLinkedMemo() {
@@ -295,7 +310,7 @@ export default function LessonOverviewPanel() {
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"end",gap:12,flexWrap:"wrap",marginBottom:14}}>
       <div><h2 style={{margin:"0 0 4px",fontSize:21}}>학생별 수업 기록</h2><div style={{fontSize:12,color:"#72819a"}}>매주 수업 내용, 다음 수업, 후속 처리와 시험 준비 일정을 한 화면에서 관리합니다.</div></div>
       <div className="l16-lesson-controls">
-        <select className="l16-lesson-input" style={{width:"auto",minWidth:170}} value={studentCode} onChange={e=>setStudentCode(e.target.value)}><option value="">학생 선택</option>{roster.map(s=><option key={s.studentCode} value={s.studentCode}>{s.name} · {s.school} {s.grade}</option>)}</select>
+        <select className="l16-lesson-input" style={{width:"auto",minWidth:170}} value={studentCode} onChange={e=>{const v=e.target.value; guard(()=>setStudentCode(v));}}><option value="">학생 선택</option>{roster.map(s=><option key={s.studentCode} value={s.studentCode}>{s.name} · {s.school} {s.grade}</option>)}</select>
         <button className="l16-lesson-primary" onClick={startNewLesson}><Plus size={15}/>수업 기록 추가</button>
       </div>
     </div>
@@ -311,7 +326,7 @@ export default function LessonOverviewPanel() {
             <div className="l16-lesson-stat"><div style={{fontSize:18,fontWeight:800}}>{weekPendingCount}<span style={{fontSize:11,fontWeight:500,color:"#7b899e"}}> 건</span></div><div style={{fontSize:10,color:"#7b899e"}}>이번 주 미완료 처리</div></div>
             <div className="l16-lesson-stat"><div style={{fontSize:18,fontWeight:800}}>{selectedStudent?.weeklySession ?? "–"}<span style={{fontSize:11,fontWeight:500,color:"#7b899e"}}> 회/주</span></div><div style={{fontSize:10,color:"#7b899e"}}>명부 기준 수업 횟수</div></div>
           </div>
-          {weekLogs.length>0 && <div className="l16-lesson-list">{weekLogs.map(log=><button key={log.id} className={`l16-lesson-row ${log.date===lessonDate?"selected":""}`} onClick={()=>setLessonDate(log.date)}><span className="l16-lesson-chip">{log.date.slice(5).replace("-","/")}</span><span style={{flex:1,minWidth:0}}><strong style={{fontSize:12,display:"block"}}>{log.classContent.split("\n")[0] || "수업 내용 미입력"}</strong><small style={{color:"#8290a4"}}>{log.nextPlan ? `다음: ${log.nextPlan.slice(0,48)}` : "다음 수업 계획을 기록해 주세요."}</small></span><Pencil size={14}/></button>)}</div>}
+          {weekLogs.length>0 && <div className="l16-lesson-list">{weekLogs.map(log=><button key={log.id} className={`l16-lesson-row ${log.date===lessonDate?"selected":""}`} onClick={()=>guard(()=>setLessonDate(log.date))}><span className="l16-lesson-chip">{log.date.slice(5).replace("-","/")}</span><span style={{flex:1,minWidth:0}}><strong style={{fontSize:12,display:"block"}}>{log.classContent.split("\n")[0] || "수업 내용 미입력"}</strong><small style={{color:"#8290a4"}}>{log.nextPlan ? `다음: ${log.nextPlan.slice(0,48)}` : "다음 수업 계획을 기록해 주세요."}</small></span><Pencil size={14}/></button>)}</div>}
           {loading && <div style={{padding:16,color:"#8090a5",fontSize:12}}>학생·수업 기록을 불러오는 중입니다.</div>}
           <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${line}`}}>
             <div className="l16-lesson-controls" style={{justifyContent:"space-between"}}>
@@ -349,14 +364,14 @@ export default function LessonOverviewPanel() {
             {historyLogs.length>200 && <div style={{fontSize:10,color:"#8290a4",marginTop:6}}>최근 200건만 표시합니다. 기간이나 검색어로 좁혀 주세요.</div>}
           </div>
           <div style={{marginTop:16,paddingTop:15,borderTop:`1px solid ${line}`}}>
-            <div className="l16-lesson-controls" style={{justifyContent:"space-between"}}><span style={{display:"inline-flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><strong>{selectedStudent?.name ?? "학생"} 수업 내용</strong>{currentLog ? <span className="l16-lesson-badge">저장된 기록 수정 중</span> : <span className="l16-lesson-chip">새 기록</span>}<span style={{fontSize:11,color:"#7b899e"}}>{weekdayOf(lessonDate)}요일</span></span><input aria-label="수업 날짜" type="date" className="l16-lesson-input" style={{width:"auto"}} value={lessonDate} onChange={e=>{setLessonDate(e.target.value);setMonday(mondayOf(e.target.value));}}/></div>
+            <div className="l16-lesson-controls" style={{justifyContent:"space-between"}}><span style={{display:"inline-flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><strong>{selectedStudent?.name ?? "학생"} 수업 내용</strong>{currentLog ? <span className="l16-lesson-badge">저장된 기록 수정 중</span> : <span className="l16-lesson-chip">새 기록</span>}<span style={{fontSize:11,color:"#7b899e"}}>{weekdayOf(lessonDate)}요일</span></span><input aria-label="수업 날짜" type="date" className="l16-lesson-input" style={{width:"auto"}} value={lessonDate} onChange={e=>{const v=e.target.value; guard(()=>{setLessonDate(v);setMonday(mondayOf(v));});}}/></div>
             <label className="l16-lesson-label">오늘 수업한 내용</label><textarea className="l16-lesson-input" value={classContent} onChange={e=>setClassContent(e.target.value)} placeholder="오늘 다룬 교재·범위·핵심 개념·학생 반응을 기록하세요."/>
             <label className="l16-lesson-label">다음 수업에서 정리할 내용</label><textarea className="l16-lesson-input" value={nextPlan} onChange={e=>setNextPlan(e.target.value)} placeholder="다음 수업의 학습 내용과 확인할 지점을 적으세요."/>
             <label className="l16-lesson-label">이후 필요한 처리 사항</label>
             <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto auto",gap:7}}><input className="l16-lesson-input" value={newTask} onChange={e=>setNewTask(e.target.value)} placeholder="예: 지시어 추론 문제 5개 준비" onKeyDown={e=>e.key==="Enter"&&addTask()}/><input aria-label="처리 기한" className="l16-lesson-input" type="date" value={newTaskDue} onChange={e=>setNewTaskDue(e.target.value)} style={{width:145}}/><button className="l16-lesson-ghost" onClick={addTask}><Plus size={15}/>추가</button></div>
             {followUps.map(task=><div className="l16-lesson-task" key={task.id}><input aria-label={`${task.text} 완료`} type="checkbox" style={{marginTop:2,flex:"none"}} checked={task.done} onChange={e=>updateTask(task.id,{done:e.target.checked})}/><div style={{flex:1,minWidth:0,wordBreak:"break-word",fontSize:12,textDecoration:task.done?"line-through":"none",color:task.done?"#8995a7":ink}}>{task.text}<div style={{fontSize:10,color:"#8290a4",marginTop:3}}>{task.due?`기한 ${task.due}`:"기한 미지정"}</div></div><button className="l16-lesson-ghost" aria-label="후속 처리 삭제" onClick={()=>setFollowUps(prev=>prev.filter(t=>t.id!==task.id))}><X size={14}/></button></div>)}
             <label className="l16-lesson-label">수업 메모</label><textarea className="l16-lesson-input" style={{minHeight:68}} value={teacherMemo} onChange={e=>setTeacherMemo(e.target.value)} placeholder="상담·학생 반응·다음에 확인할 점"/>
-            <div className="l16-lesson-controls" style={{marginTop:12}}><button className="l16-lesson-primary" onClick={()=>void saveLesson()} disabled={saving}><Save size={15}/>{saving?"저장 중":"수업 기록 저장"}</button><button className="l16-lesson-ghost" onClick={createLinkedMemo}><NotebookPen size={15}/>기존 메모장에 연결</button></div>
+            <div className="l16-lesson-controls" style={{marginTop:12}}><button className="l16-lesson-primary" onClick={()=>{void saveLesson();}} disabled={saving}><Save size={15}/>{saving?"저장 중":"수업 기록 저장"}</button><button className="l16-lesson-ghost" onClick={createLinkedMemo}><NotebookPen size={15}/>기존 메모장에 연결</button></div>
             <div style={{fontSize:10,color:"#8290a4",marginTop:8}}>수업 기록은 기존 teacher_logs 저장소에, 연결 메모는 L16 메모장 저장소에 각각 기록됩니다.</div>
           </div>
           <div className="l16-lesson-linked"><strong style={{fontSize:12}}>연결된 메모</strong>{memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).length===0?<div style={{fontSize:11,color:"#7b899e",marginTop:6}}>이 수업과 연결된 메모가 없습니다.</div>:memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).map(m=><div key={m.id} style={{fontSize:12,marginTop:6}}><FileText size={13} style={{verticalAlign:"middle",marginRight:5}}/>{m.title}</div>)}</div>
@@ -387,6 +402,24 @@ export default function LessonOverviewPanel() {
         </div>
       </section>
     </div>
+
+    {pendingNav&&<div className="l16-lesson-modal" role="dialog" aria-modal="true" aria-label="저장하지 않은 내용 확인" onMouseDown={e=>{if(e.target===e.currentTarget)setPendingNav(null);}}>
+      <div className="l16-lesson-modalbox" style={{width:"min(440px,100%)"}}>
+        <div className="l16-lesson-head"><strong style={{fontSize:16}}>저장하지 않은 내용이 있습니다</strong></div>
+        <div className="l16-lesson-body">
+          <div style={{fontSize:12,color:"#52647d",lineHeight:1.7}}>
+            {selectedStudent?.name ?? "이 학생"} · {lessonDate} 수업 기록에 저장하지 않은 내용이 있습니다.
+            {newTask.trim() && <div style={{marginTop:8,padding:"8px 10px",background:"#fbe9d2",borderRadius:8,color:"#7a5a2d"}}>입력 중인 처리 사항 “{newTask.trim()}” 도 함께 저장됩니다.</div>}
+            <div style={{marginTop:10}}>저장한 뒤 이동할까요?</div>
+          </div>
+          <div className="l16-lesson-controls" style={{marginTop:16}}>
+            <button className="l16-lesson-primary" disabled={saving} onClick={async()=>{const ok=await saveLesson(); if(ok){const go=pendingNav.run; setPendingNav(null); go();}}}><Save size={15}/>{saving?"저장 중":"저장하고 이동"}</button>
+            <button className="l16-lesson-ghost" disabled={saving} onClick={()=>{const go=pendingNav.run; setPendingNav(null); go();}}>저장하지 않고 이동</button>
+            <button className="l16-lesson-ghost" disabled={saving} onClick={()=>setPendingNav(null)}>취소</button>
+          </div>
+        </div>
+      </div>
+    </div>}
 
     {compareOpen&&<div className="l16-lesson-modal" role="dialog" aria-modal="true" aria-label="시험기간 학습 현황 비교" onMouseDown={e=>{if(e.target===e.currentTarget)setCompareOpen(false);}}><div className="l16-lesson-modalbox"><div className="l16-lesson-head"><div><strong style={{fontSize:18}}>시험기간 학습 현황 비교</strong><div style={{fontSize:11,color:"#7b899e",marginTop:4}}>{activePeriod?periodName(activePeriod.exemplar):""} · 같은 기간 학생들의 준비 진행과 다음 일정을 확인합니다.</div></div><button className="l16-lesson-ghost" aria-label="비교 창 닫기" onClick={()=>setCompareOpen(false)}><X size={17}/></button></div><div className="l16-lesson-body">
       <div className="l16-lesson-stats"><div className="l16-lesson-stat"><strong>{compareRows.length}명</strong><div style={{fontSize:10,color:"#7b899e"}}>비교 학생</div></div><div className="l16-lesson-stat"><strong>{compareRows.filter(r=>r.percent!==null).length}명</strong><div style={{fontSize:10,color:"#7b899e"}}>준비 계획 생성</div></div><div className="l16-lesson-stat"><strong>{compareRows.reduce((n,r)=>n+r.pendingCount,0)}건</strong><div style={{fontSize:10,color:"#7b899e"}}>전체 미완료 후속 처리</div></div></div>
