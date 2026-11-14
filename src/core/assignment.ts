@@ -148,7 +148,8 @@ export interface AssignmentTypeInput {
 
 /**
  * 관리자가 과제 유형을 추가/수정할 때 사용하는 검증.
- * 최대 8개, 이름 중복 불가, 이름 필수, 지정 개수는 1 이상.
+ * 이름 중복 불가, 이름 필수, 지정 개수는 1 이상.
+ * (개수 상한은 두지 않는다 — 운영에서 과제 유형이 20개 이상 쓰이고 있다.)
  */
 export function validateAssignmentTypeInput(
   input: AssignmentTypeInput,

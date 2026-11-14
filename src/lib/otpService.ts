@@ -75,17 +75,15 @@ export class OtpService {
     if (result.ok) {
       // sessionStorage: 탭/창 닫으면 자동 삭제 → 재접속 시 반드시 재인증
       sessionStorage.setItem(this.verifiedKey(phone), "1");
-      // localStorage의 이전 인증 기록 제거
+      // localStorage의 이전 인증 기록 제거 (sessionStorage 플래그는 유지해야 함)
       localStorage.removeItem(this.verifiedKey(phone));
-    sessionStorage.removeItem(this.verifiedKey(phone));
     }
     return { ok: result.ok, error: result.error };
   }
 
   isVerified(phone: string): boolean {
-    // localStorage 이전 기록도 제거 (마이그레이션)
+    // localStorage 이전 기록도 제거 (마이그레이션). sessionStorage 는 읽기 전이므로 지우지 않는다.
     localStorage.removeItem(this.verifiedKey(phone));
-    sessionStorage.removeItem(this.verifiedKey(phone));
     return sessionStorage.getItem(this.verifiedKey(phone)) === "1";
   }
 }

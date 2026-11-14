@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:deploy": "node --test scripts/*.test.mjs",
     "todo:sms": "tsx scripts/send-daily-todo-sms.ts"
   },
   "dependencies": {

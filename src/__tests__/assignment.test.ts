@@ -188,11 +188,9 @@ describe("validateAssignmentTypeInput", () => {
   it("accepts a valid new type", () => {
     expect(validateAssignmentTypeInput({ name: "어휘테스트", targetCount: 3 }, existing).length).toBe(0);
   });
-  it("rejects when 8 types already exist", () => {
-    const full = Array.from({ length: 8 }, (_, i) => ({ id: String(i), name: `t${i}`, targetCount: 1 }));
-    expect(
-      validateAssignmentTypeInput({ name: "새유형", targetCount: 1 }, full).some((e) => e.includes("8")),
-    ).toBe(true);
+  it("개수 상한은 두지 않는다 (운영에서 20개 이상 사용 중)", () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ id: String(i), name: `t${i}`, targetCount: 1 }));
+    expect(validateAssignmentTypeInput({ name: "새유형", targetCount: 1 }, many).length).toBe(0);
   });
   it("rejects a duplicate name", () => {
     expect(

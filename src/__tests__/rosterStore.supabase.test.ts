@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// getClient() 는 VITE_SUPABASE_* 를 읽는다. 로컬 .env 유무와 무관하게 돌도록 고정값을 주입한다.
+vi.stubEnv("VITE_SUPABASE_URL", "https://test.supabase.co");
+vi.stubEnv("VITE_SUPABASE_ANON_KEY", "test-anon-key");
+
 const {
   createClientMock,
   fromMock,

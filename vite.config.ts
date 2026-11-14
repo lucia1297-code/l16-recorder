@@ -50,6 +50,8 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: "./src/test-setup.ts",
+    // scripts/ 는 node:test 러너용이라 vitest 가 수집하면 "0 test" 로 실패한다 (npm run test:deploy 로 실행).
+    exclude: ["node_modules/**", "dist/**", "scripts/**"],
   },
 });
 

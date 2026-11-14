@@ -4,7 +4,7 @@ import { encodeWav, transcribeRecording } from './recordingTranscription';
 describe('recording transcription', () => {
   it('rejects a missing key before sending audio', async () => {
     const request = vi.fn();
-    await expect(transcribeRecording(new Blob(['audio']), '', {request})).rejects.toThrow(/키/);
+    await expect(transcribeRecording(new Blob(['audio']), '', {request})).rejects.toThrow(/전사 서버가 설정되지 않았습니다/);
     expect(request).not.toHaveBeenCalled();
   });
   it('explains an invalid key instead of reporting a generic fetch failure', async () => {
