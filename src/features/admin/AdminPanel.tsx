@@ -144,7 +144,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
   const storage = useStorage();
   const [rows, setRows] = useState<ExamResult[]>([]);
   const [tab, setTab] = useState<
-    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "examschedule" | "helix_today" | "lesson_overview" | "theme" | "itembank"
+    "list" | "dash" | "roster" | "pending" | "assignment" | "review" | "teacherlog" | "submit" | "report" | "sms" | "scheduled" | "examprep" | "examplan" | "growth" | "recording" | "wworder" | "admininput" | "memo" | "material" | "schedule" | "calculator" | "timetable" | "schedule_events" | "examschedule" | "helix_today" | "lesson_overview" | "theme" | "itembank"
   >("list");
   const [pendingCount, setPendingCount] = useState(0);
   const pendingStore = useMemo(() => createPendingStore(), []);
@@ -228,6 +228,9 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         <button className={tab === "timetable" ? "on" : ""} onClick={() => setTab("timetable")}>
           <CalendarDays size={15}/>수업 시간표
         </button>
+        <button className={tab === "schedule_events" ? "on" : ""} onClick={() => setTab("schedule_events")}>
+          <CalendarDays size={15}/>일정 알림
+        </button>
         <button className={tab === "recording" ? "on" : ""} onClick={() => setTab("recording")}>
           <Mic size={15}/>녹음분석
         </button>
@@ -302,6 +305,7 @@ function AdminHome({ onLogout }: { onLogout: () => void }) {
         {tab === "calculator" && <CalculatorPanelLazy />}
         {tab === "theme" && <ThemePanel />}
         {tab === "timetable" && <TimetablePanelLazy />}
+        {tab === "schedule_events" && <ScheduleEventsPanelLazy />}
         {tab === "itembank" && <ItemBankPanelLazy />}
         {tab === "helix_today" && <HelixTodayPanel />}
         {tab === "lesson_overview" && <LessonOverviewPanelLazy />}
@@ -5003,6 +5007,15 @@ function TimetablePanelLazy() {
   const [Comp, setComp] = useState<React.ComponentType | null>(null);
   useEffect(() => {
     import("./TimetablePanel").then(m => setComp(() => m.default)).catch(console.error);
+  }, []);
+  if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
+  return <Comp />;
+}
+
+function ScheduleEventsPanelLazy() {
+  const [Comp, setComp] = useState<React.ComponentType | null>(null);
+  useEffect(() => {
+    import("./ScheduleEventsPanel").then(m => setComp(() => m.default)).catch(console.error);
   }, []);
   if (!Comp) return <div className="card"><p style={{color:"#94a3b8"}}>로딩 중…</p></div>;
   return <Comp />;

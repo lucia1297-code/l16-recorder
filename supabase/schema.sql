@@ -315,3 +315,28 @@ create table if not exists item_sessions (
 alter table item_sessions enable row level security;
 create policy "anon all item_sessions" on item_sessions for all to anon using (true) with check (true);
 create policy "auth all item_sessions" on item_sessions for all to authenticated using (true) with check (true);
+
+-- ── 일정 알림 (수업 시간·시간표 변경 기록 + 작업 지정·보고) ──  2026-11-16 추가, 마이그레이션 schedule_events_queue
+-- students.lesson_schedule / student_status, timetable_blocks 가 바뀌면 트리거가 한 줄씩 기록한다.
+-- 휴대폰·PC 어디서 입력하든 DB 단계에서 기록되며, AR은 이 표를 읽고 status/assigned_to/report 를 갱신한다.
+-- 트리거: sched_students_ev(students), sched_blocks_ev(timetable_blocks) / 함수: trg_sched_students, trg_sched_blocks, sched_block_names
+create table if not exists schedule_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  source text not null default 'db_trigger',
+  kind text not null,
+  student_code text,
+  student_name text not null default '',
+  week_start date,
+  summary text not null,
+  payload jsonb not null default '{}'::jsonb,
+  status text not null default 'new' check (status in ('new','assigned','in_progress','done','dismissed')),
+  assigned_to text not null default '',
+  task_note text not null default '',
+  report text not null default ''
+);
+create index if not exists schedule_events_status_idx on schedule_events (status, created_at desc);
+alter table schedule_events enable row level security;
+create policy "anon all schedule_events" on schedule_events for all to anon using (true) with check (true);
+create policy "auth all schedule_events" on schedule_events for all to authenticated using (true) with check (true);
