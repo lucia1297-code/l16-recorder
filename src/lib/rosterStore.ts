@@ -5,5 +5,6 @@ export interface RosterStore {
   saveRoster(entries: RosterEntry[]): Promise<void>;
   listRoster(): Promise<RosterEntry[]>;
   findByPhone(phoneDigits: string): Promise<RosterEntry | null>;
+  deleteStudent(studentCode: string): Promise<void>;
   clearRoster(): Promise<void>;
 }

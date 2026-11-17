@@ -26,6 +26,13 @@ export class LocalRosterStore implements RosterStore {
     return all.find((e) => e.phone === phoneDigits) ?? null;
   }
 
+  async deleteStudent(studentCode: string): Promise<void> {
+    const all = await this.listRoster();
+    const next = all.filter((entry) => entry.studentCode !== studentCode);
+    if (next.length === all.length) throw new Error("명부에서 학생을 찾지 못했습니다.");
+    localStorage.setItem(KEY, JSON.stringify(next));
+  }
+
   async clearRoster(): Promise<void> {
     localStorage.removeItem(KEY);
   }

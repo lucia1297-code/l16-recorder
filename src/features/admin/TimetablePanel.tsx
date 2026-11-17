@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { CalendarDays, Locate, CheckCircle, Settings, Plus, X, Repeat, Pin } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
+import { TIMETABLE_HIDE_AUTO_NOTE, TIMETABLE_EXCEL_NOTE_PREFIX, TIMETABLE_HIDE_FUTURE_NOTE, TIMETABLE_FUTURE_NOTE_PREFIX } from "../../lib/timetableImport";
 
 const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -261,53 +262,61 @@ export default function TimetablePanel() {
   }, [roster, autoMode]);
 
   const [withdrawnCodes, setWithdrawnCodes] = useState<Set<string> | null>(null);
-  useEffect(() => {
+  function refreshRoster() {
     rosterStore.listRoster().then(r => {
-      const filtered = r.filter(s => (s.studentStatus ?? "active") !== "withdrawn");
-      setRoster(filtered);
-      const withdrawn = new Set(
-        r.filter(s => (s.studentStatus ?? "active") === "withdrawn").map(s => s.studentCode)
-      );
-      if (withdrawn.size > 0) setWithdrawnCodes(withdrawn);
-    });
+      const withdrawn = new Set(r.filter(s => (s.studentStatus ?? "active") === "withdrawn").map(s => s.studentCode));
+      setRoster(r.filter(s => !withdrawn.has(s.studentCode)));
+      setWithdrawnCodes(withdrawn);
+    }).catch(() => {});
+  }
+  useEffect(() => {
+    refreshRoster();
     loadBlocks();
+    const timer = window.setInterval(refreshRoster, 30000);
+    window.addEventListener("focus", refreshRoster);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refreshRoster); };
   }, []);
 
-  // 학생이 퇴원하면 그 학생이 들어간 시간표 수정 정보(수동 override)는 그
-  // 시점부터 전부 삭제한다 — 여러 명이 같이 듣는 수업이면 그 학생 코드만
-  // 빼고, 그 결과 학생이 0명이 되면 블록 자체를 삭제한다. (자동생성 블록은
-  // roster에서 이미 퇴원생을 뺐으므로 별도 처리가 필요 없다.)
-  const sweepDoneRef = useRef(false);
+  // 수업 종료된 학생은 현재·향후 주간 예외에서만 제외하고 과거 일정은 보존한다.
+  const sweptCodesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (loading || sweepDoneRef.current) return;
+    if (loading) return;
     const withdrawn = withdrawnCodes;
-    if (!withdrawn || withdrawn.size === 0) return;
-    sweepDoneRef.current = true;
+    if (!withdrawn) return;
+    for (const code of [...sweptCodesRef.current]) if (!withdrawn.has(code)) sweptCodesRef.current.delete(code);
+    const newlyWithdrawn = new Set([...withdrawn].filter(code => !sweptCodesRef.current.has(code)));
+    if (newlyWithdrawn.size === 0) return;
+    newlyWithdrawn.forEach(code => sweptCodesRef.current.add(code));
+    const currentWeekKey = ymd(getSundayOf(new Date()));
 
     const toDelete: string[] = [];
     const toUpdate: TimetableBlock[] = [];
     blocks.forEach(b => {
-      if (!b.studentCodes.some(c => withdrawn.has(c))) return;
-      const remaining = b.studentCodes.filter(c => !withdrawn.has(c));
+      if ((b.weekStart && b.weekStart < currentWeekKey) || !b.studentCodes.some(c => newlyWithdrawn.has(c))) return;
+      const remaining = b.studentCodes.filter(c => !newlyWithdrawn.has(c));
       if (remaining.length === 0) toDelete.push(b.id);
       else toUpdate.push({ ...b, studentCodes: remaining });
     });
     if (toDelete.length === 0 && toUpdate.length === 0) return;
 
     (async () => {
+      let failures = 0;
       for (const id of toDelete) {
-        await fetch(`${SB_URL}/rest/v1/timetable_blocks?id=eq.${id}`,
-          { method:"DELETE", headers: SB_H }).catch(() => {});
+        const res = await fetch(`${SB_URL}/rest/v1/timetable_blocks?id=eq.${id}`,
+          { method:"DELETE", headers: SB_H }).catch(() => null);
+        if (!res?.ok) failures++;
       }
       for (const b of toUpdate) {
-        await upsertBlockRow(b);
+        if (!await upsertBlockRow(b)) failures++;
       }
       const next = blocks
         .filter(b => !toDelete.includes(b.id))
         .map(b => toUpdate.find(u => u.id === b.id) ?? b);
       setBlocks(next);
       localStorage.setItem("l16.timetable", JSON.stringify(next));
-      setNotice(`퇴원한 학생의 시간표 수정 정보 ${toDelete.length + toUpdate.length}건을 정리했습니다.`);
+      setNotice(failures
+        ? `시간표에서 학생을 숨겼으나 저장 ${failures}건이 실패했습니다. 새로고침 후 다시 확인해 주세요.`
+        : `수업 종료 학생을 현재·향후 시간표에서 제외했습니다. 과거 주차 기록은 유지했습니다.`);
       setTimeout(() => setNotice(""), 4000);
     })();
   }, [loading, blocks, withdrawnCodes]);
@@ -345,7 +354,7 @@ export default function TimetablePanel() {
     }
   }
 
-  async function upsertBlockRow(block: TimetableBlock) {
+  async function upsertBlockRow(block: TimetableBlock): Promise<boolean> {
     const row = {
       id: block.id, day: block.day,
       start_slot: block.startSlot, end_slot: block.endSlot,
@@ -363,8 +372,10 @@ export default function TimetablePanel() {
         body: JSON.stringify(row),
       }).catch(() => null);
       if (!res || !res.ok) throw new Error("Supabase 저장 실패");
+      return true;
     } catch {
       // localStorage 폴백
+      return false;
     }
   }
 
@@ -662,7 +673,11 @@ export default function TimetablePanel() {
       DAYS.forEach(d => dayMap[d] = []);
 
       if (!autoMode) {
-        blocks.forEach(b => { if (dayMap[b.day]) dayMap[b.day].push(b); });
+        blocks.forEach(b => {
+          const fromExcel = b.note.startsWith(TIMETABLE_FUTURE_NOTE_PREFIX) || b.note.startsWith(TIMETABLE_HIDE_FUTURE_NOTE);
+          const visible = !b.weekStart || b.weekStart === weekKey || (fromExcel && b.weekStart <= weekKey);
+          if (visible && dayMap[b.day] && b.note !== TIMETABLE_HIDE_AUTO_NOTE && !b.note.startsWith(TIMETABLE_HIDE_FUTURE_NOTE)) dayMap[b.day].push(b);
+        });
         map[weekKey] = dayMap;
         return;
       }
@@ -676,23 +691,40 @@ export default function TimetablePanel() {
         const dayOverrides = blocks.filter(b => b.day === day);
         const recurring = new Map<string, TimetableBlock>();
         const exact = new Map<string, TimetableBlock>();
-        dayOverrides.forEach(b => {
+        const future = new Map<string, TimetableBlock>();
+        const futureHidden = new Set<string>();
+        const additionPriority = (b: TimetableBlock) => b.weekStart === weekKey ? 0 : (b.note.startsWith(TIMETABLE_FUTURE_NOTE_PREFIX) && !!b.weekStart && b.weekStart <= weekKey) ? 1 : !b.weekStart ? 2 : 3;
+        dayOverrides.sort((a, b) => additionPriority(a) - additionPriority(b)).forEach(b => {
           const key = `${b.startSlot}|${b.endSlot}`;
           if (!b.weekStart) recurring.set(key, b);
-          else if (b.weekStart === weekKey) exact.set(key, b);
+          else if (b.weekStart === weekKey) {
+            const current = exact.get(key);
+            if (!current || b.note === TIMETABLE_HIDE_AUTO_NOTE || b.note.startsWith(TIMETABLE_EXCEL_NOTE_PREFIX)) exact.set(key, b);
+          } else if (b.weekStart <= weekKey && b.note.startsWith(TIMETABLE_HIDE_FUTURE_NOTE)) {
+            futureHidden.add(key);
+          } else if (b.weekStart <= weekKey && b.note.startsWith(TIMETABLE_FUTURE_NOTE_PREFIX)) {
+            future.set(key, b);
+          }
         });
         const usedKeys = new Set<string>();
         dayAuto.forEach(auto => {
           const key = `${auto.startSlot}|${auto.endSlot}`;
           usedKeys.add(key);
-          dayMap[day].push(exact.get(key) ?? recurring.get(key) ?? auto);
+          const override = exact.get(key) ?? future.get(key) ?? recurring.get(key);
+          if (override?.note === TIMETABLE_HIDE_AUTO_NOTE && override.studentCodes.length === 0) return;
+          if (!exact.has(key) && futureHidden.has(key)) return;
+          dayMap[day].push(override ?? auto);
         });
         // 자동생성 시간대와 겹치지 않는, 이 주에 직접 추가된 블록
-        dayOverrides.forEach(b => {
+        dayOverrides.sort((a, b) => additionPriority(a) - additionPriority(b)).forEach(b => {
+          if (b.note === TIMETABLE_HIDE_AUTO_NOTE) return;
+          if (b.note.startsWith(TIMETABLE_HIDE_FUTURE_NOTE)) return;
           const key = `${b.startSlot}|${b.endSlot}`;
           if (usedKeys.has(key)) return;
-          if (b.weekStart && b.weekStart !== weekKey) return;
+          const futureEntry = b.note.startsWith(TIMETABLE_FUTURE_NOTE_PREFIX) && !!b.weekStart && b.weekStart <= weekKey;
+          if (b.weekStart && b.weekStart !== weekKey && !futureEntry) return;
           dayMap[day].push(b);
+          usedKeys.add(key);
         });
       });
       map[weekKey] = dayMap;

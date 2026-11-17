@@ -106,6 +106,13 @@ export class SupabaseRosterStore implements RosterStore {
     };
   }
 
+  async deleteStudent(studentCode: string): Promise<void> {
+    const sb = getClient();
+    const { data, error } = await sb.from("students").delete().eq("student_code", studentCode).select("student_code");
+    if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
+    if (!data?.length) throw new Error("삭제된 학생이 없습니다. 관리자 권한과 저장 상태를 확인해 주세요.");
+  }
+
   async clearRoster(): Promise<void> {
     const sb = getClient();
     const { error } = await sb.from("students").delete().neq("student_code", "");

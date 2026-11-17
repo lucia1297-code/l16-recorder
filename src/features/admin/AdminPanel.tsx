@@ -19,6 +19,7 @@ import type { Auth } from "../../lib/auth";
 
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { ensureDailyTodoMemo } from "./dailyTodoMemo";
+import TimetableExcelSubmission from "./TimetableExcelSubmission";
 import { createPendingStore } from "../../lib/pendingStoreFactory";
 import { createAssignmentStore } from "../../lib/assignmentStoreFactory";
 import { createMockExamTimingStore } from "../../lib/mockExamTimingStoreFactory";
@@ -598,6 +599,14 @@ function DashboardView({ rows }: { rows: ExamResult[] }) {
   );
 }
 
+const ARCHIVE_2026_TAG = "[26년 학생]";
+function isArchive2026(entry: RosterEntry) { return (entry.note ?? "").split("\n")[0].trim() === ARCHIVE_2026_TAG; }
+function setArchive2026(entry: RosterEntry, archived: boolean): RosterEntry {
+  const lines = (entry.note ?? "").split("\n");
+  if (lines[0]?.trim() === ARCHIVE_2026_TAG) lines.shift();
+  return { ...entry, note: archived ? [ARCHIVE_2026_TAG, ...lines].join("\n") : lines.join("\n") };
+}
+
 function RosterManager() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -607,6 +616,8 @@ function RosterManager() {
   const [fileName, setFileName] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [rosterView, setRosterView] = useState<"current" | "2026">("current");
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState("");
   const [editError, setEditError] = useState("");
@@ -646,11 +657,16 @@ function RosterManager() {
     setSaving(true);
     const now = new Date().toISOString();
     // 기존 명부에 있던 학생은 registeredAt 그대로 유지, 신규 학생만 오늘 날짜
-    const existingMap = new Map(roster.map((r) => [r.studentCode, r.registeredAt]));
-    const stamped = preview.map((e) => ({
-      ...e,
-      registeredAt: e.registeredAt ?? existingMap.get(e.studentCode) ?? undefined,
-    }));
+    const existingMap = new Map(roster.map((r) => [r.studentCode, r]));
+    const stamped = preview.map((e) => {
+      const existing = existingMap.get(e.studentCode);
+      return {
+        ...e,
+        registeredAt: e.registeredAt ?? existing?.registeredAt ?? undefined,
+        // Excel 재등록으로도 26년 명부 이동 표시와 학생 메모를 유지합니다.
+        note: existing && isArchive2026(existing) ? existing.note : e.note,
+      };
+    });
     const t = setTimeout(() => {
       setSaving(false);
       setNotice("요청 시간이 초과됐습니다. 다시 시도해주세요.");
@@ -672,16 +688,7 @@ function RosterManager() {
   }
 
   async function deleteStudent(entry: RosterEntry) {
-    const msg = `【${entry.name}】 학생과 관련된 모든 데이터를 삭제합니다.
-
-` +
-      `· 시험 제출 기록
-· 과제 제출 기록
-· 상담 메시지
-· 수업 기록
-
-` +
-      `이 작업은 되돌릴 수 없습니다. 정말 삭제하시겠습니까?`;
+    const msg = `【${entry.name}】 학생을 명부에서 삭제합니다.\n\n학생 정보 삭제는 되돌릴 수 없습니다. 계속하시겠습니까?`;
     if (!confirm(msg)) return;
 
     // 한 번 더 확인
@@ -693,22 +700,25 @@ function RosterManager() {
 
     setNotice("");
     try {
-      // students 삭제 → CASCADE로 모든 관련 데이터 자동 삭제
-      const { createClient } = await import("@supabase/supabase-js");
-      const sb = createClient(
-        import.meta.env.VITE_SUPABASE_URL as string,
-        import.meta.env.VITE_SUPABASE_ANON_KEY as string
-      );
-      const { error } = await sb
-        .from("students")
-        .delete()
-        .eq("student_code", entry.studentCode);
-      if (error) throw error;
-
+      await rosterStore.deleteStudent(entry.studentCode);
       setRoster(prev => prev.filter(r => r.studentCode !== entry.studentCode));
-      setNotice(`✅ ${entry.name} 학생 및 관련 데이터 삭제 완료`);
+      setSelectedCodes(prev => prev.filter(code => code !== entry.studentCode));
+      setNotice(`✅ ${entry.name} 학생을 명부에서 삭제했습니다.`);
     } catch (e) {
       setNotice(`삭제 실패: ${(e as Error).message}`);
+    }
+  }
+
+  async function changeClassStatus(entry: RosterEntry, nextStatus: StudentStatus) {
+    const action = nextStatus === "withdrawn" ? "수업을 종료" : "수업을 재개";
+    if (!confirm(`${entry.name} 학생의 ${action} 처리할까요? ${nextStatus === "withdrawn" ? "명부와 과거 기록은 보존하고 현재·이후 시간표에서 제외합니다." : "현재·이후 시간표에 다시 포함합니다."}`)) return;
+    const updated = { ...entry, studentStatus: nextStatus };
+    try {
+      await rosterStore.saveRoster([updated]);
+      setRoster((prev) => prev.map((r) => r.studentCode === entry.studentCode ? updated : r));
+      setNotice(`✅ ${entry.name} 학생을 ${nextStatus === "withdrawn" ? "수업 종료" : "수업 재개"} 처리했습니다.`);
+    } catch (e) {
+      setNotice(`상태 저장 실패: ${(e as Error).message}`);
     }
   }
 
@@ -1052,10 +1062,30 @@ function RosterManager() {
       <div style={{ height: 20 }} />
       <GracePeriodNotifier roster={roster} />
 
+      <TimetableExcelSubmission roster={roster} onApplied={setRoster} />
+
       <div style={{ height: 20 }} />
       <h3>등록된 명부 ({roster.length}명)</h3>
-      {roster.length === 0 ? (
-        <p className="muted">아직 등록된 학생이 없습니다.</p>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        <button className={`btn ${rosterView === "current" ? "" : "ghost"}`} onClick={()=>{setRosterView("current");setSelectedCodes([]);}}>현재 학생 ({roster.filter(r=>!isArchive2026(r)).length})</button>
+        <button className={`btn ${rosterView === "2026" ? "" : "ghost"}`} onClick={()=>{setRosterView("2026");setSelectedCodes([]);}}>26년 학생 ({roster.filter(isArchive2026).length})</button>
+        <button className="btn ghost" onClick={()=>{
+          const visible=roster.filter(r=>isArchive2026(r)===(rosterView==="2026"));
+          setSelectedCodes(selectedCodes.length===visible.length?[]:visible.map(r=>r.studentCode));
+        }}>{selectedCodes.length===roster.filter(r=>isArchive2026(r)===(rosterView==="2026")).length?"선택 해제":"현재 목록 전체 선택"}</button>
+        {selectedCodes.length>0&&<button className="btn secondary" onClick={async()=>{
+          const moving=rosterView==="current";
+          const selected=roster.filter(r=>selectedCodes.includes(r.studentCode));
+          if(!confirm(`${selected.length}명을 ${moving?"26년 학생":"현재 학생"}으로 이동할까요? 학생 기록과 수업 이력은 보존됩니다.`))return;
+          try{
+            await rosterStore.saveRoster(selected.map(r=>setArchive2026(r,moving)));
+            setRoster(await rosterStore.listRoster());setSelectedCodes([]);
+            setNotice(`${selected.length}명을 ${moving?"26년 학생":"현재 학생"}으로 이동했습니다.`);
+          }catch(e){setNotice(`학생 이동에 실패했습니다: ${(e as Error).message}`);}
+        }}>{rosterView==="current"?"26년 학생으로 이동":"현재 학생으로 되돌리기"} ({selectedCodes.length})</button>}
+      </div>
+      {roster.length === 0 || roster.filter(e=>isArchive2026(e)===(rosterView==="2026")).length === 0 ? (
+        <p className="muted">{roster.length === 0 ? "아직 등록된 학생이 없습니다." : rosterView === "2026" ? "26년 학생 명부가 비어 있습니다." : "현재 학생 명부가 비어 있습니다."}</p>
       ) : (
         <div className="table-wrap">
           <table>
@@ -1075,7 +1105,7 @@ function RosterManager() {
               </tr>
             </thead>
             <tbody>
-              {roster.map((e) => {
+              {roster.filter(e=>isArchive2026(e)===(rosterView==="2026")).map((e) => {
                 const isEditing = editingCode === e.studentCode;
                 const typeColor = e.studentType === "S" ? "#9b59b6" : e.studentType === "W2" ? "#e67e22" : e.studentType === "W1" ? "#e74c3c" : "#aaa";
                 return (
@@ -1084,7 +1114,9 @@ function RosterManager() {
                     <td style={{ fontWeight: 600, position:"sticky", left:0, zIndex:1,
                       background: isEditing ? "#f8f9ff" : "#fff",
                       boxShadow:"2px 0 4px rgba(0,0,0,0.06)", minWidth:80 }}>
-                      {e.name}
+                      <label style={{display:"flex",alignItems:"center",gap:6}}><input type="checkbox" aria-label={`${e.name} 선택`} checked={selectedCodes.includes(e.studentCode)} onChange={ev=>setSelectedCodes(prev=>ev.target.checked?[...prev,e.studentCode]:prev.filter(code=>code!==e.studentCode))}/>{e.name}</label>
+                      <button onClick={()=>changeClassStatus(e,(e.studentStatus ?? "active")==="withdrawn"?"active":"withdrawn")} style={{marginTop:5,marginRight:4,padding:"4px 7px",fontSize:11,border:"1px solid",borderColor:(e.studentStatus ?? "active")==="withdrawn"?"#15803d":"#b91c1c",borderRadius:6,color:(e.studentStatus ?? "active")==="withdrawn"?"#15803d":"#b91c1c",background:"#fff",cursor:"pointer",fontWeight:600}}>{(e.studentStatus ?? "active")==="withdrawn"?"↩ 수업 재개":"⏹ 수업 종료"}</button>
+                      <button onClick={()=>deleteStudent(e)} style={{marginTop:5,padding:"4px 8px",fontSize:11,border:"1px solid #ef4444",borderRadius:6,color:"#b91c1c",background:"#fff",cursor:"pointer",fontWeight:600}}>🗑 학생 삭제</button>
                       {e.registeredAt && (Date.now()-new Date(e.registeredAt).getTime())/86400000 <= 30 && (
                         <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
                           borderRadius:8, padding:"1px 5px", marginLeft:4 }}>신규</span>
@@ -1230,13 +1262,6 @@ function RosterManager() {
                             style={{ padding:"4px 8px", fontSize:11, background:"#0891b2",
                               color:"#fff", border:"none", borderRadius:4, cursor:"pointer" }}>
                             🕐 수업시간
-                          </button>
-                          <button
-                            onClick={() => deleteStudent(e)}
-                            style={{ padding: "4px 10px", fontSize: 12, borderRadius: 6,
-                              border: "1px solid #ef4444", color: "#ef4444",
-                              background: "#fff", cursor: "pointer", fontWeight: 600 }}>
-                            🗑 삭제
                           </button>
                         </div>
                       )}
