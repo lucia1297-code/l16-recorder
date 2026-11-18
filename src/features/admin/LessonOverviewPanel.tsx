@@ -6,6 +6,8 @@ import type { TeacherLog } from "../../core/teacherLog";
 import { makeLogId } from "../../core/teacherLog";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import { createTeacherLogStore } from "../../lib/teacherLogStoreFactory";
+import { createLessonJudgmentStore } from "../../lib/lessonJudgmentStoreFactory";
+import LessonJudgmentCapture from "./LessonJudgmentCapture";
 
 type ExamSchedule = {
   id: string; studentCode: string; name: string; school: string; grade: string;
@@ -115,6 +117,7 @@ function periodName(e: ExamSchedule) { return `${e.school || "학교 미지정"}
 export default function LessonOverviewPanel() {
   const rosterStore = useMemo(() => createRosterStore(), []);
   const logStore = useMemo(() => createTeacherLogStore(), []);
+  const judgmentStore = useMemo(() => createLessonJudgmentStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [logs, setLogs] = useState<TeacherLog[]>([]);
   const [exams, setExams] = useState<ExamSchedule[]>([]);
@@ -375,6 +378,7 @@ export default function LessonOverviewPanel() {
             <div style={{fontSize:10,color:"#8290a4",marginTop:8}}>수업 기록은 기존 teacher_logs 저장소에, 연결 메모는 L16 메모장 저장소에 각각 기록됩니다.</div>
           </div>
           <div className="l16-lesson-linked"><strong style={{fontSize:12}}>연결된 메모</strong>{memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).length===0?<div style={{fontSize:11,color:"#7b899e",marginTop:6}}>이 수업과 연결된 메모가 없습니다.</div>:memos.filter(m=>m.studentCode===studentCode&&m.lessonDate===lessonDate).map(m=><div key={m.id} style={{fontSize:12,marginTop:6}}><FileText size={13} style={{verticalAlign:"middle",marginRight:5}}/>{m.title}</div>)}</div>
+          <LessonJudgmentCapture studentCode={studentCode || null} sessionRef={null} lessonDate={lessonDate} store={judgmentStore}/>
         </div>
       </section>
 
