@@ -119,11 +119,13 @@ export default function LessonOverviewPanel() {
   const logStore = useMemo(() => createTeacherLogStore(), []);
   const judgmentStore = useMemo(() => createLessonJudgmentStore(), []);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [historyRoster, setHistoryRoster] = useState<RosterEntry[]>([]);
   const [logs, setLogs] = useState<TeacherLog[]>([]);
   const [exams, setExams] = useState<ExamSchedule[]>([]);
   const [plans, setPlans] = useState<PrepPlan[]>([]);
   const [monday, setMonday] = useState(() => mondayOf(dateKey(new Date())));
   const [studentCode, setStudentCode] = useState("");
+  const [historyStudentCode, setHistoryStudentCode] = useState("");
   const [lessonDate, setLessonDate] = useState(dateKey(new Date()));
   const [classContent, setClassContent] = useState("");
   const [nextPlan, setNextPlan] = useState("");
@@ -136,7 +138,6 @@ export default function LessonOverviewPanel() {
   const [notice, setNotice] = useState("");
   const [period, setPeriod] = useState("");
   const [compareOpen, setCompareOpen] = useState(false);
-  const [historyScope, setHistoryScope] = useState<"student" | "all">("student");
   const [historyMonth, setHistoryMonth] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
   const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
@@ -151,8 +152,10 @@ export default function LessonOverviewPanel() {
     async function load() {
       setLoading(true);
       const [rosterResult, logsResult] = await Promise.allSettled([rosterStore.listRoster(), logStore.listAllLogs()]);
-      const students = rosterResult.status === "fulfilled" ? rosterResult.value.filter(activeStudent) : [];
+      const allStudents = rosterResult.status === "fulfilled" ? rosterResult.value : [];
+      const students = allStudents.filter(activeStudent);
       if (!alive) return;
+      setHistoryRoster(allStudents);
       setRoster(students);
       if (!studentCode && students[0]) setStudentCode(students[0].studentCode);
       if (logsResult.status === "fulfilled") setLogs(logsResult.value);
@@ -207,8 +210,11 @@ export default function LessonOverviewPanel() {
     || nextPlan !== (currentLog?.nextPlan ?? "")
     || encodeLogNotes(teacherMemo, followUps) !== savedNotes
     || newTask.trim() !== "";
-  const nameOf = (code: string) => roster.find(s => s.studentCode === code)?.name ?? code;
-  const historyBase = useMemo(() => historyScope === "all" ? logs : logs.filter(l => l.studentCode === studentCode), [logs, studentCode, historyScope]);
+  const nameOf = (code: string) => historyRoster.find(s => s.studentCode === code)?.name ?? roster.find(s => s.studentCode === code)?.name ?? code;
+  const historyStudents = useMemo(() => [...new Set(logs.map(log => log.studentCode))]
+    .map(code => ({ studentCode: code, name: nameOf(code) }))
+    .sort((a,b) => a.name.localeCompare(b.name, "ko")), [logs, historyRoster, roster]);
+  const historyBase = useMemo(() => historyStudentCode ? logs.filter(l => l.studentCode === historyStudentCode) : logs, [logs, historyStudentCode]);
   const historyMonths = useMemo(() => [...new Set(historyBase.map(l => l.date.slice(0,7)))].sort((a,b) => b.localeCompare(a)), [historyBase]);
   const historyLogs = useMemo(() => {
     const q = historyQuery.trim();
@@ -216,7 +222,7 @@ export default function LessonOverviewPanel() {
       .filter(l => !historyMonth || l.date.startsWith(historyMonth))
       .filter(l => !q || `${l.classContent} ${l.nextPlan} ${l.notes ?? ""} ${nameOf(l.studentCode)}`.includes(q))
       .sort((a,b) => b.date.localeCompare(a.date) || nameOf(a.studentCode).localeCompare(nameOf(b.studentCode)));
-  }, [historyBase, historyMonth, historyQuery, roster]);
+  }, [historyBase, historyMonth, historyQuery, historyRoster, roster]);
   const periodGroups = useMemo(() => {
     const groups = new Map<string, ExamSchedule[]>();
     const todayStr = dateKey(new Date());
@@ -337,9 +343,9 @@ export default function LessonOverviewPanel() {
               <span style={{fontSize:11,color:"#7b899e"}}>{historyLogs.length}건</span>
             </div>
             <div className="l16-lesson-controls" style={{marginTop:8}}>
-              <select aria-label="기록 범위" className="l16-lesson-input" style={{width:"auto"}} value={historyScope} onChange={e=>setHistoryScope(e.target.value as "student"|"all")}>
-                <option value="student">이 학생만</option>
-                <option value="all">전체 학생</option>
+              <select aria-label="기록 학생 이름" className="l16-lesson-input" style={{width:"auto",minWidth:150,maxWidth:220}} value={historyStudentCode} onChange={e=>{setHistoryStudentCode(e.target.value);setHistoryMonth("");}}>
+                <option value="">전체 학생</option>
+                {historyStudents.map(student=><option key={student.studentCode} value={student.studentCode}>{student.name}</option>)}
               </select>
               <select aria-label="기간 선택" className="l16-lesson-input" style={{width:"auto"}} value={historyMonth} onChange={e=>setHistoryMonth(e.target.value)}>
                 <option value="">전체 기간</option>
@@ -356,7 +362,7 @@ export default function LessonOverviewPanel() {
                     return <button key={log.id} className={`l16-lesson-row ${active?"selected":""}`} onClick={()=>openLog(log)}>
                       <span className="l16-lesson-chip">{log.date.slice(5).replace("-","/")} {weekdayOf(log.date)}</span>
                       <span style={{flex:1,minWidth:0}}>
-                        {historyScope==="all" && <small style={{color:"#315ba7",fontWeight:700,display:"block"}}>{nameOf(log.studentCode)}</small>}
+                        <small style={{color:"#315ba7",fontWeight:700,display:"block"}}>{nameOf(log.studentCode)}</small>
                         <strong style={{fontSize:12,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{log.classContent.split("\n")[0] || "수업 내용 미입력"}</strong>
                         <small style={{color:"#8290a4"}}>{pend?`미완료 ${pend}건 · `:""}{log.nextPlan ? `다음: ${log.nextPlan.slice(0,40)}` : "다음 수업 계획 미기록"}</small>
                       </span>
