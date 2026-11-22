@@ -599,12 +599,18 @@ function DashboardView({ rows }: { rows: ExamResult[] }) {
   );
 }
 
-const ARCHIVE_2026_TAG = "[26년 학생]";
-function isArchive2026(entry: RosterEntry) { return (entry.note ?? "").split("\n")[0].trim() === ARCHIVE_2026_TAG; }
-function setArchive2026(entry: RosterEntry, archived: boolean): RosterEntry {
-  const lines = (entry.note ?? "").split("\n");
-  if (lines[0]?.trim() === ARCHIVE_2026_TAG) lines.shift();
-  return { ...entry, note: archived ? [ARCHIVE_2026_TAG, ...lines].join("\n") : lines.join("\n") };
+function manualArchiveYear(entry: RosterEntry): number | null {
+ const match=(entry.note??"").match(/^\[(\d{2}|\d{4})년 학생\]/); if(!match)return null;
+ const year=Number(match[1]); return match[1].length===2?2000+year:year;
+}
+function archiveYearFor(entry: RosterEntry,currentYear:number): number|null {
+ const manual=manualArchiveYear(entry); if(manual)return manual;
+ if((entry.studentStatus??"active")==="withdrawn"&&entry.classEndedAt){const year=Number(entry.classEndedAt.slice(0,4));if(year<currentYear)return year;}
+ return null;
+}
+function setManualArchiveYear(entry:RosterEntry,year:number|null):RosterEntry {
+ const lines=(entry.note??"").split("\n").filter(line=>!/^\[(\d{2}|\d{4})년 학생\]/.test(line.trim()));
+ return {...entry,note:year?["["+String(year).slice(-2)+"년 학생]",...lines].join("\n"):lines.join("\n")};
 }
 
 function RosterManager() {
@@ -616,7 +622,7 @@ function RosterManager() {
   const [fileName, setFileName] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
-  const [rosterView, setRosterView] = useState<"current" | "2026">("current");
+  const [rosterView, setRosterView] = useState("current");
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [editPhone, setEditPhone] = useState("");
@@ -710,9 +716,11 @@ function RosterManager() {
   }
 
   async function changeClassStatus(entry: RosterEntry, nextStatus: StudentStatus) {
-    const action = nextStatus === "withdrawn" ? "수업을 종료" : "수업을 재개";
-    if (!confirm(`${entry.name} 학생의 ${action} 처리할까요? ${nextStatus === "withdrawn" ? "명부와 과거 기록은 보존하고 현재·이후 시간표에서 제외합니다." : "현재·이후 시간표에 다시 포함합니다."}`)) return;
-    const updated = { ...entry, studentStatus: nextStatus };
+    const action=nextStatus==="withdrawn"?"수업을 종료":"수업을 재개"; const ending=nextStatus==="withdrawn";
+    const detail=ending?"오늘을 종료일로 기록하고 현재 명단·시간표에서 제외합니다. 연도가 지나면 해당 연도 학생 명단으로 보관됩니다.":"현재·이후 시간표에 다시 포함합니다. 종료일은 이력으로 보존됩니다."; 
+    if(!confirm(entry.name+" 학생의 "+action+" 처리할까요? "+detail))return;
+    const now=new Date(); const today=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
+    const updated={...entry,studentStatus:nextStatus,...(ending?{classEndedAt:today}:{})};
     try {
       await rosterStore.saveRoster([updated]);
       setRoster((prev) => prev.map((r) => r.studentCode === entry.studentCode ? updated : r));
@@ -916,6 +924,12 @@ function RosterManager() {
     a.click(); URL.revokeObjectURL(url);
   }
 
+  const currentYear=new Date().getFullYear();
+  const archiveYears=[...new Set(roster.map(r=>archiveYearFor(r,currentYear)).filter((year):year is number=>year!==null))].sort((a,b)=>b-a);
+  const currentEntries=roster.filter(r=>!manualArchiveYear(r)&&(r.studentStatus??"active")!=="withdrawn");
+  const endedEntries=roster.filter(r=>(r.studentStatus??"active")==="withdrawn"&&archiveYearFor(r,currentYear)===null);
+  const visibleEntries=rosterView==="current"?currentEntries:rosterView==="ended"?endedEntries:roster.filter(r=>archiveYearFor(r,currentYear)===Number(String(rosterView).slice(5)));
+  const canMoveSelected=rosterView==="current"||String(rosterView).startsWith("year:");
   return (
     <div className="card">
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8, flexWrap:"wrap", gap:10 }}>
@@ -1067,25 +1081,18 @@ function RosterManager() {
       <div style={{ height: 20 }} />
       <h3>등록된 명부 ({roster.length}명)</h3>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-        <button className={`btn ${rosterView === "current" ? "" : "ghost"}`} onClick={()=>{setRosterView("current");setSelectedCodes([]);}}>현재 학생 ({roster.filter(r=>!isArchive2026(r)).length})</button>
-        <button className={`btn ${rosterView === "2026" ? "" : "ghost"}`} onClick={()=>{setRosterView("2026");setSelectedCodes([]);}}>26년 학생 ({roster.filter(isArchive2026).length})</button>
-        <button className="btn ghost" onClick={()=>{
-          const visible=roster.filter(r=>isArchive2026(r)===(rosterView==="2026"));
-          setSelectedCodes(selectedCodes.length===visible.length?[]:visible.map(r=>r.studentCode));
-        }}>{selectedCodes.length===roster.filter(r=>isArchive2026(r)===(rosterView==="2026")).length?"선택 해제":"현재 목록 전체 선택"}</button>
-        {selectedCodes.length>0&&<button className="btn secondary" onClick={async()=>{
-          const moving=rosterView==="current";
-          const selected=roster.filter(r=>selectedCodes.includes(r.studentCode));
-          if(!confirm(`${selected.length}명을 ${moving?"26년 학생":"현재 학생"}으로 이동할까요? 학생 기록과 수업 이력은 보존됩니다.`))return;
-          try{
-            await rosterStore.saveRoster(selected.map(r=>setArchive2026(r,moving)));
-            setRoster(await rosterStore.listRoster());setSelectedCodes([]);
-            setNotice(`${selected.length}명을 ${moving?"26년 학생":"현재 학생"}으로 이동했습니다.`);
-          }catch(e){setNotice(`학생 이동에 실패했습니다: ${(e as Error).message}`);}
-        }}>{rosterView==="current"?"26년 학생으로 이동":"현재 학생으로 되돌리기"} ({selectedCodes.length})</button>}
+        <button className={"btn "+(rosterView==="current"?"":"ghost")} onClick={()=>{setRosterView("current");setSelectedCodes([]);}}>현재 학생 ({currentEntries.length})</button>
+        <button className={"btn "+(rosterView==="ended"?"":"ghost")} onClick={()=>{setRosterView("ended");setSelectedCodes([]);}}>수업 종료 ({endedEntries.length})</button>
+        {archiveYears.map(year=><button key={year} className={"btn "+(rosterView==="year:"+year?"":"ghost")} onClick={()=>{setRosterView("year:"+year);setSelectedCodes([]);}}>{year}년도 학생 명단 ({roster.filter(r=>archiveYearFor(r,currentYear)===year).length})</button>)}
+        <button className="btn ghost" onClick={()=>setSelectedCodes(selectedCodes.length===visibleEntries.length?[]:visibleEntries.map(r=>r.studentCode))}>{selectedCodes.length===visibleEntries.length?"선택 해제":"현재 목록 전체 선택"}</button>
+        {selectedCodes.length>0&&<button className="btn secondary" onClick={async()=>{const year=canMoveSelected?currentYear+1:null;const selected=roster.filter(r=>selectedCodes.includes(r.studentCode));
+          if(!confirm(selected.length+"명을 "+(year?year+"년도 학생 명단":"현재 학생 명단")+"으로 이동할까요? 학생 기록과 수업 이력은 보존됩니다."))return;
+          try{await rosterStore.saveRoster(selected.map(r=>setManualArchiveYear(r,year)));setRoster(await rosterStore.listRoster());setSelectedCodes([]);setNotice(selected.length+"명을 이동했습니다.");}
+          catch(e){setNotice("학생 이동에 실패했습니다: "+(e as Error).message);}
+        }}>{canMoveSelected?(currentYear+1)+"년도 학생 명단으로 이동":"현재 학생으로 되돌리기"} ({selectedCodes.length})</button>}
       </div>
-      {roster.length === 0 || roster.filter(e=>isArchive2026(e)===(rosterView==="2026")).length === 0 ? (
-        <p className="muted">{roster.length === 0 ? "아직 등록된 학생이 없습니다." : rosterView === "2026" ? "26년 학생 명부가 비어 있습니다." : "현재 학생 명부가 비어 있습니다."}</p>
+      {visibleEntries.length===0?(
+        <p className="muted">{roster.length===0?"아직 등록된 학생이 없습니다.":rosterView==="ended"?"올해 수업 종료 처리된 학생이 없습니다.":String(rosterView).startsWith("year:")?String(rosterView).slice(5)+"년도 학생 명단이 비어 있습니다.":"현재 학생 명부가 비어 있습니다."}</p>
       ) : (
         <div className="table-wrap">
           <table>
@@ -1105,7 +1112,7 @@ function RosterManager() {
               </tr>
             </thead>
             <tbody>
-              {roster.filter(e=>isArchive2026(e)===(rosterView==="2026")).map((e) => {
+              {visibleEntries.map((e) => {
                 const isEditing = editingCode === e.studentCode;
                 const typeColor = e.studentType === "S" ? "#9b59b6" : e.studentType === "W2" ? "#e67e22" : e.studentType === "W1" ? "#e74c3c" : "#aaa";
                 return (
@@ -1115,7 +1122,8 @@ function RosterManager() {
                       background: isEditing ? "#f8f9ff" : "#fff",
                       boxShadow:"2px 0 4px rgba(0,0,0,0.06)", minWidth:80 }}>
                       <label style={{display:"flex",alignItems:"center",gap:6}}><input type="checkbox" aria-label={`${e.name} 선택`} checked={selectedCodes.includes(e.studentCode)} onChange={ev=>setSelectedCodes(prev=>ev.target.checked?[...prev,e.studentCode]:prev.filter(code=>code!==e.studentCode))}/>{e.name}</label>
-                      <button onClick={()=>changeClassStatus(e,(e.studentStatus ?? "active")==="withdrawn"?"active":"withdrawn")} style={{marginTop:5,marginRight:4,padding:"4px 7px",fontSize:11,border:"1px solid",borderColor:(e.studentStatus ?? "active")==="withdrawn"?"#15803d":"#b91c1c",borderRadius:6,color:(e.studentStatus ?? "active")==="withdrawn"?"#15803d":"#b91c1c",background:"#fff",cursor:"pointer",fontWeight:600}}>{(e.studentStatus ?? "active")==="withdrawn"?"↩ 수업 재개":"⏹ 수업 종료"}</button>
+                      <button aria-label={e.name+" 수업 종료"} onClick={()=>changeClassStatus(e,(e.studentStatus ?? "active")==="withdrawn"?"active":"withdrawn")} style={{display:"block",marginTop:7,padding:"7px 10px",fontSize:12,border:"1px solid",borderColor:(e.studentStatus ?? "active")==="withdrawn"?"#15803d":"#b91c1c",borderRadius:7,color:(e.studentStatus ?? "active")==="withdrawn"?"#15803d":"#b91c1c",background:(e.studentStatus ?? "active")==="withdrawn"?"#f0fdf4":"#fff7f7",cursor:"pointer",fontWeight:700}}>{(e.studentStatus ?? "active")==="withdrawn"?"↩ 수업 재개":"⏹ 수업 종료"}</button>
+                      {e.classEndedAt&&<div style={{fontSize:11,color:"#64748b",marginTop:4}}>종료일: {e.classEndedAt}</div>}
                       <button onClick={()=>deleteStudent(e)} style={{marginTop:5,padding:"4px 8px",fontSize:11,border:"1px solid #ef4444",borderRadius:6,color:"#b91c1c",background:"#fff",cursor:"pointer",fontWeight:600}}>🗑 학생 삭제</button>
                       {e.registeredAt && (Date.now()-new Date(e.registeredAt).getTime())/86400000 <= 30 && (
                         <span style={{ fontSize:9, fontWeight:700, color:"#fff", background:"#e74c3c",
