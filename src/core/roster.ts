@@ -68,6 +68,24 @@ export interface ExamSchedule {
   color?: string;         // 표시 색상
 }
 
+const CLASS_END_NOTE_MARKER = /^\[L16_CLASS_ENDED_AT:(\d{4}-\d{2}-\d{2})\]$/;
+export function decodeRosterNote(rawNote?: string): { note: string; classEndedAt?: string } {
+  const lines = (rawNote ?? "").split("\n");
+  let classEndedAt: string | undefined;
+  const kept = lines.filter((line) => {
+    const match = line.trim().match(CLASS_END_NOTE_MARKER);
+    if (!match) return true;
+    classEndedAt = match[1];
+    return false;
+  });
+  return { note: kept.join("\n"), ...(classEndedAt ? { classEndedAt } : {}) };
+}
+export function encodeRosterNote(rawNote?: string, classEndedAt?: string): string {
+  const decoded = decodeRosterNote(rawNote);
+  const date = classEndedAt ?? decoded.classEndedAt;
+  return [decoded.note.trim(), ...(date ? [`[L16_CLASS_ENDED_AT:${date}]`] : [])].filter(Boolean).join("\n");
+}
+
 export interface RosterEntry {
   studentCode: string;
   name: string;
@@ -85,6 +103,7 @@ export interface RosterEntry {
   classSessions?: ClassSession[];
   lastAssignmentSavedAt?: string;
   studentStatus?: StudentStatus;  // 수강 상태 (기본값: active)
+  classEndedAt?: string;          // 수업 종료일 (YYYY-MM-DD)
   pausedAt?: string;              // 중단 시작일
   pausedReason?: string;          // 중단 사유
   lessonSchedule?: LessonSchedule;  // 수업 시간 일정 (최대 5일)

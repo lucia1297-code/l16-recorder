@@ -1,5 +1,6 @@
 import type { RosterStore } from "./rosterStore";
 import type { RosterEntry, LessonDayMap, StudentStatus } from "../core/roster";
+import { decodeRosterNote, encodeRosterNote } from "../core/roster";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let cachedClient: SupabaseClient | null = null;
@@ -27,7 +28,7 @@ export class SupabaseRosterStore implements RosterStore {
       phone: e.phone,
       parent_phone: e.parentPhone,
       teacher: e.teacher,
-      note: e.note,
+      note: encodeRosterNote(e.note, e.classEndedAt),
       registered_at: e.registeredAt,
       student_type: e.studentType ?? "",
       exclude_from_reminder: e.excludeFromReminder ?? false,
@@ -48,7 +49,9 @@ export class SupabaseRosterStore implements RosterStore {
     const sb = getClient();
     const { data, error } = await sb.from("students").select("*").order("student_code");
     if (error) throw new Error(error.message ?? error.details ?? JSON.stringify(error));
-    return (data ?? []).map((r: any) => ({
+    return (data ?? []).map((r: any) => {
+      const savedNote = decodeRosterNote(r.note);
+      return ({
       studentCode: r.student_code,
       name: r.name,
       school: r.school,
@@ -56,7 +59,8 @@ export class SupabaseRosterStore implements RosterStore {
       phone: r.phone,
       parentPhone: r.parent_phone ?? undefined,
       teacher: r.teacher ?? "",
-      note: r.note ?? "",
+      note: savedNote.note,
+      classEndedAt: savedNote.classEndedAt,
       registeredAt: r.registered_at ?? undefined,
       studentType: (r.student_type ?? "") as "S" | "W2" | "W1" | "",
       excludeFromReminder: r.exclude_from_reminder ?? false,
@@ -82,7 +86,8 @@ export class SupabaseRosterStore implements RosterStore {
       pausedAt: r.paused_at ?? undefined,
       pausedReason: r.paused_reason ?? undefined,
       lessonSchedule: (() => { try { return JSON.parse(r.lesson_schedule || '[]'); } catch { return []; } })(),
-    }));
+      });
+    });
   }
 
   async findByPhone(phoneDigits: string): Promise<RosterEntry | null> {
