@@ -9,7 +9,7 @@ export type TimetableImportRow = {
 };
 
 export type TimetableCalendarSlot = { day: DayOfWeek; startTime: string; endTime: string; studentCodes: string[] };
-export type TimetableCalendarWeek = { weekStart: string; slots: TimetableCalendarSlot[]; unresolvedCells: number; uncertainStudentCodes: string[] };
+export type TimetableCalendarWeek = { weekStart: string; slots: TimetableCalendarSlot[]; unresolvedCells: number; uncertainStudentCodes: string[]; unmatchedNames: string[] };
 export const TIMETABLE_HIDE_AUTO_NOTE = "L16_EXCEL_HIDE_AUTO_V1";
 export const TIMETABLE_EXCEL_NOTE_PREFIX = "L16_EXCEL_WEEK_V1";
 export const TIMETABLE_HIDE_FUTURE_NOTE = "L16_EXCEL_HIDE_FROM_V1";
@@ -136,22 +136,52 @@ function excelDate(value: unknown): Date | null {
 
 function dayKey(date: Date) { return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`; }
 
+function parseTimeHour(m: RegExpMatchArray): { hour: number; minute: number } {
+  const hour = Number(m[2]);
+  const minute = m[3] ? Number(m[3]) : m[4] === "반" ? 30 : m[4] ? Number(m[4].replace(/\D/g, "")) : 0;
+  return { hour, minute };
+}
+
+function resolveHour(hour: number, minute: number, day: DayOfWeek, ampm?: string): number {
+  if (ampm === "오전") return (hour === 12 ? 0 : hour) * 60 + minute;
+  if (ampm === "오후") return (hour < 12 ? hour + 12 : hour) * 60 + minute;
+  if (hour === 24) return minute; // 24:00 → 0:00 next day edge
+  if (hour > 12) return hour * 60 + minute;
+  if (hour >= 7 && hour <= 11) return (day === "sun" || day === "sat" ? hour : hour + 12) * 60 + minute;
+  const base = hour < 7 ? hour + 12 : hour;
+  return (base + (base < 12 && base !== 0 ? 12 : 0)) * 60 + minute;
+}
+
 export function timeFromCell(text: string, entry: RosterEntry, day: DayOfWeek): { startTime: string; endTime: string } | null {
   const parts = text.split(/(?:--?>|→)/);
   const effective = parts[parts.length - 1] ?? text;
   const primaryTimeText = /혹시/.test(effective) ? effective.split("혹시")[0] : effective;
+
+  // ── 범위 패턴: "5시-6시반", "4시-5시반", "17:00-18:30" 등 ──
+  // 하이픈(- / ~)으로 연결된 두 시각 → 첫 번째가 시작, 두 번째가 종료
+  const rangeRe = /(오전|오후)?\s*(\d{1,2})\s*(?::\s*(\d{1,2})|시\s*(반|\d{1,2}\s*분)?)\s*[-~]\s*(오전|오후)?\s*(\d{1,2})\s*(?::\s*(\d{1,2})|시\s*(반|\d{1,2}\s*분)?)/;
+  const rangeMatch = primaryTimeText.match(rangeRe);
+  if (rangeMatch) {
+    const startH = Number(rangeMatch[2]);
+    const startM = rangeMatch[3] ? Number(rangeMatch[3]) : rangeMatch[4] === "반" ? 30 : rangeMatch[4] ? Number(rangeMatch[4].replace(/\D/g, "")) : 0;
+    const endH = Number(rangeMatch[6]);
+    const endM = rangeMatch[7] ? Number(rangeMatch[7]) : rangeMatch[8] === "반" ? 30 : rangeMatch[8] ? Number(rangeMatch[8].replace(/\D/g, "")) : 0;
+    const startMinutes = resolveHour(startH, startM, day, rangeMatch[1]);
+    let endMinutes = resolveHour(endH, endM, day, rangeMatch[5]);
+    // 종료가 시작보다 작으면 오전/오후 보정 — 예: 11시-12시반(토)
+    if (endMinutes <= startMinutes) endMinutes += 12 * 60;
+    if (endMinutes > startMinutes && endMinutes - startMinutes <= 240) {
+      const format = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+      return { startTime: format(startMinutes), endTime: format(endMinutes) };
+    }
+  }
+
+  // ── 단일 시각 ──
   const matches = [...primaryTimeText.matchAll(/(오전|오후)?\s*(\d{1,2})\s*(?::\s*(\d{1,2})|시\s*(반|\d{1,2}\s*분)?)/g)];
   const m = matches[matches.length - 1];
   if (!m) return null;
-  let hour = Number(m[2]);
-  let minute = m[3] ? Number(m[3]) : m[4] === "반" ? 30 : m[4] ? Number(m[4].replace(/\D/g, "")) : 0;
+  const { hour, minute } = parseTimeHour(m);
   if (hour > 24 || minute > 59) return null;
-  const candidates = new Set<number>();
-  if (m[1] === "오전") candidates.add(hour === 12 ? 0 : hour);
-  else if (m[1] === "오후") candidates.add(hour < 12 ? hour + 12 : hour);
-  else if (hour === 24) candidates.add(0);
-  else if (hour > 12) candidates.add(hour);
-  else { candidates.add(hour); if (hour < 12) candidates.add(hour + 12); }
   const current = (entry.lessonSchedule ?? []).filter((s) => s.day === day);
   const targetMinute = hour * 60 + minute;
   const matched = current.find((s) => {
@@ -160,13 +190,7 @@ export function timeFromCell(text: string, entry: RosterEntry, day: DayOfWeek): 
   });
   let startMinutes: number;
   if (matched) startMinutes = Number(matched.startTime.slice(0, 2)) * 60 + Number(matched.startTime.slice(3));
-  else if (m[1] || hour > 12 || hour === 24) startMinutes = [...candidates][0] * 60 + minute;
-  else if (hour >= 7 && hour <= 11) {
-    startMinutes = (day === "sun" || day === "sat" ? hour : hour + 12) * 60 + minute;
-  } else {
-    const base = hour < 7 ? hour + 12 : hour;
-    startMinutes = (base + (base < 12 && base !== 0 ? 12 : 0)) * 60 + minute;
-  }
+  else startMinutes = resolveHour(hour, minute, day, m[1]);
   const durationMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:시간|h\b)/i);
   const minuteDuration = text.match(/(\d{2,3})\s*분/);
   const duration = durationMatch ? Number(durationMatch[1]) * 60 : minuteDuration ? Number(minuteDuration[1]) : matched ? (() => {
@@ -198,6 +222,7 @@ export function analyzeTimetableCalendar(rows: unknown[][], roster: RosterEntry[
     const slotMap = new Map<string, TimetableCalendarSlot>();
     let unresolvedCells = 0;
     const uncertainStudentCodes = new Set<string>();
+    const unmatchedNameSet = new Set<string>();
     for (let rowIndex = startRow + 1; rowIndex < stopRow; rowIndex++) {
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const text = String(rows[rowIndex]?.[dayIndex + 1] ?? "").trim();
@@ -212,13 +237,46 @@ export function analyzeTimetableCalendar(rows: unknown[][], roster: RosterEntry[
             if (token.length >= 2) matched = byName.filter((entry) => norm(entry.name).endsWith(token) || norm(entry.name).startsWith(token));
           }
         }
-        if (!matched.length) continue; // 명부에 없는 일정 메모는 학생 시간표로 가져오지 않습니다.
+        if (!matched.length) {
+          // 이름처럼 보이는 토큰이 있으면 unmatchedNames에 수집
+          const timeStart = text.search(/\d{1,2}\s*(?:시|:)/);
+          const namePart = timeStart > 0 ? text.slice(0, timeStart).trim() : text.trim();
+          const nameToken = namePart.split(/\s+/).pop() ?? "";
+          if (nameToken.length >= 2 && !/^[\d:]+$/.test(nameToken) && !/휴강|취소|종료/.test(nameToken)) {
+            unmatchedNameSet.add(nameToken);
+          }
+          continue; // 명부에 없는 일정 메모는 학생 시간표로 가져오지 않습니다.
+        }
         const longest = matched[0].name.length;
         const sameLength = matched.filter((entry) => entry.name.length === longest);
         if (sameLength.length !== 1) { unresolvedCells++; sameLength.forEach((entry) => uncertainStudentCodes.add(entry.studentCode)); continue; }
-        if ((sameLength[0].studentStatus ?? "active") === "withdrawn") continue;
+        const studentStatus = sameLength[0].studentStatus ?? "active";
+        if (studentStatus === "withdrawn" || studentStatus === "paused") continue;
         if (/휴강|취소/.test(text)) continue;
+        // "?" 포함 셀은 미확정 일정이므로 가져오지 않음
+        if (/\?/.test(text)) continue;
         const day = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as DayOfWeek[])[dayIndex];
+        // "N시종료" 패턴: 해당 학생의 같은 요일 슬롯 종료 시각 갱신
+        const endOnlyMatch = text.match(/(오전|오후)?\s*(\d{1,2})\s*(?:시\s*(반|\d{1,2}\s*분)?|:\s*(\d{1,2}))\s*종료/);
+        if (endOnlyMatch) {
+          const eHour = Number(endOnlyMatch[2]);
+          const eMin = endOnlyMatch[3] === "반" ? 30 : endOnlyMatch[3] ? Number(endOnlyMatch[3].replace(/\D/g, "")) : endOnlyMatch[4] ? Number(endOnlyMatch[4]) : 0;
+          const endMinutes = resolveHour(eHour, eMin, day, endOnlyMatch[1]);
+          const fmt = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+          const endTime = fmt(endMinutes);
+          // 같은 요일에 이미 등록된 해당 학생 슬롯을 찾아 종료 시각 갱신
+          for (const [k, slot] of slotMap.entries()) {
+            if (k.startsWith(`${day}|`) && slot.studentCodes.includes(sameLength[0].studentCode)) {
+              const parts = k.split("|");
+              const newKey = `${parts[0]}|${parts[1]}|${endTime}`;
+              slot.endTime = endTime;
+              slotMap.delete(k);
+              slotMap.set(newKey, slot);
+              break;
+            }
+          }
+          continue;
+        }
         const time = timeFromCell(text, sameLength[0], day);
         if (!time) {
           const current = (sameLength[0].lessonSchedule ?? []).filter((s) => s.day === day);
@@ -235,7 +293,7 @@ export function analyzeTimetableCalendar(rows: unknown[][], roster: RosterEntry[
         slotMap.set(key, slot);
       }
     }
-    if (slotMap.size || unresolvedCells) output.push({ weekStart, slots: [...slotMap.values()], unresolvedCells, uncertainStudentCodes: [...uncertainStudentCodes] });
+    if (slotMap.size || unresolvedCells) output.push({ weekStart, slots: [...slotMap.values()], unresolvedCells, uncertainStudentCodes: [...uncertainStudentCodes], unmatchedNames: [...unmatchedNameSet] });
   }
   return output;
 }

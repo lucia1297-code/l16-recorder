@@ -225,6 +225,8 @@ export default function TimetablePanel() {
 
     roster.forEach(student => {
       if (!student.lessonSchedule || student.lessonSchedule.length === 0) return;
+      const status = student.studentStatus ?? "active";
+      if (status === "withdrawn" || status === "paused") return;
 
       student.lessonSchedule.forEach(schedule => {
         const dayLabel = DAY_MAP[schedule.day] || "월";

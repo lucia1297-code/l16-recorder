@@ -7,8 +7,28 @@ const STATUS_LABEL: Record<TimetableImportRow["status"], string> = {
   match: "일치", new: "시간표 추가", changed: "변경 감지", not_in_file: "엑셀에 없음", ambiguous: "확인 필요", invalid: "형식 확인",
 };
 
+/** 날짜 → YYYY-MM-DD */
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+/** 주어진 날짜가 속한 주의 일요일 */
+function getSundayOf(d: Date): Date {
+  const sun = new Date(d);
+  sun.setHours(0, 0, 0, 0);
+  sun.setDate(sun.getDate() - sun.getDay());
+  return sun;
+}
+/** YYYY-MM-DD에 N일 더한 날짜 키 */
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + n);
+  return dateKey(d);
+}
+
 export default function TimetableExcelSubmission({ roster, onApplied }: { roster: RosterEntry[]; onApplied: (next: RosterEntry[]) => void }) {
   const store = useMemo(() => createRosterStore(), []);
+  const thisWeekStart = useMemo(() => dateKey(getSundayOf(new Date())), []);
+  const nextWeekStart = useMemo(() => addDays(thisWeekStart, 7), [thisWeekStart]);
   const [fileName, setFileName] = useState("");
   const [rows, setRows] = useState<TimetableImportRow[]>([]);
   const [calendarWeeks, setCalendarWeeks] = useState<TimetableCalendarWeek[]>([]);
@@ -30,7 +50,7 @@ export default function TimetableExcelSubmission({ roster, onApplied }: { roster
         const data = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true });
         try { analyzed = analyzeTimetableRows(data, roster); break; }
         catch (e) { lastError = (e as Error).message; }
-        if (!calendar.length) calendar = analyzeTimetableCalendar(data, roster, "2026-11-15");
+        if (!calendar.length) calendar = analyzeTimetableCalendar(data, roster, thisWeekStart);
       }
       if (analyzed) {
         setRows(analyzed);
@@ -65,14 +85,14 @@ export default function TimetableExcelSubmission({ roster, onApplied }: { roster
   }
 
   async function applyCalendar() {
-    const currentWeek = calendarWeeks.find((w) => w.weekStart === "2026-11-15");
-    const futureWeeks = calendarWeeks.filter((w) => w.weekStart >= "2026-11-22");
+    const currentWeek = calendarWeeks.find((w) => w.weekStart === thisWeekStart);
+    const futureWeeks = calendarWeeks.filter((w) => w.weekStart >= nextWeekStart);
     if (!futureWeeks.length) return;
     const canonical = futureWeeks[0];
     const total = canonical.slots.reduce((n, slot) => n + slot.studentCodes.length, 0);
     const exceptions = futureWeeks.slice(1).filter((week) => scheduleSignature(week) !== scheduleSignature(canonical));
     const uncertainty = currentWeek?.uncertainStudentCodes.length ?? 0;
-    if (!confirm(`11월 15일 주간 일정과 11월 22일 이후 반복 시간표를 엑셀 내용으로 반영합니다. 이후 시간표의 자동 명단은 엑셀 일정으로 대체되어 줄어든 학생은 사라집니다. 11월 15일 주간에서 판독이 애매한 학생 ${uncertainty}명은 기존 일정을 유지합니다. 학생 명부와 과거 수업 기록은 보존합니다. 계속할까요?`)) return;
+    if (!confirm(`${thisWeekStart} 주간 일정과 ${nextWeekStart} 이후 반복 시간표를 엑셀 내용으로 반영합니다. 이후 시간표의 자동 명단은 엑셀 일정으로 대체되어 줄어든 학생은 사라집니다. ${thisWeekStart} 주간에서 판독이 애매한 학생 ${uncertainty}명은 기존 일정을 유지합니다. 학생 명부와 과거 수업 기록은 보존합니다. 계속할까요?`)) return;
     setBusy(true); setError("");
     try {
       const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -133,7 +153,7 @@ export default function TimetableExcelSubmission({ roster, onApplied }: { roster
       const writeRes = await fetch(`${url}/rest/v1/timetable_blocks`, { method: "POST", headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(payload) });
       if (!writeRes.ok) throw new Error(`시간표 저장 실패 (${writeRes.status})`);
       setError("");
-      alert(`11월 15일 주간과 11월 22일부터 반복되는 시간표를 반영했습니다. 반복 일정 ${total}건, 주별 예외 ${exceptions.length}주입니다. 시간표 탭을 다시 열어 확인해 주세요.`);
+      alert(`${thisWeekStart} 주간과 ${nextWeekStart}부터 반복되는 시간표를 반영했습니다. 반복 일정 ${total}건, 주별 예외 ${exceptions.length}주입니다. 시간표 탭을 다시 열어 확인해 주세요.`);
     } catch (e) { setError(`엑셀 시간표 반영 실패: ${(e as Error).message}`); }
     finally { setBusy(false); }
   }
@@ -156,11 +176,11 @@ export default function TimetableExcelSubmission({ roster, onApplied }: { roster
     {calendarWeeks.length > 0 && <>
       <div style={{ marginTop: 12, padding: 12, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8 }}>
         <strong>주별 달력 시간표 인식</strong>
-        <p className="muted" style={{ margin: "4px 0 8px" }}>11월 15일 이후 {calendarWeeks.length}주를 읽었습니다. 11월 15일 주는 엑셀 일정으로 정리하고, 11월 22일부터는 새 반복 시간표로 적용합니다. 판독이 애매한 현재 주 일정은 기존 위치를 유지합니다.</p>
+        <p className="muted" style={{ margin: "4px 0 8px" }}>{thisWeekStart} 이후 {calendarWeeks.length}주를 읽었습니다. {thisWeekStart} 주는 엑셀 일정으로 정리하고, {nextWeekStart}부터는 새 반복 시간표로 적용합니다. 판독이 애매한 현재 주 일정은 기존 위치를 유지합니다.{calendarWeeks[0]?.unmatchedNames?.length ? <span style={{ color: "#b91c1c" }}> · 명부에 없는 이름: {calendarWeeks[0].unmatchedNames.join(", ")}</span> : null}</p>
         <div style={{ maxHeight: 260, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 6 }}>
           {calendarWeeks.map((week) => <div key={week.weekStart} style={{ border: "1px solid #e2e8f0", borderRadius: 6, padding: 8, fontSize: 12 }}><b>{week.weekStart}</b><br />수업 칸 {week.slots.reduce((n, slot) => n + slot.studentCodes.length, 0)}개{week.uncertainStudentCodes.length ? <span style={{ color: "#b45309" }}> · 기존 유지 {week.uncertainStudentCodes.length}명</span> : null}</div>)}
         </div>
-        <button className="btn secondary" disabled={busy || !calendarWeeks.some((w) => w.weekStart >= "2026-11-22" && w.slots.length > 0)} onClick={applyCalendar} style={{ marginTop: 10 }}>엑셀 시간표 반영</button>
+        <button className="btn secondary" disabled={busy || !calendarWeeks.some((w) => w.weekStart >= nextWeekStart && w.slots.length > 0)} onClick={applyCalendar} style={{ marginTop: 10 }}>엑셀 시간표 반영</button>
       </div>
     </>}
     {rows.length > 0 && <>
