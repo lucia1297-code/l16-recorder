@@ -560,9 +560,22 @@ export default function TimetablePanel() {
       setCalendarWeeks([]);
       setImportRows([]);
       setNotice(`✅ ${thisWeekStart} 주간과 ${nextWeekStart}부터 반복 시간표 반영 완료 (${total}건, 예외 ${exceptions.length}주) — 페이지를 새로 고침하면 반영됩니다.`);
-      // 블록 새로 고침
-      const refreshed = await fetch(`${SB_URL}/rest/v1/timetable_blocks?select=*`, { headers: SB_H });
-      if (refreshed.ok) setBlocks(await refreshed.json());
+      // 블록 새로 고침 (snake_case → camelCase 매핑 필수)
+      const refreshed = await fetch(`${SB_URL}/rest/v1/timetable_blocks?order=day,start_slot`, { headers: SB_H });
+      if (refreshed.ok) {
+        const raw = await refreshed.json().catch(() => []);
+        const mapped: TimetableBlock[] = (Array.isArray(raw) ? raw : []).map((r: any) => ({
+          id: r.id, day: r.day, startSlot: r.start_slot, endSlot: r.end_slot,
+          studentCodes: JSON.parse(r.student_codes || "[]"),
+          title: r.title, color: r.color, note: r.note ?? "",
+          weekStart: r.week_start ?? undefined,
+          cancelled: r.cancelled ?? false,
+          absentStudentCodes: JSON.parse(r.absent_student_codes || "[]"),
+          moved: r.moved ?? false,
+        }));
+        setBlocks(mapped);
+        localStorage.setItem("l16.timetable", JSON.stringify(mapped));
+      }
     } catch (e) { setExcelError(`엑셀 시간표 반영 실패: ${(e as Error).message}`); }
     finally { setExcelBusy(false); }
   }
