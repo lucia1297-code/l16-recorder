@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { CalendarDays, Locate, CheckCircle, Settings, Plus, X, Repeat, Pin } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent, DragEvent } from "react";
+import { CalendarDays, Locate, CheckCircle, Settings, Plus, X, Repeat, Pin, Upload } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
-import { TIMETABLE_HIDE_AUTO_NOTE, TIMETABLE_EXCEL_NOTE_PREFIX, TIMETABLE_HIDE_FUTURE_NOTE, TIMETABLE_FUTURE_NOTE_PREFIX } from "../../lib/timetableImport";
+import { TIMETABLE_HIDE_AUTO_NOTE, TIMETABLE_EXCEL_NOTE_PREFIX, TIMETABLE_HIDE_FUTURE_NOTE, TIMETABLE_FUTURE_NOTE_PREFIX, analyzeTimetableCalendar, analyzeTimetableRows, scheduleLabel, type TimetableCalendarWeek, type TimetableImportRow } from "../../lib/timetableImport";
 
 const SB_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -174,6 +174,17 @@ export default function TimetablePanel() {
   // 학생 검색
   const [stuSearch, setStuSearch] = useState("");
   const [autoMode, setAutoMode] = useState(true); // 자동 생성 모드
+
+  // ── 엑셀 drag & drop 상태 ─────────────────────────────────
+  const [dropActive, setDropActive] = useState(false);
+  const [excelBusy, setExcelBusy] = useState(false);
+  const [excelError, setExcelError] = useState("");
+  const [calendarWeeks, setCalendarWeeks] = useState<TimetableCalendarWeek[]>([]);
+  const [importRows, setImportRows] = useState<TimetableImportRow[]>([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [importSelected, setImportSelected] = useState<string[]>([]);
+  const [showImportPanel, setShowImportPanel] = useState(false);
+  const excelRosterStore = useMemo(() => createRosterStore(), []);
 
   // 위/아래 동기화 가로 스크롤바 (그리드가 넓어서 아래쪽 스크롤바까지 손이 멀리 가는 문제 대응)
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -404,6 +415,180 @@ export default function TimetablePanel() {
     const next = blocks.filter(b => b.id !== id);
     setBlocks(next);
     localStorage.setItem("l16.timetable", JSON.stringify(next));
+  }
+
+  // ── 엑셀 drag & drop 핸들러 ──────────────────────────────
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) setDropActive(true);
+  }
+  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+    // 자식 요소로 이동할 때는 무시 (currentTarget 밖으로 나갈 때만 처리)
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDropActive(false);
+  }
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDropActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleExcelFile(file);
+  }
+
+  function excelDateKey(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function excelSundayOf(d: Date): Date {
+    const sun = new Date(d);
+    sun.setHours(0, 0, 0, 0);
+    sun.setDate(sun.getDate() - sun.getDay());
+    return sun;
+  }
+  function excelAddDays(dateStr: string, n: number): string {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + n);
+    return excelDateKey(d);
+  }
+
+  async function handleExcelFile(file: File) {
+    setExcelBusy(true); setExcelError(""); setCalendarWeeks([]); setImportRows([]);
+    setImportSelected([]); setImportFileName(file.name); setShowImportPanel(true);
+    const thisWeekStart = excelDateKey(excelSundayOf(new Date()));
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      let analyzed: TimetableImportRow[] | null = null;
+      let calendar: TimetableCalendarWeek[] = [];
+      let lastError = "";
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true });
+        try { analyzed = analyzeTimetableRows(data, roster); break; }
+        catch (e) { lastError = (e as Error).message; }
+        if (!calendar.length) calendar = analyzeTimetableCalendar(data, roster, thisWeekStart);
+      }
+      if (analyzed) {
+        setImportRows(analyzed);
+        setImportSelected(analyzed.filter(r => r.status === "new" || r.status === "changed").map(r => r.studentCode));
+      } else if (calendar.length) {
+        setCalendarWeeks(calendar);
+      } else {
+        throw new Error(lastError || "읽을 수 있는 시간표 시트를 찾지 못했습니다.");
+      }
+    } catch (e) { setExcelError((e as Error).message || "엑셀 파일을 읽지 못했습니다."); }
+    finally { setExcelBusy(false); }
+  }
+
+  async function applyExcelCalendar() {
+    const thisWeekStart = excelDateKey(excelSundayOf(new Date()));
+    const nextWeekStart = excelAddDays(thisWeekStart, 7);
+    const currentWeek = calendarWeeks.find(w => w.weekStart === thisWeekStart);
+    const futureWeeks = calendarWeeks.filter(w => w.weekStart >= nextWeekStart);
+    if (!futureWeeks.length) return;
+    const canonical = futureWeeks[0];
+    const total = canonical.slots.reduce((n, slot) => n + slot.studentCodes.length, 0);
+    const calSig = (w: TimetableCalendarWeek) =>
+      w.slots.map(s => `${s.day}|${s.startTime}|${s.endTime}|${[...s.studentCodes].sort().join(",")}`).sort().join(";");
+    const exceptions = futureWeeks.slice(1).filter(week => calSig(week) !== calSig(canonical));
+    const uncertainty = currentWeek?.uncertainStudentCodes.length ?? 0;
+    if (!confirm(`${thisWeekStart} 주간 일정과 ${nextWeekStart} 이후 반복 시간표를 엑셀 내용으로 반영합니다.\n이후 시간표의 자동 명단은 엑셀 일정으로 대체되어 줄어든 학생은 사라집니다.\n${thisWeekStart} 주간에서 판독이 애매한 학생 ${uncertainty}명은 기존 일정을 유지합니다.\n학생 명부와 과거 수업 기록은 보존합니다.\n계속할까요?`)) return;
+    setExcelBusy(true); setExcelError("");
+    try {
+      const url = SB_URL, key = SB_KEY;
+      if (!url || !key) throw new Error("시간표 DB 연결 설정이 없습니다.");
+      const headers = SB_H;
+      const first = currentWeek?.weekStart ?? canonical.weekStart;
+      const last = futureWeeks[futureWeeks.length - 1].weekStart;
+      const existingRes = await fetch(`${url}/rest/v1/timetable_blocks?select=id,day,start_slot,end_slot,week_start,note,color,title,student_codes&week_start=gte.${first}&week_start=lte.${last}`, { headers });
+      if (!existingRes.ok) throw new Error(`기존 시간표 조회 실패 (${existingRes.status})`);
+      const existing = await existingRes.json() as Array<{ id: string; day: string; start_slot: string; end_slot: string; week_start: string; note?: string; color?: string; title?: string; student_codes?: string | string[] }>;
+      const recurringRes = await fetch(`${url}/rest/v1/timetable_blocks?select=id,day,start_slot,end_slot,week_start,note,color,title,student_codes&week_start=is.null`, { headers });
+      if (!recurringRes.ok) throw new Error(`반복 시간표 조회 실패 (${recurringRes.status})`);
+      const recurringBlocks = await recurringRes.json() as Array<{ day: string; start_slot: string; end_slot: string; student_codes?: string | string[] }>;
+      const dayNames = { sun: "일", mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토" } as const;
+      const baseline = new Map<string, Set<string>>();
+      roster.filter(student => (student.studentStatus ?? "active") !== "withdrawn").forEach(student =>
+        (student.lessonSchedule ?? []).forEach(s => {
+          const day = dayNames[s.day]; const slotKey = `${day}|${s.startTime}|${s.endTime}`;
+          baseline.set(slotKey, new Set([...(baseline.get(slotKey) ?? []), student.studentCode]));
+        })
+      );
+      [...existing, ...recurringBlocks].forEach(block => {
+        const codes = typeof block.student_codes === "string" ? JSON.parse(block.student_codes || "[]") as string[] : block.student_codes ?? [];
+        if (!codes.length) return;
+        const slotKey = `${block.day}|${block.start_slot}|${block.end_slot}`;
+        baseline.set(slotKey, new Set([...(baseline.get(slotKey) ?? []), ...codes]));
+      });
+      const rowsForWeek = (week: TimetableCalendarWeek, mode: "exact" | "future") => {
+        const target = new Map(week.slots.map(slot => [`${dayNames[slot.day]}|${slot.startTime}|${slot.endTime}`, slot]));
+        const slots = new Map<string, { day: string; start: string; end: string; codes: string[]; hidden: boolean }>();
+        const uncertain = new Set(week.uncertainStudentCodes);
+        baseline.forEach((codes, slotKey) => {
+          const [day, start, end] = slotKey.split("|"); const slot = target.get(slotKey);
+          const keep = !slot && mode === "exact" ? [...codes].filter(code => uncertain.has(code)) : [];
+          slots.set(slotKey, { day, start, end, codes: slot?.studentCodes ?? keep, hidden: !slot && keep.length === 0 });
+        });
+        if (mode === "exact" && week.weekStart > canonical.weekStart) canonical.slots.forEach(slot => {
+          const day = dayNames[slot.day]; const slotKey = `${day}|${slot.startTime}|${slot.endTime}`;
+          if (!target.has(slotKey) && !slots.has(slotKey)) slots.set(slotKey, { day, start: slot.startTime, end: slot.endTime, codes: [], hidden: true });
+        });
+        week.slots.forEach(slot => {
+          const day = dayNames[slot.day]; const slotKey = `${day}|${slot.startTime}|${slot.endTime}`;
+          slots.set(slotKey, { day, start: slot.startTime, end: slot.endTime, codes: slot.studentCodes, hidden: false });
+        });
+        return [...slots.entries()].map(([, slot]) => {
+          const startWeek = mode === "future" ? canonical.weekStart : week.weekStart;
+          const old = existing.find(b => b.week_start === startWeek && b.day === slot.day && b.start_slot === slot.start && b.end_slot === slot.end);
+          const note = slot.hidden
+            ? mode === "future" ? `${TIMETABLE_HIDE_FUTURE_NOTE}|${canonical.weekStart}` : TIMETABLE_HIDE_AUTO_NOTE
+            : mode === "future" ? `${TIMETABLE_FUTURE_NOTE_PREFIX}|${canonical.weekStart}` : `${TIMETABLE_EXCEL_NOTE_PREFIX}|${week.weekStart}`;
+          return { id: old?.id ?? crypto.randomUUID(), day: slot.day, start_slot: slot.start, end_slot: slot.end,
+            student_codes: JSON.stringify(slot.codes), title: "", color: old?.color ?? "#0891b2", note,
+            week_start: startWeek, cancelled: false, absent_student_codes: "[]", moved: false };
+        });
+      };
+      const payload: Record<string, unknown>[] = [...rowsForWeek(canonical, "future")];
+      if (currentWeek) payload.push(...rowsForWeek(currentWeek, "exact"));
+      for (const exception of exceptions) payload.push(...rowsForWeek(exception, "exact"));
+      const writeRes = await fetch(`${url}/rest/v1/timetable_blocks`, {
+        method: "POST",
+        headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(payload)
+      });
+      if (!writeRes.ok) throw new Error(`시간표 저장 실패 (${writeRes.status})`);
+      setExcelError("");
+      setShowImportPanel(false);
+      setCalendarWeeks([]);
+      setImportRows([]);
+      setNotice(`✅ ${thisWeekStart} 주간과 ${nextWeekStart}부터 반복 시간표 반영 완료 (${total}건, 예외 ${exceptions.length}주) — 페이지를 새로 고침하면 반영됩니다.`);
+      // 블록 새로 고침
+      const refreshed = await fetch(`${SB_URL}/rest/v1/timetable_blocks?select=*`, { headers: SB_H });
+      if (refreshed.ok) setBlocks(await refreshed.json());
+    } catch (e) { setExcelError(`엑셀 시간표 반영 실패: ${(e as Error).message}`); }
+    finally { setExcelBusy(false); }
+  }
+
+  async function applyExcelRows() {
+    const codes = new Set(importSelected);
+    const target = importRows.filter(r => codes.has(r.studentCode) && (r.status === "new" || r.status === "changed") && r.proposed.length);
+    if (!target.length) return;
+    if (!confirm(`${target.length}명의 학생 시간표를 엑셀 내용으로 반영할까요? 학생별 기존 수업 출결 기록은 유지됩니다.`)) return;
+    setExcelBusy(true); setExcelError("");
+    try {
+      const byCode = new Map(target.map(r => [r.studentCode, r.proposed]));
+      await excelRosterStore.saveRoster(roster.filter(r => byCode.has(r.studentCode)).map(r => {
+        const lessonSchedule = byCode.get(r.studentCode)!;
+        const lessonDays = lessonSchedule.reduce((days, slot) => {
+          days[slot.day] = Math.min(2, (days[slot.day] ?? 0) + 1) as 1 | 2;
+          return days;
+        }, {} as NonNullable<RosterEntry["lessonDays"]>);
+        return { ...r, lessonSchedule, lessonDays };
+      }));
+      const updated = await excelRosterStore.listRoster();
+      setRoster(updated);
+      setImportRows(prev => prev.map(r => byCode.has(r.studentCode) ? { ...r, status: "match" as const, detail: "엑셀 시간표 반영 완료" } : r));
+      setImportSelected([]);
+    } catch (e) { setExcelError(`반영에 실패했습니다: ${(e as Error).message}`); }
+    finally { setExcelBusy(false); }
   }
 
   // weekKey: 어떤 주 칸에서 열었는지(일요일 "YYYY-MM-DD"). 있으면 기본
@@ -766,8 +951,28 @@ export default function TimetablePanel() {
   );
   const editingBlock = editId ? blocks.find(b => b.id === editId) : null;
 
+  const thisWeekStartForUI = excelDateKey(excelSundayOf(new Date()));
+  const nextWeekStartForUI = excelAddDays(thisWeekStartForUI, 7);
+
   return (
-    <div className="card" style={{ padding:0, overflow:"hidden" }}>
+    <div className="card" style={{ padding:0, overflow:"hidden", position:"relative" }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+
+      {/* ── 드래그 오버레이 ── */}
+      {dropActive && (
+        <div style={{ position:"absolute", inset:0, zIndex:100,
+          background:"rgba(8,145,178,0.15)", border:"3px dashed #0891b2",
+          borderRadius:12, display:"flex", flexDirection:"column",
+          alignItems:"center", justifyContent:"center", gap:12, pointerEvents:"none" }}>
+          <Upload size={40} color="#0891b2"/>
+          <span style={{ fontSize:18, fontWeight:800, color:"#0891b2" }}>
+            엑셀 시간표 파일을 여기에 놓으세요
+          </span>
+        </div>
+      )}
 
       {/* ── 헤더 ── */}
       <div style={{ padding:"16px 20px", borderBottom:"1px solid var(--line)",
@@ -811,6 +1016,108 @@ export default function TimetablePanel() {
           borderBottom:"1px solid #86efac", color:"#166534",
           fontSize:13, fontWeight:600 }}>
           {notice}
+        </div>
+      )}
+
+      {/* ── 엑셀 import 패널 (드래그 앤 드롭 후 표시) ── */}
+      {showImportPanel && (
+        <div style={{ padding:"12px 20px", background:"#f0f9ff",
+          borderBottom:"1px solid #bae6fd" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+            <strong style={{ fontSize:14, color:"#0c4a6e" }}>
+              📅 {importFileName} — 시간표 인식 결과
+            </strong>
+            <button onClick={() => { setShowImportPanel(false); setCalendarWeeks([]); setImportRows([]); setExcelError(""); }}
+              style={{ background:"none", border:"none", cursor:"pointer", color:"#64748b" }}>
+              <X size={16}/>
+            </button>
+          </div>
+          {excelBusy && <p style={{ color:"#0891b2", fontSize:13 }}>처리 중…</p>}
+          {excelError && <p style={{ color:"#b91c1c", fontWeight:600, fontSize:13 }}>{excelError}</p>}
+
+          {/* 달력형 시간표 */}
+          {calendarWeeks.length > 0 && !excelBusy && (
+            <div>
+              <p style={{ margin:"0 0 8px", fontSize:13, color:"#475569" }}>
+                {thisWeekStartForUI} 이후 <b>{calendarWeeks.length}주</b>를 읽었습니다.
+                {thisWeekStartForUI} 주는 엑셀로 정리, {nextWeekStartForUI}부터 반복 시간표로 적용합니다.
+                {calendarWeeks[0]?.unmatchedNames?.length
+                  ? <span style={{ color:"#b91c1c" }}> · 명부에 없는 이름: {calendarWeeks[0].unmatchedNames.join(", ")}</span>
+                  : null}
+              </p>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",
+                gap:6, maxHeight:160, overflowY:"auto", marginBottom:10 }}>
+                {calendarWeeks.map(week => (
+                  <div key={week.weekStart} style={{ border:"1px solid #e2e8f0", borderRadius:6,
+                    padding:"6px 8px", fontSize:12, background:"#fff" }}>
+                    <b>{week.weekStart}</b><br/>
+                    수업 칸 {week.slots.reduce((n, s) => n + s.studentCodes.length, 0)}개
+                    {week.uncertainStudentCodes.length
+                      ? <span style={{ color:"#b45309" }}> · 기존유지 {week.uncertainStudentCodes.length}명</span>
+                      : null}
+                  </div>
+                ))}
+              </div>
+              <button disabled={excelBusy || !calendarWeeks.some(w => w.weekStart >= nextWeekStartForUI && w.slots.length > 0)}
+                onClick={applyExcelCalendar}
+                style={{ padding:"8px 18px", borderRadius:8, border:"none",
+                  background:"#0891b2", color:"#fff", fontWeight:700, fontSize:13,
+                  cursor:"pointer", opacity: excelBusy ? 0.5 : 1 }}>
+                엑셀 시간표 반영
+              </button>
+            </div>
+          )}
+
+          {/* 행목록형 시간표 */}
+          {importRows.length > 0 && !excelBusy && (
+            <div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:8, fontSize:13 }}>
+                <span>변경 {importRows.filter(r => r.status === "changed").length}</span>
+                <span>신규 {importRows.filter(r => r.status === "new").length}</span>
+                <span>일치 {importRows.filter(r => r.status === "match").length}</span>
+                <button onClick={() => setImportSelected(importRows.filter(r => r.status === "new" || r.status === "changed").map(r => r.studentCode))}
+                  style={{ padding:"3px 10px", borderRadius:6, border:"1px solid #cbd5e1",
+                    background:"#fff", cursor:"pointer", fontSize:12 }}>
+                  변경 선택
+                </button>
+                <button disabled={excelBusy || !importSelected.length}
+                  onClick={applyExcelRows}
+                  style={{ padding:"3px 10px", borderRadius:6, border:"none",
+                    background:"#0891b2", color:"#fff", cursor:"pointer", fontSize:12,
+                    opacity: excelBusy ? 0.5 : 1 }}>
+                  선택 반영 ({importSelected.filter(c => importRows.find(r => r.studentCode === c && (r.status === "new" || r.status === "changed"))).length})
+                </button>
+              </div>
+              <div style={{ maxHeight:220, overflowY:"auto", border:"1px solid #e2e8f0",
+                borderRadius:8, background:"#fff", fontSize:12 }}>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <thead>
+                    <tr style={{ position:"sticky", top:0, background:"#eef2ff" }}>
+                      <th style={{ padding:6 }}></th>
+                      <th style={{ padding:6, textAlign:"left" }}>학생</th>
+                      <th style={{ padding:6 }}>대조</th>
+                      <th style={{ padding:6, textAlign:"left" }}>엑셀 시간표</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importRows.map(r => (
+                      <tr key={r.studentCode} style={{ borderTop:"1px solid #e2e8f0" }}>
+                        <td style={{ padding:5, textAlign:"center" }}>
+                          {(r.status === "new" || r.status === "changed") &&
+                            <input type="checkbox"
+                              checked={importSelected.includes(r.studentCode)}
+                              onChange={e => setImportSelected(p => e.target.checked ? [...p, r.studentCode] : p.filter(c => c !== r.studentCode))} />}
+                        </td>
+                        <td style={{ padding:5 }}>{r.name}</td>
+                        <td style={{ padding:5, textAlign:"center" }}>{r.status}</td>
+                        <td style={{ padding:5, color:"#475569" }}>{r.proposed.length ? scheduleLabel(r.proposed) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
