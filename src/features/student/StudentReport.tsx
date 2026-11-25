@@ -99,7 +99,7 @@ export default function StudentReport({ studentCode, token }: { studentCode: str
     <div style={{ maxWidth: 600, margin: "0 auto", padding: 16 }}>
       <div style={{ background: "#2c3e50", color: "#fff", borderRadius: 12, padding: "14px 20px", marginBottom: 20 }}>
         <div style={{ fontSize: 20, fontWeight: 700 }}>📊 {studentName}의 학습 리포트</div>
-        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>L16 Student Recorder</div>
+        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>L16 Check Note</div>
       </div>
 
       {monthlyData.map(({ ym, avgScore, avgPct, submissions, wrongFreq, topReasons, totalReasonCnt, reflections }) => (
@@ -185,7 +185,7 @@ export default function StudentReport({ studentCode, token }: { studentCode: str
       ))}
 
       <div style={{ textAlign: "center", color: "#aaa", fontSize: 12, marginTop: 20 }}>
-        L16 Student Recorder
+        L16 Check Note
       </div>
     </div>
   );

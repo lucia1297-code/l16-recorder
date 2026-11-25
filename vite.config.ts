@@ -25,9 +25,9 @@ export default defineConfig({
         skipWaiting: true,
       },
       manifest: {
-        name: "L16 Student Recorder Lite",
-        short_name: "L16 Recorder",
-        description: "학생 시험 결과 및 오답 기록 앱",
+        name: "L16 Check Note",
+        short_name: "L16 Check",
+        description: "학생용 과제점검노트",
         theme_color: "#2B4C7E",
         background_color: "#FFFFFF",
         display: "standalone",
