@@ -48,7 +48,7 @@ export function computeTodos(
 
   for (const ex of schedules) {
     const student = rosterByCode.get(ex.studentCode);
-    if (!student) continue;
+    if (!student || student.studentStatus === "withdrawn") continue;
 
     if (daysUntil(ex.nextLessonDate, today) === 1) {
       items.push({
