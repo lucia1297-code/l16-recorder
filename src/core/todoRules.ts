@@ -126,15 +126,18 @@ export interface ScheduleEventInput {
 export function computeScheduleReminders(
   events: ScheduleEventInput[],
   today: Date = new Date(),
+  roster: RosterEntry[] = [],
 ): TodoItem[] {
   const items: TodoItem[] = [];
   for (const e of events) {
     if (e.status !== "예정") continue;
     if (daysUntil(e.eventDate, today) !== 1) continue;
+    const matched = roster.find((r) => e.studentCode ? r.studentCode === e.studentCode : !!e.studentName && r.name === e.studentName);
+    if (matched?.studentStatus === "withdrawn") continue;
     const who = e.studentName ? `${e.studentName} ` : "";
     items.push({
       type: "scheduleEvent",
-      studentCode: e.studentCode ?? undefined,
+      studentCode: e.studentCode ?? matched?.studentCode ?? undefined,
       message: `${who}${e.title}(${e.category}) 일정이 내일입니다.`,
     });
   }
@@ -200,13 +203,15 @@ export interface AllTodoInputs {
 
 /** 시험일정 + 정기수업 + 일정관리 + 시험지주문 + 자료배부, 전부 합쳐서 그날의 할일을 계산한다 */
 export function computeAllTodos(input: AllTodoInputs, today: Date = new Date()): TodoItem[] {
-  return [
+  const endedCodes = new Set(input.roster.filter((r) => r.studentStatus === "withdrawn").map((r) => r.studentCode));
+  const items = [
     ...computeTodos(input.schedules, input.roster, today),
     ...computeLessonReminders(input.roster, today),
-    ...computeScheduleReminders(input.scheduleEvents ?? [], today),
+    ...computeScheduleReminders(input.scheduleEvents ?? [], today, input.roster),
     ...computeWwOrderReminders(input.wwOrders ?? [], today),
     ...computeMaterialReminders(input.materials ?? [], today),
   ];
+  return items.filter((item) => !item.studentCode || !endedCodes.has(item.studentCode));
 }
 
 export function formatDailyDigest(items: TodoItem[]): string {
