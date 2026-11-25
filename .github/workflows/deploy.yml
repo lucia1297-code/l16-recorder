@@ -21,6 +21,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Clear Vite build cache
+        run: rm -rf node_modules/.vite dist
+
       - name: Verify exam score editing
         run: npm test -- --run src/__tests__/storage.test.ts src/__tests__/storage.supabase.test.ts src/__tests__/AdminInputPanel.test.tsx
 
