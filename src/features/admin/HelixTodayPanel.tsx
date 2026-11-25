@@ -212,7 +212,7 @@ function EvidenceList({ evidences }: { evidences: Evidence[] }) {
 // ── 서브 컴포넌트: 폐쇄 루프 흐름 띠 ─────────────────────────────────────
 function LoopFlow({ phase }: { phase: LoopPhase }) {
   const steps: { id: LoopPhase; label: string; owner: string }[] = [
-    { id: "evidence",     label: "근거",  owner: "Check Note" },
+    { id: "evidence",     label: "근거",  owner: "Recorder" },
     { id: "hypothesis",   label: "가설",  owner: "HELIX"    },
     { id: "prescription", label: "처방",  owner: "Master"   },
     { id: "recheck",      label: "재검증", owner: "HELIX"   },
@@ -340,7 +340,7 @@ function StudentWorkbench({ st, onApprove, onAddNote }: {
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:12, fontWeight:600, color:"#2c3e50", marginBottom:6 }}>
           📋 근거 목록
-          <span style={{ fontSize:10, color:"#aaa", fontWeight:400, marginLeft:6 }}>Check Note 데이터 자동 수집</span>
+          <span style={{ fontSize:10, color:"#aaa", fontWeight:400, marginLeft:6 }}>Recorder 데이터 자동 수집</span>
         </div>
         <EvidenceList evidences={st.evidences} />
       </div>
@@ -530,14 +530,14 @@ export default function HelixTodayPanel() {
               🧬 오늘의 판단
             </h2>
             <p style={{ margin:"2px 0 0", fontSize:11, color:"#888" }}>
-              Check Note 기록 → 근거 → 가설 → 처방 → 재검증 흐름
+              Recorder 기록 → 근거 → 가설 → 처방 → 재검증 흐름
               {liveMode && <span style={{ marginLeft:6, color:"#27ae60", fontWeight:600 }}>● 실시간</span>}
               {isLoading && <span style={{ marginLeft:6, color:"#aaa" }}>불러오는 중...</span>}
             </p>
           </div>
           {/* 흐름 소유자 범례 */}
           <div style={{ display:"flex", gap:10, fontSize:10, color:"#888" }}>
-            {[["Check Note", "#7f8c8d"], ["HELIX", "#8e44ad"], ["Master", "#2980b9"]].map(([name, color]) => (
+            {[["Recorder", "#7f8c8d"], ["HELIX", "#8e44ad"], ["Master", "#2980b9"]].map(([name, color]) => (
               <span key={name}>
                 <span style={{ display:"inline-block", width:8, height:8, borderRadius:"50%", background:color, marginRight:3 }} />
                 {name}

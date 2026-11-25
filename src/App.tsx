@@ -218,7 +218,7 @@ export default function App() {
       )}
       <div className="topbar">
         <h1 onClick={handleTitleTap} style={{ cursor: "default", userSelect: "none" }}>
-          L16 Check Note
+          L16 Student Recorder Lite
         </h1>
         {/* 관리자 미리보기 중 배너 */}
         {isAdmin && previewMode && (
