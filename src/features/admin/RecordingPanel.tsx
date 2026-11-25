@@ -309,7 +309,7 @@ export default function RecordingPanel() {
     m.stream?.getTracks().forEach(t => t.stop());
     meterRef.current = null;
     analyserRef.current = null;
-    if (eqRafRef.current) { cancelAnimationFrame(eqRafRef.current); eqRafRef.current = null; }
+    // EQ 애니메이션은 계속 유지 (시뮬레이션 모드로 전환됨)
     if (mountedRef.current) { setLevel(0); setSilentSec(0); }
   }
 
@@ -774,25 +774,13 @@ export default function RecordingPanel() {
     draw();
   }, []);
 
-  // 녹음/테스트 상태에 따라 RAF 시작·중지
+  // 컴포넌트 마운트 시 EQ 애니메이션 시작 (항상 실행)
   useEffect(() => {
-    if (recording || testing) {
-      if (eqCanvasRef.current && !eqRafRef.current) {
-        eqCanvasCallback(eqCanvasRef.current);
-      }
-    } else {
-      if (eqRafRef.current) {
-        cancelAnimationFrame(eqRafRef.current);
-        eqRafRef.current = null;
-        const cv = eqCanvasRef.current;
-        if (cv) {
-          const c = cv.getContext("2d");
-          if (c) { c.fillStyle = "#0a1628"; c.fillRect(0, 0, cv.width, cv.height); }
-        }
-      }
+    if (eqCanvasRef.current && !eqRafRef.current) {
+      eqCanvasCallback(eqCanvasRef.current);
     }
     return () => { if (eqRafRef.current) { cancelAnimationFrame(eqRafRef.current); eqRafRef.current = null; } };
-  }, [recording, testing, eqCanvasCallback]);
+  }, [eqCanvasCallback]);
 
   const levelBar = (
     <div style={{ marginTop:10 }}>
