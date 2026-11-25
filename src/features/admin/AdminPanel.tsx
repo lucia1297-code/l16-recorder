@@ -3140,16 +3140,22 @@ function AssignmentReviewManager() {
     });
 
     if (student) {
-      const verdict = REVIEW_STATUS_LABELS[status];
-      const note = noteDrafts[submissionId]?.trim();
-      const message =
-        `[L16] ${student.name} 학생, "${type?.name ?? "과제"}" ${sub.round}회차 점검 결과: ${verdict}` +
-        (note ? ` (${note})` : "");
-      try {
-        await createSmsProvider().send(student.phone, message);
-        setNotice(`${student.name} 학생에게 결과를 문자로 안내했습니다.`);
-      } catch (e) {
-        setNotice(`판정은 저장됐지만 문자 발송에 실패했습니다: ${(e as Error).message}`);
+      const latestRoster = await rosterStore.listRoster().catch(() => []);
+      const currentStudent = latestRoster.find((r) => r.studentCode === student.studentCode && r.studentStatus !== "withdrawn");
+      if (!currentStudent) {
+        setNotice("판정은 저장했으며 수업 종료 학생에게는 문자를 보내지 않았습니다.");
+      } else {
+        const verdict = REVIEW_STATUS_LABELS[status];
+        const note = noteDrafts[submissionId]?.trim();
+        const message =
+          `[L16] ${currentStudent.name} 학생, "${type?.name ?? "과제"}" ${sub.round}회차 점검 결과: ${verdict}` +
+          (note ? ` (${note})` : "");
+        try {
+          await createSmsProvider().send(currentStudent.phone, message);
+          setNotice(`${currentStudent.name} 학생에게 결과를 문자로 안내했습니다.`);
+        } catch (e) {
+          setNotice(`판정은 저장됐지만 문자 발송에 실패했습니다: ${(e as Error).message}`);
+        }
       }
     }
 
