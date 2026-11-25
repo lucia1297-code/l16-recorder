@@ -71,8 +71,30 @@ export async function runScheduledSms(provider: SmsProvider): Promise<number> {
 
   if (error || !due || due.length === 0) return 0;
 
+  // 수업 종료된 학생의 기존 예약 문자도 발송 직전에 차단한다.
+  const { data: endedStudents, error: rosterError } = await sb
+    .from("students")
+    .select("student_code,name,phone,parent_phone")
+    .eq("student_status", "withdrawn");
+  if (rosterError) throw rosterError;
+  const normalizePhone = (value: string | null | undefined) => (value ?? "").replace(/\D/g, "");
+
   let sent = 0;
   for (const row of due as ScheduledSms[]) {
+    const blocked = (endedStudents ?? []).some((student: any) => {
+      if (row.created_by === student.student_code) return true;
+      if (row.created_by !== "admin" || row.target_name !== student.name) return false;
+      const targetPhone = normalizePhone(row.target_phone);
+      return !!targetPhone && [student.phone, student.parent_phone].some((phone) => normalizePhone(phone) === targetPhone);
+    });
+    if (blocked) {
+      await sb
+        .from("scheduled_sms")
+        .update({ status: "cancelled", error_message: "수업 종료 학생 알림 발송 차단" })
+        .eq("id", row.id)
+        .eq("status", "pending");
+      continue;
+    }
     try {
       await provider.send(row.target_phone, row.message);
       await sb

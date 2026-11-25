@@ -2041,6 +2041,7 @@ function LessonScheduleManager({ roster, setRoster, rosterStore, openScheduleMod
 // ── 과제 독려 발송 섹션 ─────────────────────────────
 function ReminderSection({ roster }: { roster: RosterEntry[] }) {
   const assignmentStore = useMemo(() => createAssignmentStore(), []);
+  const rosterStore = useMemo(() => createRosterStore(), []);
   const storage = useStorage();
   const smsProvider = useMemo(() => createSmsProvider(), []);
   const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
@@ -2089,6 +2090,7 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
   const unSavedStudents = useMemo(() => {
     const now = Date.now();
     return roster.filter((r) => {
+      if (r.studentStatus === "withdrawn") return false;
       if (!r.lastAssignmentSavedAt) return true;
       const diff = (now - new Date(r.lastAssignmentSavedAt).getTime()) / 86400000;
       return diff > 1;
@@ -2102,6 +2104,7 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
   const reminderTargets = useMemo(() => {
     const now = new Date();
     return roster
+       .filter((r) => r.studentStatus !== "withdrawn")
       .filter((r) => !r.excludeFromReminder)
       .filter((r) => !isInGracePeriod(r.registeredAt, now))
       .map((r) => {
@@ -2122,6 +2125,9 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
   const otherTargets = reminderTargets.filter((r) => r.weeklySession !== 1 && r.weeklySession !== 2);
 
   async function sendReminder(student: typeof reminderTargets[0]) {
+    const latest = await rosterStore.listRoster();
+    const current = latest.find((r) => r.studentCode === student.studentCode);
+    if (!current || current.studentStatus === "withdrawn") { setNotice("수업 종료 학생은 알림 문자 발송 대상에서 제외됩니다."); return; }
     setSending(student.studentCode);
     setNotice("");
     try {
@@ -2138,10 +2144,14 @@ function ReminderSection({ roster }: { roster: RosterEntry[] }) {
   }
 
   async function sendAllAuto() {
+    const latest = await rosterStore.listRoster();
+    const activeCodes = new Set(latest.filter((r) => r.studentStatus !== "withdrawn").map((r) => r.studentCode));
+    const targets = autoTargets.filter((r) => activeCodes.has(r.studentCode));
+    if (targets.length === 0) { setNotice("발송 가능한 재원 학생이 없습니다."); return; }
     setSending("__all__");
     setNotice("");
     let ok = 0;
-    for (const s of autoTargets) {
+    for (const s of targets) {
       try {
         const unsubNames = s.unsubmitted.map((t) => t.name).join(", ");
         const msg = unsubNames
@@ -3332,6 +3342,7 @@ function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
   // 계도기간이면서 아직 한 번도 제출 안 한 학생만
   const inGrace = useMemo(
     () => roster.filter((r) =>
+      r.studentStatus !== "withdrawn" &&
       isInGracePeriod(r.registeredAt, now) &&
       !submittedCodes.has(r.studentCode) &&
       !submittedCodes.has(r.name)
@@ -3356,13 +3367,16 @@ function GracePeriodNotifier({ roster }: { roster: RosterEntry[] }) {
 
   async function sendToSelected() {
     if (selected.size === 0) return;
+    let latestRoster: RosterEntry[];
+    try { latestRoster = await createRosterStore().listRoster(); }
+    catch { setNotice("최신 학생 명단을 확인하지 못해 문자를 보내지 않았습니다."); return; }
     setSending(true);
     setNotice("");
     const provider = createSmsProvider();
     let successCount = 0;
     for (const code of selected) {
-      const student = roster.find((r) => r.studentCode === code);
-      if (!student) continue;
+      const student = latestRoster.find((r) => r.studentCode === code);
+      if (!student || student.studentStatus === "withdrawn") continue;
       try {
         await provider.send(student.phone, message.replace("{이름}", student.name));
         successCount++;
@@ -4548,9 +4562,11 @@ function SmsCenterPanel() {
   useEffect(() => {
     rosterStore.listRoster().then((r) => {
       setRoster(r);
-      setSelected(new Set(r.map((s) => s.studentCode)));
+      setSelected(new Set(r.filter((s) => s.studentStatus !== "withdrawn").map((s) => s.studentCode)));
     });
   }, [rosterStore]);
+
+  const activeRoster = roster.filter((s) => s.studentStatus !== "withdrawn");
 
   // 기본 메시지 템플릿
   const templates: Record<SmsMode, string> = {
@@ -4561,8 +4577,8 @@ function SmsCenterPanel() {
   };
 
   function toggleAll() {
-    if (selected.size === roster.length) setSelected(new Set());
-    else setSelected(new Set(roster.map((s) => s.studentCode)));
+    if (selected.size === activeRoster.length) setSelected(new Set());
+    else setSelected(new Set(activeRoster.map((s) => s.studentCode)));
   }
 
   function toggleOne(code: string) {
@@ -4574,9 +4590,14 @@ function SmsCenterPanel() {
   async function sendAll() {
     if (!message.trim()) { setNotice("메시지를 입력하세요."); return; }
     if (selected.size === 0) { setNotice("대상을 선택하세요."); return; }
+    let latestRoster: RosterEntry[];
+    try { latestRoster = await rosterStore.listRoster(); }
+    catch { setNotice("최신 학생 명단을 확인하지 못해 문자를 보내지 않았습니다."); return; }
+    setRoster(latestRoster);
     setSending(true);
     setResults([]);
-    const targets = roster.filter((r) => selected.has(r.studentCode));
+    const targets = latestRoster.filter((r) => selected.has(r.studentCode) && r.studentStatus !== "withdrawn");
+    if (targets.length === 0) { setNotice("발송 가능한 재원 학생이 없습니다."); setSending(false); return; }
     const log: { name: string; ok: boolean }[] = [];
 
     for (const s of targets) {
@@ -4676,9 +4697,9 @@ function SmsCenterPanel() {
 
       {/* 대상 선택 */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <h3 style={{ margin: 0 }}>발송 대상 ({selected.size}/{roster.length}명)</h3>
+        <h3 style={{ margin: 0 }}>발송 대상 ({selected.size}/{activeRoster.length}명)</h3>
         <button onClick={toggleAll} style={{ fontSize: 13, padding: "4px 12px", borderRadius: 6, border: "1px solid #ddd", cursor: "pointer", background: "#f5f5f5" }}>
-          {selected.size === roster.length ? "전체 해제" : "전체 선택"}
+          {selected.size === activeRoster.length ? "전체 해제" : "전체 선택"}
         </button>
       </div>
 
@@ -4694,7 +4715,7 @@ function SmsCenterPanel() {
             </tr>
           </thead>
           <tbody>
-            {roster.map((s) => {
+            {activeRoster.map((s) => {
               const isSelected = selected.has(s.studentCode);
               const noParent = mode === "parent" && !s.parentPhone;
               return (
@@ -4819,15 +4840,20 @@ function ScheduledSmsPanel() {
 
   async function addReservation() {
     if (!message.trim()) { setNotice("메시지를 입력하세요."); return; }
-    const targets: { phone: string; name: string }[] = [];
+    let currentRoster: RosterEntry[];
+    try { currentRoster = await rosterStore.listRoster(); }
+    catch { setNotice("최신 학생 명단을 확인하지 못해 예약하지 않았습니다."); return; }
+    setRoster(currentRoster);
+    const activeRoster = currentRoster.filter((r) => r.studentStatus !== "withdrawn");
+    const targets: { phone: string; name: string; studentCode?: string }[] = [];
 
     if (targetMode === "self") {
       if (!adminPhone) { setNotice("관리자 전화번호가 설정되지 않았습니다."); return; }
       targets.push({ phone: adminPhone, name: "관리자(본인)" });
     } else {
-      const src = targetMode === "all" ? roster : roster.filter(r => selectedCodes.has(r.studentCode));
+      const src = targetMode === "all" ? activeRoster : activeRoster.filter(r => selectedCodes.has(r.studentCode));
       if (src.length === 0) { setNotice("대상 학생을 선택하세요."); return; }
-      src.forEach(r => targets.push({ phone: r.phone, name: r.name }));
+      src.forEach(r => targets.push({ phone: r.phone, name: r.name, studentCode: r.studentCode }));
       if (includeSelf && adminPhone) targets.push({ phone: adminPhone, name: "관리자(본인)" });
     }
 
@@ -4835,7 +4861,7 @@ function ScheduledSmsPanel() {
     try {
       for (const t of targets) {
         await addScheduledSms({
-          created_by: "admin",
+          created_by: t.studentCode ?? "admin",
           target_phone: t.phone,
           target_name: t.name,
           message: message.replace("{이름}", t.name),
@@ -4886,7 +4912,7 @@ function ScheduledSmsPanel() {
             <div style={{ maxHeight:180, overflowY:"auto", border:"1px solid #eee", borderRadius:8, marginBottom:10 }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <tbody>
-                  {roster.map(r => (
+                  {activeRoster.map(r => (
                     <tr key={r.studentCode} onClick={() => {
                       const n = new Set(selectedCodes);
                       n.has(r.studentCode) ? n.delete(r.studentCode) : n.add(r.studentCode);

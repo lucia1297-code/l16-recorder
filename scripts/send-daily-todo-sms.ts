@@ -26,7 +26,7 @@ async function fetchSchedules(): Promise<TodoScheduleInput[]> {
 
 async function fetchRoster(): Promise<RosterEntry[]> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/students?select=student_code,name,school,grade,phone,parent_phone,teacher,note,lesson_schedule`,
+    `${SUPABASE_URL}/rest/v1/students?select=student_code,name,school,grade,phone,parent_phone,teacher,note,lesson_schedule,student_status`,
     { headers: SB_H },
   );
   if (!res.ok) throw new Error(`students fetch 실패 (${res.status})`);
@@ -40,6 +40,7 @@ async function fetchRoster(): Promise<RosterEntry[]> {
     parentPhone: r.parent_phone ?? "",
     teacher: r.teacher ?? "",
     note: r.note ?? "",
+    studentStatus: r.student_status ?? "active",
     lessonSchedule: (() => {
       try { return JSON.parse(r.lesson_schedule || "[]"); } catch { return []; }
     })(),
