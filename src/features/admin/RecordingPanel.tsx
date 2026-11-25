@@ -203,6 +203,110 @@ export default function RecordingPanel() {
   const eqRafRef = useRef<number | null>(null);
   const eqStartedRef = useRef(false);
 
+  // EQ를 canvas ref 콜백으로 시작 — DOM 마운트 시점에 정확히 시작
+  const startEqOnCanvas = (canvas: HTMLCanvasElement | null) => {
+    // 언마운트 시 정리
+    if (!canvas) {
+      if (eqRafRef.current) { cancelAnimationFrame(eqRafRef.current); eqRafRef.current = null; }
+      eqStartedRef.current = false;
+      eqCanvasRef.current = null;
+      return;
+    }
+    eqCanvasRef.current = canvas;
+    // 이미 이 canvas에서 실행 중이면 중복 방지
+    if (eqStartedRef.current) return;
+    eqStartedRef.current = true;
+
+    const NUM_BARS = 32;
+    const peaks = new Float32Array(NUM_BARS).fill(0);
+    const peakHold = new Float32Array(NUM_BARS).fill(0);
+
+    const drawEq = () => {
+      eqRafRef.current = requestAnimationFrame(drawEq);
+      const ctx2d = canvas.getContext("2d");
+      if (!ctx2d) return;
+
+      const W = canvas.clientWidth || canvas.width;
+      const H = canvas.clientHeight || canvas.height;
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width = W;
+        canvas.height = H;
+      }
+
+      ctx2d.clearRect(0, 0, W, H);
+      ctx2d.fillStyle = "#0a1628";
+      ctx2d.fillRect(0, 0, W, H);
+
+      const analyser = analyserRef.current;
+      let freqValues: number[];
+
+      if (analyser) {
+        const buf = new Float32Array(analyser.frequencyBinCount);
+        analyser.getFloatFrequencyData(buf);
+        freqValues = Array.from(buf);
+      } else {
+        const t = Date.now() / 1000;
+        freqValues = [];
+        for (let i = 0; i < NUM_BARS; i++) {
+          const base = Math.max(0, 1 - i / NUM_BARS) * 0.7;
+          const wave1 = Math.sin(t * 1.3 + i * 0.4) * 0.3;
+          const wave2 = Math.sin(t * 2.1 + i * 0.7) * 0.2;
+          const wave3 = Math.sin(t * 0.7 + i * 1.1) * 0.1;
+          freqValues.push(Math.max(0, Math.min(1, base + wave1 + wave2 + wave3 + 0.1)));
+        }
+      }
+
+      const isNorm = !analyser;
+      const binCount = analyser ? analyser.frequencyBinCount : NUM_BARS;
+      const barW = Math.max(1, (W - (NUM_BARS - 1) * 2) / NUM_BARS);
+
+      for (let i = 0; i < NUM_BARS; i++) {
+        let norm: number;
+        if (isNorm) {
+          norm = freqValues[i] ?? 0;
+        } else {
+          const start = Math.floor(Math.pow(i / NUM_BARS, 1.5) * binCount);
+          const end   = Math.floor(Math.pow((i + 1) / NUM_BARS, 1.5) * binCount);
+          let maxDb = -140;
+          for (let b = start; b <= end && b < freqValues.length; b++) {
+            if (freqValues[b] > maxDb) maxDb = freqValues[b];
+          }
+          norm = Math.max(0, Math.min(1, (maxDb + 100) / 90));
+        }
+
+        if (norm > peaks[i]) { peaks[i] = norm; peakHold[i] = 30; }
+        else if (peakHold[i] > 0) { peakHold[i]--; }
+        else { peaks[i] = Math.max(0, peaks[i] - 0.015); }
+
+        const x = i * (barW + 2);
+        const barH = norm * (H - 6);
+
+        const grad = ctx2d.createLinearGradient(0, H, 0, 0);
+        grad.addColorStop(0,   "#0891b2");
+        grad.addColorStop(0.5, "#10b981");
+        grad.addColorStop(0.85,"#34d399");
+        grad.addColorStop(1,   "#f97316");
+        ctx2d.fillStyle = grad;
+        ctx2d.fillRect(x, H - barH, barW, barH);
+
+        if (peaks[i] > 0.02) {
+          const py = H - peaks[i] * (H - 6) - 2;
+          ctx2d.fillStyle = peaks[i] > 0.9 ? "#f97316" : "#22d3ee";
+          ctx2d.fillRect(x, py, barW, 2);
+        }
+      }
+
+      ctx2d.strokeStyle = "rgba(255,255,255,0.04)";
+      ctx2d.lineWidth = 1;
+      for (let g = 1; g <= 3; g++) {
+        const y = H * g / 4;
+        ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(W, y); ctx2d.stroke();
+      }
+    };
+
+    drawEq();
+  };
+
   useEffect(() => { localStorage.setItem("l16.recording.device", deviceIdRef.current); }, []);
 
 
@@ -673,117 +777,13 @@ export default function RecordingPanel() {
 
   const currentStudent = roster.find(r => r.studentCode === selectedStudent);
 
-  // ── 이퀄라이저 canvas 콜백 ─────────────────────────────────────────
-    // EQ 애니메이션 — 마운트 시 한 번만 시작, 언마운트 시 정리
-  useEffect(() => {
-    const canvas = eqCanvasRef.current;
-    if (!canvas || eqStartedRef.current) return;
-    eqStartedRef.current = true;
-
-    const NUM_BARS = 32;
-    const peaks = new Float32Array(NUM_BARS).fill(0);
-    const peakHold = new Float32Array(NUM_BARS).fill(0);
-
-    function draw() {
-      eqRafRef.current = requestAnimationFrame(draw);
-      const ctx2d = canvas!.getContext("2d");
-      if (!ctx2d) return;
-
-      // canvas 실제 렌더 크기에 맞춤
-      const W = canvas!.clientWidth || canvas!.width;
-      const H = canvas!.clientHeight || canvas!.height;
-      if (canvas!.width !== W || canvas!.height !== H) {
-        canvas!.width = W;
-        canvas!.height = H;
-      }
-
-      ctx2d.clearRect(0, 0, W, H);
-      ctx2d.fillStyle = "#0a1628";
-      ctx2d.fillRect(0, 0, W, H);
-
-      const analyser = analyserRef.current;
-      let freqValues: number[];
-
-      if (analyser) {
-        const buf = new Float32Array(analyser.frequencyBinCount);
-        analyser.getFloatFrequencyData(buf);
-        freqValues = Array.from(buf);
-      } else {
-        const t = Date.now() / 1000;
-        freqValues = [];
-        for (let i = 0; i < NUM_BARS; i++) {
-          const base = Math.max(0, 1 - i / NUM_BARS) * 0.7;
-          const wave1 = Math.sin(t * 1.3 + i * 0.4) * 0.3;
-          const wave2 = Math.sin(t * 2.1 + i * 0.7) * 0.2;
-          const wave3 = Math.sin(t * 0.7 + i * 1.1) * 0.1;
-          // norm 직접 계산 (0~1)
-          freqValues.push(Math.max(0, Math.min(1, base + wave1 + wave2 + wave3 + 0.1)));
-        }
-      }
-
-      const isNorm = !analyser; // 시뮬레이션이면 이미 0~1 값
-      const binCount = analyser ? analyser.frequencyBinCount : NUM_BARS;
-      const barW = Math.max(1, (W - (NUM_BARS - 1) * 2) / NUM_BARS);
-
-      for (let i = 0; i < NUM_BARS; i++) {
-        let norm: number;
-        if (isNorm) {
-          norm = freqValues[i] ?? 0;
-        } else {
-          const start = Math.floor(Math.pow(i / NUM_BARS, 1.5) * binCount);
-          const end   = Math.floor(Math.pow((i + 1) / NUM_BARS, 1.5) * binCount);
-          let maxDb = -140;
-          for (let b = start; b <= end && b < freqValues.length; b++) {
-            if (freqValues[b] > maxDb) maxDb = freqValues[b];
-          }
-          norm = Math.max(0, Math.min(1, (maxDb + 100) / 90));
-        }
-
-        if (norm > peaks[i]) { peaks[i] = norm; peakHold[i] = 30; }
-        else if (peakHold[i] > 0) { peakHold[i]--; }
-        else { peaks[i] = Math.max(0, peaks[i] - 0.015); }
-
-        const x = i * (barW + 2);
-        const barH = norm * (H - 6);
-
-        const grad = ctx2d.createLinearGradient(0, H, 0, 0);
-        grad.addColorStop(0,   "#0891b2");
-        grad.addColorStop(0.5, "#10b981");
-        grad.addColorStop(0.85,"#34d399");
-        grad.addColorStop(1,   "#f97316");
-        ctx2d.fillStyle = grad;
-        ctx2d.fillRect(x, H - barH, barW, barH);
-
-        if (peaks[i] > 0.02) {
-          const py = H - peaks[i] * (H - 6) - 2;
-          ctx2d.fillStyle = peaks[i] > 0.9 ? "#f97316" : "#22d3ee";
-          ctx2d.fillRect(x, py, barW, 2);
-        }
-      }
-
-      ctx2d.strokeStyle = "rgba(255,255,255,0.04)";
-      ctx2d.lineWidth = 1;
-      for (let g = 1; g <= 3; g++) {
-        const y = H * g / 4;
-        ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(W, y); ctx2d.stroke();
-      }
-    }
-
-    draw();
-    return () => {
-      if (eqRafRef.current) { cancelAnimationFrame(eqRafRef.current); eqRafRef.current = null; }
-      eqStartedRef.current = false;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const levelBar = (
     <div style={{ marginTop:10 }}>
       {/* 이퀄라이저 */}
       <div style={{ position:"relative", borderRadius:8, overflow:"hidden",
         border:"1px solid #1e3a5f", marginBottom:8 }}>
         <canvas
-          ref={eqCanvasRef}
+          ref={startEqOnCanvas}
           width={320}
           height={72}
           style={{ width:"100%", height:72, display:"block" }}
