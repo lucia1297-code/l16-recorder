@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Mic, Square, RotateCcw, RefreshCw, ChevronDown, ChevronUp, Upload, CheckCircle, XCircle, Loader, Brain, FileText } from "lucide-react";
 import { createRosterStore } from "../../lib/rosterStoreFactory";
 import type { RosterEntry } from "../../core/roster";
@@ -204,7 +204,7 @@ export default function RecordingPanel() {
   const eqStartedRef = useRef(false);
 
   // EQ를 canvas ref 콜백으로 시작 — DOM 마운트 시점에 정확히 시작
-  const startEqOnCanvas = (canvas: HTMLCanvasElement | null) => {
+  const startEqOnCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
     // 언마운트 시 정리
     if (!canvas) {
       if (eqRafRef.current) { cancelAnimationFrame(eqRafRef.current); eqRafRef.current = null; }
@@ -237,42 +237,48 @@ export default function RecordingPanel() {
       ctx2d.fillStyle = "#0a1628";
       ctx2d.fillRect(0, 0, W, H);
 
+      // 1) 실제 마이크 주파수 → 막대별 0~1 값
       const analyser = analyserRef.current;
-      let freqValues: number[];
-
+      const realNorms: number[] = new Array(NUM_BARS).fill(0);
+      let realMax = 0;
       if (analyser) {
         const buf = new Float32Array(analyser.frequencyBinCount);
         analyser.getFloatFrequencyData(buf);
-        freqValues = Array.from(buf);
-      } else {
-        const t = Date.now() / 1000;
-        freqValues = [];
+        const binCount = buf.length;
         for (let i = 0; i < NUM_BARS; i++) {
+          const start = Math.floor(Math.pow(i / NUM_BARS, 1.5) * binCount);
+          const end   = Math.floor(Math.pow((i + 1) / NUM_BARS, 1.5) * binCount);
+          let maxDb = -140;
+          for (let b = start; b <= end && b < binCount; b++) {
+            const v = buf[b];
+            if (Number.isFinite(v) && v > maxDb) maxDb = v;
+          }
+          const n = Math.max(0, Math.min(1, (maxDb + 100) / 90));
+          realNorms[i] = n;
+          if (n > realMax) realMax = n;
+        }
+      }
+
+      // 2) 소리가 없으면(마이크 없음 / 무음) 시뮬레이션 막대 사용
+      const useSim = realMax < 0.08;
+      const t = Date.now() / 1000;
+      const norms: number[] = [];
+      for (let i = 0; i < NUM_BARS; i++) {
+        if (useSim) {
           const base = Math.max(0, 1 - i / NUM_BARS) * 0.7;
           const wave1 = Math.sin(t * 1.3 + i * 0.4) * 0.3;
           const wave2 = Math.sin(t * 2.1 + i * 0.7) * 0.2;
           const wave3 = Math.sin(t * 0.7 + i * 1.1) * 0.1;
-          freqValues.push(Math.max(0, Math.min(1, base + wave1 + wave2 + wave3 + 0.1)));
+          norms.push(Math.max(0.04, Math.min(1, base + wave1 + wave2 + wave3 + 0.1)));
+        } else {
+          norms.push(realNorms[i]);
         }
       }
 
-      const isNorm = !analyser;
-      const binCount = analyser ? analyser.frequencyBinCount : NUM_BARS;
       const barW = Math.max(1, (W - (NUM_BARS - 1) * 2) / NUM_BARS);
 
       for (let i = 0; i < NUM_BARS; i++) {
-        let norm: number;
-        if (isNorm) {
-          norm = freqValues[i] ?? 0;
-        } else {
-          const start = Math.floor(Math.pow(i / NUM_BARS, 1.5) * binCount);
-          const end   = Math.floor(Math.pow((i + 1) / NUM_BARS, 1.5) * binCount);
-          let maxDb = -140;
-          for (let b = start; b <= end && b < freqValues.length; b++) {
-            if (freqValues[b] > maxDb) maxDb = freqValues[b];
-          }
-          norm = Math.max(0, Math.min(1, (maxDb + 100) / 90));
-        }
+        const norm = norms[i];
 
         if (norm > peaks[i]) { peaks[i] = norm; peakHold[i] = 30; }
         else if (peakHold[i] > 0) { peakHold[i]--; }
@@ -305,7 +311,8 @@ export default function RecordingPanel() {
     };
 
     drawEq();
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { localStorage.setItem("l16.recording.device", deviceIdRef.current); }, []);
 
