@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>L16 API</title>
+<script>
+const SUPABASE_URL = "https://grvambgnkpbufapvhvjx.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdydmFtYmdua3BidWZhcHZodmp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5NjI4NjAsImV4cCI6MjA5OTUzODg2MH0.DkbtProszEG9vi0cDZvKGsHevoLQ4OwV9wdHuXx0gpk";
+const SB_H = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
+
+async function fetchAll() {
+  const params = new URLSearchParams(location.search);
+  const table = params.get("table") || "admin_exam_schedules";
+  const studentCode = params.get("student_code");
+  const name = params.get("name");
+
+  let url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.asc`;
+  if (studentCode) url += `&student_code=eq.${studentCode}`;
+  if (name) url += `&name=eq.${encodeURIComponent(name)}`;
+
+  const res = await fetch(url, { headers: SB_H });
+  const data = await res.json();
+
+  // CORS 허용 - 응답을 window에 노출
+  document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+  window.__L16_DATA__ = data;
+
+  // postMessage로 부모 창에 전달 (iframe 사용 시)
+  if (window.opener) window.opener.postMessage({ l16: true, table, data }, "*");
+}
+
+fetchAll();
+</script>
+</head>
+<body style="font-family:monospace;padding:20px;background:#0f172a;color:#e2e8f0;">
+<h2 style="color:#0891b2">L16 Supabase API Bridge</h2>
+<p style="color:#94a3b8">사용법: ?table=admin_exam_schedules&student_code=XXX</p>
+<p style="color:#94a3b8">테이블: admin_exam_schedules | student_exams | results</p>
+<pre id="result" style="background:#1e293b;padding:16px;border-radius:8px;overflow:auto;font-size:13px;color:#86efac"></pre>
+</body>
+</html>
